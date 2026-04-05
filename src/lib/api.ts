@@ -224,6 +224,12 @@ export const api = {
     }
   },
 
+  uploadMessageBase64: (conversationId: number, payload: { fileName: string; contentType: string; base64Data: string }) =>
+    request<{ message: string; mediaUrl: string }>(`/api/chat/conversations/${conversationId}/messages/upload-base64`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+
   listFriends: () => request<{ friends: FriendItem[] }>("/api/social/friends"),
 
   searchUsers: (keyword: string) =>

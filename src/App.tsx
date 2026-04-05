@@ -33,6 +33,15 @@ type DashboardTab = "chat" | "friends" | "notifications" | "settings";
 
 type Gender = "male" | "female" | "other";
 
+const parseNotificationMeta = (metaJson?: string | null) => {
+  if (!metaJson) return null;
+  try {
+    return JSON.parse(metaJson);
+  } catch {
+    return null;
+  }
+};
+
 function App() {
   const socketRef = useRef<Socket | null>(null);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -67,6 +76,7 @@ function App() {
   const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
   const [typingState, setTypingState] = useState<Record<number, string>>({});
   const typingTimeoutRef = useRef<number | null>(null);
+  const isSendingMessageRef = useRef(false);
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [userSearchKeyword, setUserSearchKeyword] = useState("");
   const [userSearchResults, setUserSearchResults] = useState<Array<{ id: number; full_name: string; email?: string; phone?: string; avatar_url?: string }>>([]);
@@ -79,6 +89,62 @@ function App() {
   const [toggleAdminUserIdInput, setToggleAdminUserIdInput] = useState("");
   const [removeMemberUserIdInput, setRemoveMemberUserIdInput] = useState("");
   const [onlineUsers, setOnlineUsers] = useState<Record<number, boolean>>({});
+
+  const appendMessageIfNotExists = (nextMessage: ChatMessage) => {
+    setMessages((prev) => (prev.some((item) => item.id === nextMessage.id) ? prev : [...prev, nextMessage]));
+  };
+
+  const selectedConversationPeer = useMemo(() => {
+    if (!selectedConversation || selectedConversation.type !== "direct") return null;
+    return selectedConversation.members.find((member) => member.userId !== profile?.id) || null;
+  }, [selectedConversation, profile?.id]);
+
+  const selectedConversationName = useMemo(() => {
+    if (!selectedConversation) return "";
+    if (selectedConversation.type === "group") {
+      return selectedConversation.name || `Nhóm ${selectedConversation.id}`;
+    }
+    return selectedConversationPeer?.fullName || `Direct ${selectedConversation.id}`;
+  }, [selectedConversation, selectedConversationPeer]);
+
+  const selectedConversationAvatar =
+    selectedConversation?.avatarUrl || selectedConversationPeer?.avatarUrl || null;
+
+  const selectedConversationStatus = useMemo(() => {
+    if (!selectedConversation) return "";
+    if (selectedConversation.type === "group") {
+      const memberCount = selectedConversation.members?.length || 0;
+      return `${memberCount} thành viên`;
+    }
+
+    if (!selectedConversationPeer) {
+      return "Không rõ trạng thái";
+    }
+
+    return onlineUsers[selectedConversationPeer.userId] ? "Đang hoạt động" : "Không hoạt động";
+  }, [selectedConversation, selectedConversationPeer, onlineUsers]);
+
+  const selectedConversationLastOutgoingMessage = useMemo(() => {
+    if (!profile?.id || !selectedConversation || selectedConversation.type !== "direct") return null;
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].senderId === profile.id) {
+        return messages[index];
+      }
+    }
+
+    return null;
+  }, [messages, profile?.id, selectedConversation]);
+
+  const selectedConversationPeerLastReadAt = useMemo(() => {
+    if (!selectedConversation || selectedConversation.type !== "direct") return null;
+    return selectedConversation.members.find((member) => member.userId !== profile?.id)?.lastReadAt || null;
+  }, [selectedConversation, profile?.id]);
+
+  const isLastOutgoingSeen = useMemo(() => {
+    if (!selectedConversationLastOutgoingMessage?.createdAt || !selectedConversationPeerLastReadAt) return false;
+    return new Date(selectedConversationPeerLastReadAt).getTime() >= new Date(selectedConversationLastOutgoingMessage.createdAt).getTime();
+  }, [selectedConversationLastOutgoingMessage, selectedConversationPeerLastReadAt]);
 
   const title = useMemo(() => {
     switch (mode) {
@@ -95,6 +161,16 @@ function App() {
     }
   }, [mode]);
 
+  const unreadNotificationsCount = useMemo(
+    () => notifications.filter((item) => !item.is_read).length,
+    [notifications]
+  );
+
+  const pendingFriendRequestsCount = useMemo(
+    () => friends.filter((item) => item.status === "pending" && !item.requestedByMe).length,
+    [friends]
+  );
+
   const saveAuth = (payload: { accessToken: string; refreshToken: string }) => {
     authStorage.setTokens(payload.accessToken, payload.refreshToken);
   };
@@ -103,9 +179,14 @@ function App() {
     const data = await api.listConversations();
     setConversations(data.conversations);
 
-    if (!selectedConversation && data.conversations[0]) {
-      setSelectedConversation(data.conversations[0]);
-    }
+    setSelectedConversation((prev) => {
+      if (prev) {
+        const matched = data.conversations.find((item) => item.id === prev.id);
+        if (matched) return matched;
+      }
+
+      return data.conversations[0] || null;
+    });
 
     return data.conversations;
   };
@@ -193,9 +274,32 @@ function App() {
     socketRef.current = socket;
 
     socket.on("message:new", (payload: ChatMessage) => {
-      setConversations((prev) => prev.map((item) => (item.id === payload.conversationId ? { ...item, unreadCount: item.id === selectedConversation?.id ? 0 : item.unreadCount + 1, lastMessage: { id: payload.id, senderId: payload.senderId, type: payload.type, text: payload.text, mediaUrl: payload.mediaUrl, createdAt: payload.createdAt } } : item)));
+      setConversations((prev) => {
+        const exists = prev.some((item) => item.id === payload.conversationId);
+        if (!exists) {
+          loadConversations().catch(() => undefined);
+          return prev;
+        }
+
+        return prev.map((item) =>
+          item.id === payload.conversationId
+            ? {
+                ...item,
+                unreadCount: item.id === selectedConversation?.id ? 0 : item.unreadCount + 1,
+                lastMessage: {
+                  id: payload.id,
+                  senderId: payload.senderId,
+                  type: payload.type,
+                  text: payload.text,
+                  mediaUrl: payload.mediaUrl,
+                  createdAt: payload.createdAt
+                }
+              }
+            : item
+        );
+      });
       if (selectedConversation?.id === payload.conversationId) {
-        setMessages((prev) => [...prev, payload]);
+        appendMessageIfNotExists(payload);
       }
     });
 
@@ -217,11 +321,32 @@ function App() {
       setOnlineUsers((prev) => ({ ...prev, [payload.userId]: payload.isOnline }));
     });
 
+    socket.on("conversation:seen", (payload: { conversationId: number; userId: number; seenAt: string }) => {
+      setConversations((prev) =>
+        prev.map((item) => {
+          if (item.id !== payload.conversationId) return item;
+          return {
+            ...item,
+            members: item.members.map((member) =>
+              member.userId === payload.userId ? { ...member, lastReadAt: payload.seenAt } : member
+            )
+          };
+        })
+      );
+    });
+
     socket.on("notification:new", () => {
+      loadConversations().catch(() => undefined);
       loadNotifications().catch(() => undefined);
     });
 
     socket.on("friend:request", () => {
+      loadNotifications().catch(() => undefined);
+      loadFriends().catch(() => undefined);
+    });
+
+    socket.on("friend:accepted", () => {
+      loadNotifications().catch(() => undefined);
       loadFriends().catch(() => undefined);
     });
 
@@ -243,6 +368,14 @@ function App() {
     setIsSearchOpen(false);
     setIsConversationInfoOpen(false);
   }, [selectedConversation?.id]);
+
+  useEffect(() => {
+    if (!selectedConversation) return;
+    const matched = conversations.find((item) => item.id === selectedConversation.id);
+    if (matched && matched !== selectedConversation) {
+      setSelectedConversation(matched);
+    }
+  }, [conversations, selectedConversation]);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -434,12 +567,17 @@ function App() {
   };
 
   const onSendMessage = async () => {
+    if (isSendingMessageRef.current) {
+      return;
+    }
+
     if (!selectedConversation) {
       setMessage("Vui lòng chọn hội thoại");
       return;
     }
 
     try {
+      isSendingMessageRef.current = true;
       setIsLoading(true);
       let mediaUrl: string | undefined;
       let fileName: string | undefined;
@@ -447,12 +585,32 @@ function App() {
       let fileSize: number | undefined;
 
       if (chatFile) {
-        const upload = await api.getMessageUploadUrl(selectedConversation.id, {
-          fileName: chatFile.name,
-          contentType: chatFile.type || "application/octet-stream"
-        });
-        await api.uploadMessageMediaToSignedUrl(upload.signedUploadUrl, chatFile);
-        mediaUrl = upload.mediaUrl;
+        try {
+          const upload = await api.getMessageUploadUrl(selectedConversation.id, {
+            fileName: chatFile.name,
+            contentType: chatFile.type || "application/octet-stream"
+          });
+          await api.uploadMessageMediaToSignedUrl(upload.signedUploadUrl, chatFile);
+          mediaUrl = upload.mediaUrl;
+        } catch (_signedUploadError) {
+          const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const raw = String(reader.result || "");
+              const idx = raw.indexOf(",");
+              resolve(idx >= 0 ? raw.slice(idx + 1) : raw);
+            };
+            reader.onerror = () => reject(new Error("Không thể đọc file đính kèm"));
+            reader.readAsDataURL(chatFile);
+          });
+
+          const fallback = await api.uploadMessageBase64(selectedConversation.id, {
+            fileName: chatFile.name,
+            contentType: chatFile.type || "application/octet-stream",
+            base64Data
+          });
+          mediaUrl = fallback.mediaUrl;
+        }
         fileName = chatFile.name;
         mimeType = chatFile.type;
         fileSize = chatFile.size;
@@ -469,7 +627,7 @@ function App() {
       };
 
       const result = await api.sendMessage(selectedConversation.id, payload);
-      setMessages((prev) => [...prev, result.message]);
+      appendMessageIfNotExists(result.message);
       setMessageInput("");
       setChatFile(null);
       setMessageType("text");
@@ -477,6 +635,7 @@ function App() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể gửi tin nhắn");
     } finally {
+      isSendingMessageRef.current = false;
       setIsLoading(false);
     }
   };
@@ -652,6 +811,7 @@ function App() {
     try {
       await api.acceptFriend(userId);
       await loadFriends();
+      await loadNotifications();
       setMessage("Đã chấp nhận lời mời kết bạn");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Không thể chấp nhận kết bạn");
@@ -862,7 +1022,7 @@ function App() {
   };
 
   const renderHome = () => (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-brand-50 via-orange-50 to-teal-50 p-4 md:p-8">
       <div className="mx-auto flex w-full max-w-7xl items-start gap-4">
         <section className="w-24 rounded-3xl bg-white p-3 shadow-xl ring-1 ring-slate-200">
           <h2 className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Menu</h2>
@@ -875,12 +1035,23 @@ function App() {
             ].map((item) => (
               <button
                 key={item.key}
-                className={`w-full rounded-xl px-2 py-2 text-center ${dashboardTab === item.key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"}`}
+                className={`w-full rounded-xl px-2 py-2 text-center ${dashboardTab === item.key ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-700"}`}
                 type="button"
                 onClick={() => setDashboardTab(item.key as DashboardTab)}
                 title={item.label}
               >
-                <div className="flex justify-center"><item.Icon size={18} strokeWidth={2.25} /></div>
+                <div className="relative flex justify-center"><item.Icon size={18} strokeWidth={2.25} />
+                  {item.key === "notifications" && unreadNotificationsCount > 0 && (
+                    <span className="absolute -right-2 -top-1 inline-flex min-w-4 justify-center rounded-full bg-rose-500 px-1 text-[10px] text-white">
+                      {unreadNotificationsCount > 9 ? "9+" : unreadNotificationsCount}
+                    </span>
+                  )}
+                  {item.key === "friends" && pendingFriendRequestsCount > 0 && (
+                    <span className="absolute -right-2 -top-1 inline-flex min-w-4 justify-center rounded-full bg-emerald-500 px-1 text-[10px] text-white">
+                      {pendingFriendRequestsCount > 9 ? "9+" : pendingFriendRequestsCount}
+                    </span>
+                  )}
+                </div>
                 <div className="mt-1 text-[10px] font-medium">{item.label}</div>
               </button>
             ))}
@@ -910,7 +1081,7 @@ function App() {
                 )}
               </button>
               <button
-                className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                className="h-10 rounded-xl bg-brand-700 px-4 text-sm font-semibold text-white transition hover:bg-brand-900"
                 type="button"
                 onClick={onLogout}
               >
@@ -953,16 +1124,27 @@ function App() {
                 {selectedConversation ? (
                   <>
                     <div className="mb-3 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-base font-semibold text-slate-800">Hội thoại #{selectedConversation.id}</h3>
-                        <p className="text-xs text-slate-500">Nhắn tin văn bản, sticker, media và theo dõi trạng thái realtime</p>
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+                          {selectedConversationAvatar ? (
+                            <img src={selectedConversationAvatar} alt={selectedConversationName} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brand-200 to-brand-300 text-sm font-bold text-brand-900">
+                              {selectedConversationName.charAt(0).toUpperCase() || "C"}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="text-base font-semibold text-slate-800">{selectedConversationName}</h3>
+                          <p className="text-xs text-slate-500">{selectedConversationStatus}</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button className="rounded-lg border border-slate-300 p-2 text-xs transition hover:border-brand-300" type="button" onClick={() => setIsQuickCreateOpen(true)} title="Tạo hội thoại">
                           <Plus size={16} />
                         </button>
                         <button
-                          className={`rounded-lg border p-2 text-xs transition ${isSearchOpen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 hover:border-brand-300"}`}
+                          className={`rounded-lg border p-2 text-xs transition ${isSearchOpen ? "border-brand-700 bg-brand-700 text-white" : "border-slate-300 hover:border-brand-300"}`}
                           type="button"
                           title="Tìm kiếm tin nhắn"
                           onClick={() => setIsSearchOpen((prev) => !prev)}
@@ -970,7 +1152,7 @@ function App() {
                           <Search size={16} />
                         </button>
                         <button
-                          className={`rounded-lg border p-2 text-xs transition ${isConversationInfoOpen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 hover:border-brand-300"}`}
+                          className={`rounded-lg border p-2 text-xs transition ${isConversationInfoOpen ? "border-brand-700 bg-brand-700 text-white" : "border-slate-300 hover:border-brand-300"}`}
                           type="button"
                           title="Thông tin hội thoại / quản trị nhóm"
                           onClick={() => setIsConversationInfoOpen((prev) => !prev)}
@@ -1027,6 +1209,12 @@ function App() {
                       ))}
                       {typingState[selectedConversation.id] && <div className="text-xs text-brand-700">{typingState[selectedConversation.id]}</div>}
                     </div>
+
+                    {selectedConversation.type === "direct" && selectedConversationLastOutgoingMessage && (
+                      <div className="mb-2 text-right text-xs text-slate-500">
+                        {isLastOutgoingSeen ? "Đã xem" : "Đã gửi"}
+                      </div>
+                    )}
 
                     {isConversationInfoOpen && (
                       <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -1193,6 +1381,21 @@ function App() {
                     <div className="font-semibold text-slate-800">{item.title}</div>
                     <div className="text-slate-600">{item.body || "(không có nội dung)"}</div>
                     <div className="mt-1 text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</div>
+                    {item.type === "friend-request" && (() => {
+                      const meta = parseNotificationMeta(item.meta_json);
+                      const requesterId = Number(meta?.requesterId || 0);
+                      if (!requesterId) return null;
+
+                      return (
+                        <button
+                          className="mt-2 mr-2 rounded-lg border border-emerald-300 px-2 py-1 text-xs"
+                          type="button"
+                          onClick={() => onAcceptFriend(requesterId)}
+                        >
+                          Chấp nhận kết bạn
+                        </button>
+                      );
+                    })()}
                     {!item.is_read && (
                       <button className="mt-2 rounded-lg border border-brand-300 px-2 py-1 text-xs" type="button" onClick={() => onReadNotification(item.id)}>Đánh dấu đã đọc</button>
                     )}
