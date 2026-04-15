@@ -1,277 +1,514 @@
-import { authStorage } from "./auth";
 import type {
-  AppNotification,
-  AuthResponse,
-  AuthUser,
+  AuthPayload,
   ChatMessage,
   Conversation,
-  FriendItem,
-  RegisterResponse,
-  UserSettings
-} from "../types";
+  FeedComment,
+  FriendConnection,
+  FeedPost,
+  NotificationItem,
+  User,
+} from '@/lib/types'
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.NEXT_PUBLIC_API_BASE_URL ||
+  '/backend/api'
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers || {});
-  const accessToken = authStorage.getAccessToken();
+export class ApiError extends Error {
+  status?: number
+  code?: string
 
-  if (!headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+  constructor(message: string, options?: { status?: number; code?: string }) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = options?.status
+    this.code = options?.code
+  }
+}
+
+export const isAuthExpiredError = (error: unknown) => {
+  if (!(error instanceof Error)) return false
+  const status = error instanceof ApiError ? error.status : undefined
+  const code = error instanceof ApiError ? error.code : undefined
+  const lower = error.message.toLowerCase()
+
+  return (
+    status === 401 ||
+    status === 403 ||
+    code === 'AUTH_EXPIRED' ||
+    lower.includes('invalid or expired token') ||
+    lower.includes('token expired') ||
+    lower.includes('jwt expired') ||
+    lower.includes('unauthorized')
+  )
+}
+
+const buildHeaders = (token?: string) => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
   }
 
-  if (accessToken) {
-    headers.set("Authorization", `Bearer ${accessToken}`);
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers
-  });
+  return headers
+}
 
-  const data = await response.json().catch(() => ({}));
+const request = async <T>(
+  path: string,
+  options: RequestInit = {},
+  token?: string
+): Promise<T> => {
+  const requestUrl = `${API_BASE}${path}`
+  let response: Response
+
+  try {
+    response = await fetch(requestUrl, {
+      ...options,
+      headers: {
+        ...buildHeaders(token),
+        ...(options.headers || {}),
+      },
+      cache: 'no-store',
+    })
+  } catch (error) {
+    const lower = error instanceof Error ? error.message.toLowerCase() : ''
+    const isNetworkError =
+      error instanceof TypeError ||
+      lower.includes('failed to fetch') ||
+      lower.includes('networkerror') ||
+      lower.includes('load failed')
+
+    if (isNetworkError) {
+      throw new ApiError(
+        'Không thể kết nối backend API. Hãy chạy server API ở frontend (npm run dev:api) và tải lại trang.',
+        { code: 'BACKEND_UNREACHABLE' }
+      )
+    }
+
+    throw error
+  }
+
+  const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    const detailedMessage =
-      data?.message ||
-      data?.issues?.[0]?.message ||
-      data?.issues?.[0]?.path?.join?.(".") ||
-      "Request failed";
-    throw new Error(detailedMessage);
+    const message = typeof data.message === 'string' ? data.message : ''
+    const lowerMessage = message.toLowerCase()
+    const isDbUnavailable =
+      response.status === 503 ||
+      lowerMessage.includes('database') ||
+      lowerMessage.includes('mariadb') ||
+      lowerMessage.includes('pool failed')
+
+    if (isDbUnavailable) {
+      throw new ApiError('Máy chủ đang mất kết nối cơ sở dữ liệu. Vui lòng bật MariaDB và thử lại.', {
+        status: response.status,
+        code: 'DB_UNAVAILABLE',
+      })
+    }
+
+    const isAuthError =
+      response.status === 401 ||
+      response.status === 403 ||
+      lowerMessage.includes('invalid or expired token') ||
+      lowerMessage.includes('token expired') ||
+      lowerMessage.includes('jwt expired') ||
+      lowerMessage.includes('unauthorized')
+
+    if (isAuthError) {
+      throw new ApiError(message || 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.', {
+        status: response.status,
+        code: 'AUTH_EXPIRED',
+      })
+    }
+
+    throw new ApiError(message || 'Request failed', {
+      status: response.status,
+      code: typeof data.code === 'string' ? data.code : undefined,
+    })
   }
 
-  return data as T;
+  return data as T
 }
 
 export const api = {
+  login: (emailOrPhone: string, password: string) =>
+    request<AuthPayload>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ emailOrPhone, password }),
+    }),
+
   register: (payload: {
-    emailOrPhone: string;
-    password: string;
-    fullName?: string;
-    dateOfBirth?: string;
-    gender?: "male" | "female" | "other";
-    avatarUrl?: string;
+    emailOrPhone: string
+    fullName: string
+    dateOfBirth?: string
+    gender?: string
+    password: string
   }) =>
-    request<RegisterResponse>("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
-
-  verifyRegistration: (payload: { emailOrPhone: string; code: string }) =>
-    request<AuthResponse>("/api/auth/verify-registration", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
-
-  resendVerification: (emailOrPhone: string) =>
-    request<{ message: string; verificationCode?: string; otpSent?: boolean; otpChannel?: string; otpDestination?: string; otpReason?: string; otpError?: string }>("/api/auth/resend-verification", {
-      method: "POST",
-      body: JSON.stringify({ emailOrPhone })
-    }),
-
-  login: (payload: { emailOrPhone: string; password: string }) =>
-    request<AuthResponse>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
+    request<{ requiresVerification?: boolean; verificationCode?: string }>(
+      '/auth/register',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    ),
 
   forgotPassword: (emailOrPhone: string) =>
-    request<{ message: string; resetCode?: string; otpSent?: boolean; otpChannel?: string; otpDestination?: string; otpReason?: string; otpError?: string }>(
-      "/api/auth/forgot-password",
-      {
-      method: "POST",
-      body: JSON.stringify({ emailOrPhone })
-      }
-    ),
+    request<{
+      message: string
+      otpSent?: boolean
+      otpChannel?: string
+      otpDestination?: string
+      otpReason?: string
+      resetCode?: string
+    }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ emailOrPhone }),
+    }),
 
   resetPassword: (payload: { emailOrPhone: string; code: string; newPassword: string }) =>
-    request<{ message: string }>("/api/auth/reset-password", {
-      method: "POST",
-      body: JSON.stringify(payload)
+    request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
-  refresh: (refreshToken: string) =>
-    request<AuthResponse>("/api/auth/refresh", {
-      method: "POST",
-      body: JSON.stringify({ refreshToken })
-    }),
+  me: (token: string) => request<{ user: User }>('/auth/me', { method: 'GET' }, token),
 
-  me: () => request<AuthUser>("/api/auth/me"),
+  updateProfile: (
+    token: string,
+    payload: { fullName?: string; avatarUrl?: string; dateOfBirth?: string; gender?: string }
+  ) => request<{ message: string; user: User }>('/auth/me', { method: 'PUT', body: JSON.stringify(payload) }, token),
 
-  updateProfile: (payload: { fullName?: string; avatarUrl?: string; dateOfBirth?: string | null; gender?: "male" | "female" | "other" | null }) =>
-    request<{ message: string; user: AuthUser }>("/api/auth/me", {
-      method: "PUT",
-      body: JSON.stringify(payload)
-    }),
+  listFeed: (token?: string) =>
+    request<{ posts: FeedPost[]; viewer: { id: number; role: string } | null }>(
+      '/social/feed',
+      { method: 'GET' },
+      token
+    ),
 
-  getAvatarUploadUrl: (payload: { fileName: string; contentType: string }) =>
-    request<{ signedUploadUrl: string; signedReadUrl: string; mediaUrl: string; key: string }>("/api/auth/avatar-upload-url", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
-
-  uploadAvatarBase64: (payload: { fileName: string; contentType: string; base64Data: string }) =>
-    request<{ message: string; mediaUrl: string; signedReadUrl: string; key: string }>("/api/auth/avatar-upload-base64", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
-
-  uploadAvatarToSignedUrl: async (signedUploadUrl: string, file: File) => {
-    const response = await fetch(signedUploadUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": file.type || "application/octet-stream"
-      },
-      body: file
-    });
-
-    if (!response.ok) {
-      throw new Error("Tải ảnh đại diện lên S3 thất bại");
-    }
+  listFeedWithParams: (params: { includeHidden?: boolean; limit?: number }, token?: string) => {
+    const query = new URLSearchParams()
+    if (params.includeHidden) query.set('includeHidden', '1')
+    if (params.limit) query.set('limit', String(params.limit))
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+    return request<{ posts: FeedPost[]; viewer: { id: number; role: string } | null }>(
+      `/social/feed${suffix}`,
+      { method: 'GET' },
+      token
+    )
   },
 
-  changePassword: (payload: { currentPassword: string; newPassword: string }) =>
-    request<{ message: string }>("/api/auth/change-password", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
+  createPost: (token: string, payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private' }) =>
+    request<{ post: FeedPost }>(
+      '/social/posts',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      token
+    ),
 
-  listConversations: () => request<{ conversations: Conversation[] }>("/api/chat/conversations"),
+  updatePost: (
+    token: string,
+    postId: number,
+    payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private' }
+  ) =>
+    request<{ message: string; post: FeedPost }>(
+      `/social/posts/${postId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      },
+      token
+    ),
 
-  createDirectConversation: (userId: number) =>
-    request<{ conversation: Conversation }>("/api/chat/conversations/direct", {
-      method: "POST",
-      body: JSON.stringify({ userId })
-    }),
+  deletePost: (token: string, postId: number) =>
+    request<{ message: string }>(`/social/posts/${postId}`, { method: 'DELETE' }, token),
 
-  createGroupConversation: (payload: { name: string; memberIds: number[]; avatarUrl?: string }) =>
-    request<{ conversation: Conversation }>("/api/chat/conversations/group", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
+  getPost: (postId: number, token?: string) =>
+    request<{ post: FeedPost }>(`/social/posts/${postId}`, { method: 'GET' }, token),
 
-  getConversationMessages: (conversationId: number, limit = 30) =>
-    request<{ messages: ChatMessage[] }>(`/api/chat/conversations/${conversationId}/messages?limit=${limit}`),
+  uploadPostMediaBase64: (
+    token: string,
+    payload: { fileName: string; contentType: string; base64Data: string }
+  ) =>
+    request<{ message: string; mediaUrl: string }>(
+      '/social/posts/upload-base64',
+      { method: 'POST', body: JSON.stringify(payload) },
+      token
+    ),
 
-  sendMessage: (
+  reactPost: (token: string, postId: number, type = 'like') =>
+    request<{ post: FeedPost }>(
+      `/social/posts/${postId}/reaction`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ type }),
+      },
+      token
+    ),
+
+  unreactPost: (token: string, postId: number) =>
+    request<{ post: FeedPost }>(`/social/posts/${postId}/reaction`, { method: 'DELETE' }, token),
+
+  listComments: (
+    postId: number,
+    token?: string,
+    params?: {
+      limit?: number
+      offset?: number
+    }
+  ) => {
+    const query = new URLSearchParams()
+    if (params?.limit) query.set('limit', String(params.limit))
+    if (params?.offset) query.set('offset', String(params.offset))
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+
+    return request<{
+      comments: FeedComment[]
+      total?: number
+      hasMore?: boolean
+      limit?: number
+      offset?: number
+    }>(`/social/posts/${postId}/comments${suffix}`, { method: 'GET' }, token)
+  },
+
+  addComment: (token: string, postId: number, content: string) =>
+    request<{ comment: FeedComment }>(
+      `/social/posts/${postId}/comments`,
+      { method: 'POST', body: JSON.stringify({ content }) },
+      token
+    ),
+
+  listConversations: (token: string) =>
+    request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token),
+
+  searchUsers: (token: string, keyword: string) =>
+    request<{ users: Array<Record<string, unknown>> }>(
+      `/social/users/search?q=${encodeURIComponent(keyword)}`,
+      { method: 'GET' },
+      token
+    ),
+
+  listFriends: (token: string) =>
+    request<{ friends: FriendConnection[] }>('/social/friends', { method: 'GET' }, token),
+
+  requestFriend: (token: string, userId: number) =>
+    request<{ message: string }>('/social/friends/request', {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }, token),
+
+  acceptFriend: (token: string, userId: number) =>
+    request<{ message: string }>(`/social/friends/${userId}/accept`, { method: 'POST' }, token),
+
+  deleteFriend: (token: string, userId: number) =>
+    request<{ message: string }>(`/social/friends/${userId}`, { method: 'DELETE' }, token),
+
+  createDirectConversation: (token: string, userId: number) =>
+    request<{ conversation: Conversation }>(
+      '/chat/conversations/direct',
+      { method: 'POST', body: JSON.stringify({ userId }) },
+      token
+    ),
+
+  createGroupConversation: (
+    token: string,
+    payload: { name: string; memberIds: number[]; avatarUrl?: string }
+  ) =>
+    request<{ conversation: Conversation }>(
+      '/chat/conversations/group',
+      { method: 'POST', body: JSON.stringify(payload) },
+      token
+    ),
+
+  listMessages: (
+    token: string,
+    conversationId: number,
+    params?: {
+      limit?: number
+      beforeId?: number
+    }
+  ) => {
+    const query = new URLSearchParams()
+    if (params?.limit) query.set('limit', String(params.limit))
+    if (params?.beforeId) query.set('beforeId', String(params.beforeId))
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+
+    return request<{
+      messages: ChatMessage[]
+      messageLimit?: {
+        total: number
+        sent: number
+        remaining: number
+        isFriend: boolean
+      } | null
+    }>(`/chat/conversations/${conversationId}/messages${suffix}`, { method: 'GET' }, token)
+  },
+
+  sendMessage: (token: string, conversationId: number, text: string) =>
+    request<{ message: ChatMessage }>(
+      `/chat/conversations/${conversationId}/messages`,
+      { method: 'POST', body: JSON.stringify({ type: 'text', text }) },
+      token
+    ),
+
+  sendMessagePayload: (
+    token: string,
     conversationId: number,
     payload: {
-      type: "text" | "image" | "video" | "audio" | "file" | "sticker";
-      text?: string;
-      mediaUrl?: string;
-      fileName?: string;
-      mimeType?: string;
-      fileSize?: number;
-      sticker?: string;
+      type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'sticker'
+      text?: string
+      mediaUrl?: string
+      fileName?: string
+      mimeType?: string
+      fileSize?: number
+      sticker?: string
     }
   ) =>
-    request<{ message: ChatMessage }>(`/api/chat/conversations/${conversationId}/messages`, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
-
-  markSeen: (conversationId: number) =>
-    request<{ message: string }>(`/api/chat/conversations/${conversationId}/seen`, {
-      method: "PATCH"
-    }),
-
-  searchMessages: (keyword: string) =>
-    request<{ messages: ChatMessage[] }>(`/api/chat/search/messages?q=${encodeURIComponent(keyword)}`),
-
-  addMember: (conversationId: number, userId: number) =>
-    request<{ message: string }>(`/api/chat/conversations/${conversationId}/members`, {
-      method: "POST",
-      body: JSON.stringify({ userId })
-    }),
-
-  removeMember: (conversationId: number, userId: number) =>
-    request<{ message: string }>(`/api/chat/conversations/${conversationId}/members/${userId}`, {
-      method: "DELETE"
-    }),
-
-  updateAdmin: (conversationId: number, userId: number, isAdmin: boolean) =>
-    request<{ message: string }>(`/api/chat/conversations/${conversationId}/admins`, {
-      method: "PATCH",
-      body: JSON.stringify({ userId, isAdmin })
-    }),
-
-  toggleConversationNotifications: (conversationId: number, enabled: boolean) =>
-    request<{ message: string }>(`/api/chat/conversations/${conversationId}/notifications`, {
-      method: "PATCH",
-      body: JSON.stringify({ enabled })
-    }),
-
-  getMessageUploadUrl: (conversationId: number, payload: { fileName: string; contentType: string }) =>
-    request<{ signedUploadUrl: string; mediaUrl: string; key: string }>(
-      `/api/chat/conversations/${conversationId}/messages/upload-url`,
-      {
-        method: "POST",
-        body: JSON.stringify(payload)
-      }
+    request<{ message: ChatMessage }>(
+      `/chat/conversations/${conversationId}/messages`,
+      { method: 'POST', body: JSON.stringify(payload) },
+      token
     ),
 
-  uploadMessageMediaToSignedUrl: async (signedUploadUrl: string, file: File) => {
-    const response = await fetch(signedUploadUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": file.type || "application/octet-stream"
-      },
-      body: file
-    });
+  uploadMessageBase64: (
+    token: string,
+    conversationId: number,
+    payload: { fileName: string; contentType: string; base64Data: string }
+  ) =>
+    request<{ message: string; mediaUrl: string }>(
+      `/chat/conversations/${conversationId}/messages/upload-base64`,
+      { method: 'POST', body: JSON.stringify(payload) },
+      token
+    ),
 
-    if (!response.ok) {
-      throw new Error("Tải file chat lên S3 thất bại");
+  reactMessage: (token: string, messageId: number, type: 'like' | 'love' | 'care') =>
+    request<{ message: string; chatMessage: ChatMessage }>(
+      `/chat/messages/${messageId}/reaction`,
+      { method: 'POST', body: JSON.stringify({ type }) },
+      token
+    ),
+
+  removeMessageReaction: (token: string, messageId: number) =>
+    request<{ message: string; chatMessage: ChatMessage }>(`/chat/messages/${messageId}/reaction`, { method: 'DELETE' }, token),
+
+  recallMessage: (token: string, messageId: number) =>
+    request<{ message: string; chatMessage: ChatMessage }>(`/chat/messages/${messageId}/recall`, { method: 'PATCH' }, token),
+
+  forwardMessage: (token: string, messageId: number, targetConversationId: number) =>
+    request<{ message: string; chatMessage: ChatMessage }>(
+      `/chat/messages/${messageId}/forward`,
+      { method: 'POST', body: JSON.stringify({ targetConversationId }) },
+      token
+    ),
+
+  aiChat: (token: string | undefined, message: string) =>
+    request<{ message?: string; reply?: string }>('/social/ai/support', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }, token),
+
+  notifications: (token: string) =>
+    request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token),
+
+  readNotification: (token: string, id: number) =>
+    request<{ message: string }>(`/social/notifications/${id}/read`, { method: 'PATCH' }, token),
+
+  readAllNotifications: (token: string) =>
+    request<{ message: string }>('/social/notifications/read-all', { method: 'PATCH' }, token),
+
+  submitReport: (
+    token: string,
+    payload: {
+      targetType: 'post' | 'comment' | 'user' | 'message'
+      targetId: number
+      reason: string
+      details?: string
     }
+  ) =>
+    request<{ message: string; report: Record<string, unknown> }>(
+      '/social/reports',
+      { method: 'POST', body: JSON.stringify(payload) },
+      token
+    ),
+
+  adminStats: (token: string) => request<{ stats: Record<string, number> }>('/social/admin/stats', { method: 'GET' }, token),
+
+  moderationReports: (token: string) =>
+    request<{ reports: Array<Record<string, unknown>> }>('/social/moderation/reports', { method: 'GET' }, token),
+
+  moderationUsers: (token: string) =>
+    request<{ users: User[] }>('/social/admin/users', { method: 'GET' }, token),
+
+  reviewModerationReport: (
+    token: string,
+    reportId: number,
+    payload: { status: 'pending' | 'reviewed' | 'resolved'; resolutionNote?: string }
+  ) =>
+    request<{ message: string; report: Record<string, unknown> }>(
+      `/social/moderation/reports/${reportId}`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ),
+
+  moderatePost: (
+    token: string,
+    postId: number,
+    payload: { status: 'published' | 'hidden' | 'deleted'; resolutionNote?: string }
+  ) =>
+    request<{ message: string; post: FeedPost }>(
+      `/social/moderation/posts/${postId}`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ),
+
+  adminPosts: (
+    token: string,
+    params?: {
+      q?: string
+      status?: 'published' | 'hidden' | 'deleted'
+      visibility?: 'public' | 'private'
+      limit?: number
+    }
+  ) => {
+    const query = new URLSearchParams()
+    if (params?.q) query.set('q', params.q)
+    if (params?.status) query.set('status', params.status)
+    if (params?.visibility) query.set('visibility', params.visibility)
+    if (params?.limit) query.set('limit', String(params.limit))
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+    return request<{ posts: FeedPost[] }>(`/social/admin/posts${suffix}`, { method: 'GET' }, token)
   },
 
-  uploadMessageBase64: (conversationId: number, payload: { fileName: string; contentType: string; base64Data: string }) =>
-    request<{ message: string; mediaUrl: string }>(`/api/chat/conversations/${conversationId}/messages/upload-base64`, {
-      method: "POST",
-      body: JSON.stringify(payload)
-    }),
-
-  listFriends: () => request<{ friends: FriendItem[] }>("/api/social/friends"),
-
-  searchUsers: (keyword: string) =>
-    request<{ users: Array<{ id: number; full_name: string; email?: string; phone?: string; avatar_url?: string; is_verified: number }> }>(
-      `/api/social/users/search?q=${encodeURIComponent(keyword)}`
+  updateAdminPost: (
+    token: string,
+    postId: number,
+    payload: {
+      content?: string
+      mediaUrl?: string | null
+      visibility?: 'public' | 'private'
+      status?: 'published' | 'hidden' | 'deleted'
+    }
+  ) =>
+    request<{ message: string; post: FeedPost }>(
+      `/social/admin/posts/${postId}`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
     ),
 
-  requestFriend: (userId: number) =>
-    request<{ message: string }>("/api/social/friends/request", {
-      method: "POST",
-      body: JSON.stringify({ userId })
-    }),
+  deleteAdminPost: (token: string, postId: number) =>
+    request<{ message: string }>(`/social/admin/posts/${postId}`, { method: 'DELETE' }, token),
 
-  acceptFriend: (userId: number) =>
-    request<{ message: string }>(`/api/social/friends/${userId}/accept`, {
-      method: "POST"
-    }),
-
-  removeFriend: (userId: number) =>
-    request<{ message: string }>(`/api/social/friends/${userId}`, {
-      method: "DELETE"
-    }),
-
-  getSettings: () => request<{ settings: UserSettings }>("/api/social/settings"),
-
-  updateSettings: (payload: Partial<UserSettings>) =>
-    request<{ message: string; settings: UserSettings }>("/api/social/settings", {
-      method: "PUT",
-      body: JSON.stringify(payload)
-    }),
-
-  listNotifications: () => request<{ notifications: AppNotification[] }>("/api/social/notifications"),
-
-  readNotification: (id: number) =>
-    request<{ message: string }>(`/api/social/notifications/${id}/read`, {
-      method: "PATCH"
-    }),
-
-  readAllNotifications: () =>
-    request<{ message: string }>("/api/social/notifications/read-all", {
-      method: "PATCH"
-    }),
-
-  logout: () => request<{ message: string }>("/api/auth/logout", { method: "POST" })
-};
+  updateModerationUser: (
+    token: string,
+    userId: number,
+    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: 'active' | 'restricted' | 'hidden' | 'deleted' }
+  ) =>
+    request<{ message: string; user: User }>(
+      `/social/admin/users/${userId}`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ),
+}

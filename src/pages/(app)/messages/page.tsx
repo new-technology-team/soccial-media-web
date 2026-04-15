@@ -1,0 +1,1617 @@
+'use client'
+
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Bell,
+  CirclePlus,
+  Forward,
+  Heart,
+  Info,
+  Paperclip,
+  Phone,
+  PhoneOff,
+  Search,
+  Send,
+  Smile,
+  Sticker,
+  ThumbsUp,
+  UserPlus,
+  Video,
+} from 'lucide-react'
+import { ApiError, api } from '@/lib/api'
+import { useAuthStore } from '@/lib/store/auth-store'
+import { useChatStore } from '@/lib/store/chat-store'
+import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket'
+import type { ChatMessage, FriendConnection } from '@/lib/types'
+import styles from './page.module.css'
+
+const EMOJI_SET = ['😀', '😄', '😂', '🥹', '😍', '😘', '🤝', '🙏', '🔥', '🎉', '💙', '👍', '🤔', '😎', '😢', '😡']
+const STICKER_PACKS: Record<string, string[]> = {
+  Cute: ['🐼', '🐱', '🐶', '🦊', '🐵', '🐸', '🐯', '🦄'],
+  Meme: ['🤣', '🫠', '😏', '😵', '🤯', '🤡', '👀', '💀'],
+  Animals: ['🐨', '🐻', '🦁', '🐮', '🐷', '🐔', '🐧', '🐙'],
+  Party: ['🎉', '🥳', '🎊', '🔥', '💥', '✨', '🍾', '🎈'],
+}
+
+const REACTION_META = {
+  like: { emoji: '👍', label: 'Thích' },
+  love: { emoji: '❤️', label: 'Yêu thích' },
+  care: { emoji: '🤗', label: 'Quan tâm' },
+} as const
+
+const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
+
+const formatVietnamTime = (value: string) =>
+  new Intl.DateTimeFormat('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(parseChatDate(value))
+
+const parseChatDate = (value: string) => {
+  const base = new Date(value)
+  if (Number.isNaN(base.getTime())) return new Date()
+  // Backend returns Z values shifted by UTC offset, align display with VN wall-clock.
+  if (typeof value === 'string' && value.endsWith('Z')) {
+    return new Date(base.getTime() + 7 * 60 * 60 * 1000)
+  }
+  return base
+}
+
+const reactionSummaryText = (msg: ChatMessage) => {
+  if (!msg.reactionCount) return null
+  if (!msg.viewerReaction) return `${msg.reactionCount} cảm xúc`
+  const reaction = REACTION_META[msg.viewerReaction]
+  return `${reaction.emoji} Bạn đã ${reaction.label.toLowerCase()} · ${msg.reactionCount} cảm xúc`
+}
+
+const getConversationDisplayName = (
+  conversation: { type: 'direct' | 'group'; name: string | null; members: Array<{ userId: number; fullName: string }> },
+  currentUserId?: number
+) => {
+  if (conversation.type === 'group') {
+    return conversation.name || 'Nhóm chat'
+  }
+  const peer = conversation.members.find((member) => member.userId !== currentUserId)
+  return peer?.fullName || conversation.name || 'Cuộc trò chuyện'
+}
+
+type ActiveCall = {
+  type: 'voice' | 'video'
+  withName: string
+  startedAt: number
+}
+
+type IncomingCallState = {
+  fromUserId: number
+  callType: 'voice' | 'video'
+  conversationId: number | null
+  offer: RTCSessionDescriptionInit
+}
+
+const RTC_CONFIG: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ],
+}
+
+export default function MessagesPage() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const token = useAuthStore((state) => state.accessToken)
+  const user = useAuthStore((state) => state.user)
+  const {
+    conversations,
+    selectedConversationId,
+    messagesByConversation,
+    setConversations,
+    selectConversation,
+    setMessages,
+    appendMessage,
+    upsertMessage,
+  } = useChatStore()
+  const [message, setMessage] = useState('')
+  const [callStatus, setCallStatus] = useState<string | null>(null)
+  const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null)
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
+  const [callSeconds, setCallSeconds] = useState(0)
+  const [busyUploading, setBusyUploading] = useState(false)
+  const [busyActionId, setBusyActionId] = useState<number | null>(null)
+  const [forwardingMessageId, setForwardingMessageId] = useState<number | null>(null)
+  const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>([])
+  const [actionMenu, setActionMenu] = useState<{ messageId: number; x: number; y: number } | null>(null)
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false)
+  const [chatNotice, setChatNotice] = useState<string | null>(null)
+  const [showEmojiPanel, setShowEmojiPanel] = useState(false)
+  const [showStickerPanel, setShowStickerPanel] = useState(false)
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
+  const [showNewMessageModal, setShowNewMessageModal] = useState(false)
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
+  const [newMessageKeyword, setNewMessageKeyword] = useState('')
+  const [searchUsersResult, setSearchUsersResult] = useState<Array<{ id: number; name: string }>>([])
+  const [notifications, setNotifications] = useState<Array<{ id: number; type: string; title: string; body: string | null; created_at: string; is_read: number; meta?: Record<string, unknown> | null }>>([])
+  const [activeStickerPack, setActiveStickerPack] = useState<keyof typeof STICKER_PACKS>('Cute')
+  const [loadedStickerPacks, setLoadedStickerPacks] = useState<Record<string, boolean>>({ Cute: true })
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const [hasMoreHistory, setHasMoreHistory] = useState<Record<number, boolean>>({})
+  const [messageLimitByConversation, setMessageLimitByConversation] = useState<
+    Record<number, { total: number; sent: number; remaining: number; isFriend: boolean } | null>
+  >({})
+  const [friendMap, setFriendMap] = useState<Record<number, FriendConnection>>({})
+  const [pendingFriendRequestTo, setPendingFriendRequestTo] = useState<Record<number, boolean>>({})
+  const [creatingDirectConversation, setCreatingDirectConversation] = useState(false)
+  const [mutedMic, setMutedMic] = useState(false)
+  const [mutedCam, setMutedCam] = useState(false)
+  const [callAnswered, setCallAnswered] = useState(false)
+  const [ringingStartedAt, setRingingStartedAt] = useState<number | null>(null)
+  const [isSendingMessage, setIsSendingMessage] = useState(false)
+  const sendingMessageRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const videoInputRef = useRef<HTMLInputElement | null>(null)
+  const longPressTimer = useRef<number | null>(null)
+  const localVideoRef = useRef<HTMLVideoElement | null>(null)
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
+  const messagesWrapRef = useRef<HTMLDivElement | null>(null)
+
+  const VIRTUAL_CHUNK = 50
+  const virtualSlice = useMemo(() => {
+    const allMessages = selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []
+    if (allMessages.length <= VIRTUAL_CHUNK) {
+      return { items: allMessages, startIndex: 0, endIndex: allMessages.length }
+    }
+    return {
+      items: allMessages.slice(-VIRTUAL_CHUNK),
+      startIndex: Math.max(0, allMessages.length - VIRTUAL_CHUNK),
+      endIndex: allMessages.length,
+    }
+  }, [messagesByConversation, selectedConversationId])
+
+  const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
+  const queryConversationId = Number(searchParams.get('conversation') || 0)
+
+  useEffect(() => {
+    if (!token) return
+
+    const loadConversations = async () => {
+      const response = await api.listConversations(token)
+      setConversations(response.conversations)
+
+      if (!selectedConversationId && response.conversations.length > 0) {
+        selectConversation(response.conversations[0].id)
+      }
+
+      if (queryConversationId > 0 && response.conversations.some((item) => item.id === queryConversationId)) {
+        selectConversation(queryConversationId)
+      }
+    }
+
+    loadConversations().catch(console.error)
+  }, [queryConversationId, token, selectedConversationId, selectConversation, setConversations])
+
+  useEffect(() => {
+    if (!token || !selectedConversationId) return
+
+    api
+      .listMessages(token, selectedConversationId, { limit: 25 })
+      .then((response) => {
+        setMessages(selectedConversationId, response.messages)
+        setHasMoreHistory((prev) => ({ ...prev, [selectedConversationId]: response.messages.length >= 25 }))
+        setMessageLimitByConversation((prev) => ({
+          ...prev,
+          [selectedConversationId]: response.messageLimit || null,
+        }))
+      })
+      .catch(console.error)
+  }, [token, selectedConversationId, setMessages])
+
+  useEffect(() => {
+    if (!token) return
+    api
+      .notifications(token)
+      .then((result) => {
+        const items = (result.notifications || [])
+          .filter((item) => item.type === 'missed-call' || item.type === 'message' || item.type === 'friend-request')
+          .slice(0, 40)
+        setNotifications(items)
+      })
+      .catch(() => undefined)
+  }, [token])
+
+  useEffect(() => {
+    if (!token || !newMessageKeyword.trim()) {
+      setSearchUsersResult([])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      api
+        .searchUsers(token, newMessageKeyword.trim())
+        .then((result) => {
+          const users = (result.users || [])
+            .map((item) => ({
+              id: Number(item.id || 0),
+              name: String(item.full_name || item.fullName || item.email || item.phone || ''),
+            }))
+            .filter((item) => item.id > 0)
+          setSearchUsersResult(users)
+        })
+        .catch(() => setSearchUsersResult([]))
+    }, 260)
+
+    return () => window.clearTimeout(timer)
+  }, [newMessageKeyword, token])
+
+  useEffect(() => {
+    if (!selectedConversationId) return
+    setComposerMenuOpen(false)
+    setShowEmojiPanel(false)
+    setShowStickerPanel(false)
+    setShowJumpToLatest(false)
+  }, [selectedConversationId])
+
+  useEffect(() => {
+    if (!selectedConversationId || !queryConversationId) return
+    if (selectedConversationId === queryConversationId) return
+    selectConversation(queryConversationId)
+  }, [queryConversationId, selectedConversationId, selectConversation])
+
+  useEffect(() => {
+    if (!token) return
+
+    const socket = connectSocket(token)
+    socket.on('message:new', (payload) => {
+      upsertMessage(payload.conversationId, payload)
+    })
+
+    socket.on('message:reaction', (payload) => {
+      upsertMessage(payload.conversationId, payload.message)
+    })
+
+    socket.on('message:updated', (payload) => {
+      upsertMessage(payload.conversationId, payload.message)
+    })
+
+    socket.on('notification:new', (payload) => {
+      if (!payload || payload.type !== 'message') return
+      api
+        .listConversations(token)
+        .then((response) => setConversations(response.conversations))
+        .catch(() => undefined)
+    })
+
+    socket.on('call:offer', (payload) => {
+      if (!payload.offer) return
+      const incomingConversationId = Number(payload.conversationId || 0) || null
+      setIncomingCall({
+        fromUserId: Number(payload.fromUserId),
+        callType: payload.callType || 'voice',
+        conversationId: incomingConversationId,
+        offer: payload.offer,
+      })
+      setCallStatus(`Cuộc gọi ${payload.callType === 'video' ? 'video' : 'thoại'} đến`)
+    })
+
+    socket.on('call:answer', async (payload) => {
+      const fromUserId = Number(payload.fromUserId || 0)
+      const peer = peersRef.current.get(fromUserId)
+      if (peer && payload.answer) {
+        await peer.setRemoteDescription(new RTCSessionDescription(payload.answer))
+      }
+      setCallAnswered(true)
+      setRingingStartedAt(null)
+      setCallStatus('Người nhận đã tham gia cuộc gọi')
+    })
+
+    socket.on('call:ice-candidate', async (payload) => {
+      const fromUserId = Number(payload.fromUserId || 0)
+      const peer = peersRef.current.get(fromUserId)
+      if (!peer || !payload.candidate) return
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(payload.candidate))
+      } catch (error) {
+        console.error('Failed to add ICE candidate', error)
+      }
+    })
+
+    socket.on('call:end', () => {
+      setCallStatus('Cuộc gọi đã kết thúc')
+      setIncomingCall(null)
+      peersRef.current.forEach((peer) => peer.close())
+      peersRef.current.clear()
+      localStreamRef.current?.getTracks().forEach((track) => track.stop())
+      localStreamRef.current = null
+      setRemoteStreams([])
+      setActiveCall(null)
+      setCallSeconds(0)
+      setCallAnswered(false)
+      setRingingStartedAt(null)
+    })
+
+    return () => {
+      socket.off('message:new')
+      socket.off('message:reaction')
+      socket.off('message:updated')
+      socket.off('notification:new')
+      socket.off('call:offer')
+      socket.off('call:answer')
+      socket.off('call:ice-candidate')
+      socket.off('call:end')
+      disconnectSocket()
+    }
+  }, [setConversations, token, upsertMessage])
+
+  useEffect(() => {
+    if (!selectedConversationId) return
+    const socket = getSocket()
+    if (!socket) return
+
+    socket.emit('join-conversation', selectedConversationId)
+    return () => {
+      socket.emit('leave-conversation', selectedConversationId)
+    }
+  }, [selectedConversationId])
+
+  useEffect(() => {
+    if (!activeCall) return
+    setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
+    const timer = window.setInterval(() => {
+      setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
+    }, 1000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [activeCall])
+
+  const messages = useMemo(
+    () => (selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []),
+    [messagesByConversation, selectedConversationId]
+  )
+
+  const [searchTerm, setSearchTerm] = useState('')
+
+  useEffect(() => {
+    if (!token || !user?.id) return
+    api
+      .listFriends(token)
+      .then((result) => {
+        const map: Record<number, FriendConnection> = {}
+        result.friends.forEach((friend) => {
+          map[friend.id] = friend
+        })
+        setFriendMap(map)
+      })
+      .catch((error) => console.error('Không thể tải danh sách bạn bè', error))
+  }, [token, user?.id])
+
+  const filteredConversations = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase()
+    if (!q) return conversations
+    return conversations.filter((conversation) =>
+      getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
+    )
+  }, [conversations, searchTerm, user?.id])
+
+  const callTargetId = useMemo(() => {
+    if (!selectedConversation || !user?.id) return null
+    const directTarget = selectedConversation.members.find((m) => m.userId !== user.id)
+    return directTarget?.userId || null
+  }, [selectedConversation, user?.id])
+
+  const callTargets = useMemo(() => {
+    if (!selectedConversation || !user?.id) return []
+    return selectedConversation.members.map((m) => m.userId).filter((id) => id !== user.id)
+  }, [selectedConversation, user?.id])
+
+  useEffect(() => {
+    if (!activeCall || callAnswered || !ringingStartedAt) return
+
+    const timeoutMs = 60_000 - (Date.now() - ringingStartedAt)
+    const conversationId = selectedConversationId
+    const targets = [...callTargets]
+
+    const autoEnd = () => {
+      const socket = getSocket()
+      if (socket && conversationId) {
+        targets.forEach((targetUserId) => {
+          socket.emit('call:end', {
+            targetUserId,
+            conversationId,
+          })
+        })
+      }
+      closeCallResources()
+      setCallStatus('Không có phản hồi sau 1 phút. Cuộc gọi đã tự kết thúc.')
+      setIncomingCall(null)
+      setActiveCall(null)
+      setCallSeconds(0)
+      setCallAnswered(false)
+      setRingingStartedAt(null)
+    }
+
+    if (timeoutMs <= 0) {
+      autoEnd()
+      return
+    }
+
+    const timer = window.setTimeout(autoEnd, timeoutMs)
+    return () => window.clearTimeout(timer)
+  }, [activeCall, callAnswered, callTargets, ringingStartedAt, selectedConversationId])
+
+  const directPeer = useMemo(() => {
+    if (!selectedConversation || !user?.id) return null
+    if (selectedConversation.type !== 'direct') return null
+    const member = selectedConversation.members.find((m) => m.userId !== user.id)
+    if (!member) return null
+    return {
+      id: member.userId,
+      name: member.fullName,
+    }
+  }, [selectedConversation, user?.id])
+
+  const directPeerFriendship = directPeer ? friendMap[directPeer.id] : null
+  const isDirectPeerFriend = Boolean(directPeerFriendship && directPeerFriendship.status === 'accepted')
+
+  const ensureLocalStream = async (callType: 'voice' | 'video') => {
+    if (localStreamRef.current) return localStreamRef.current
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: callType === 'video',
+    })
+    localStreamRef.current = stream
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream
+    }
+    return stream
+  }
+
+  const buildPeerConnection = async (targetUserId: number, callType: 'voice' | 'video') => {
+    const socket = getSocket()
+    if (!socket || !selectedConversationId) return null
+
+    const pc = new RTCPeerConnection(RTC_CONFIG)
+    const localStream = await ensureLocalStream(callType)
+
+    localStream.getTracks().forEach((track) => {
+      pc.addTrack(track, localStream)
+    })
+
+    pc.ontrack = (event) => {
+      const [stream] = event.streams
+      if (!stream) return
+      setRemoteStreams((prev) => {
+        const found = prev.find((item) => item.userId === targetUserId)
+        if (found) {
+          return prev.map((item) => (item.userId === targetUserId ? { userId: targetUserId, stream } : item))
+        }
+        return [...prev, { userId: targetUserId, stream }]
+      })
+    }
+
+    pc.onicecandidate = (event) => {
+      if (!event.candidate) return
+      socket.emit('call:ice-candidate', {
+        targetUserId,
+        conversationId: selectedConversationId,
+        candidate: event.candidate,
+      })
+    }
+
+    peersRef.current.set(targetUserId, pc)
+    return pc
+  }
+
+  const closeCallResources = () => {
+    peersRef.current.forEach((peer) => peer.close())
+    peersRef.current.clear()
+    localStreamRef.current?.getTracks().forEach((track) => track.stop())
+    localStreamRef.current = null
+    setRemoteStreams([])
+    setMutedCam(false)
+    setMutedMic(false)
+  }
+
+  const handleRequestFriend = async () => {
+    if (!token || !directPeer) return
+    setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: true }))
+    try {
+      await api.requestFriend(token, directPeer.id)
+      setChatNotice('Đã gửi lời mời kết bạn. Hãy chờ đối phương chấp nhận để nhắn không giới hạn.')
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể gửi lời mời kết bạn.')
+      }
+    } finally {
+      setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
+    }
+  }
+
+  const handleOpenOrCreateDirectConversation = async (targetUserId: number) => {
+    if (!token) return
+
+    const existing = conversations.find(
+      (conv) => conv.type === 'direct' && conv.members.some((m) => m.userId === targetUserId)
+    )
+    if (existing) {
+      selectConversation(existing.id)
+      return
+    }
+
+    setCreatingDirectConversation(true)
+    try {
+      const result = await api.createDirectConversation(token, targetUserId)
+      const refreshed = await api.listConversations(token)
+      setConversations(refreshed.conversations)
+      selectConversation(result.conversation.id)
+      setChatNotice('Đã mở cuộc trò chuyện trực tiếp.')
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể mở cuộc trò chuyện.')
+      }
+    } finally {
+      setCreatingDirectConversation(false)
+    }
+  }
+
+  const handlePickAttachmentType = (type: 'image' | 'video' | 'file') => {
+    if (!selectedConversationId) {
+      setChatNotice('Vui lòng chọn cuộc trò chuyện trước khi gửi tệp.')
+      setComposerMenuOpen(false)
+      return
+    }
+
+    setComposerMenuOpen(false)
+    if (type === 'image') {
+      imageInputRef.current?.click()
+      return
+    }
+    if (type === 'video') {
+      videoInputRef.current?.click()
+      return
+    }
+    fileInputRef.current?.click()
+  }
+
+  const handleCreateConversationWithUser = async (targetUserId: number) => {
+    if (!token) return
+    try {
+      const created = await api.createDirectConversation(token, targetUserId)
+      const refreshed = await api.listConversations(token)
+      setConversations(refreshed.conversations)
+      selectConversation(created.conversation.id)
+      setShowNewMessageModal(false)
+      setNewMessageKeyword('')
+      setSearchUsersResult([])
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      }
+    }
+  }
+
+  const handleOpenNotificationConversation = (conversationId: number | null | undefined) => {
+    if (!conversationId) return
+    selectConversation(Number(conversationId))
+    setShowNotificationsDrawer(false)
+  }
+
+  const loadOlderMessages = async () => {
+    if (!token || !selectedConversationId || loadingOlderMessages) return
+    if (!hasMoreHistory[selectedConversationId]) return
+
+    const currentMessages = messagesByConversation[selectedConversationId] || []
+    if (currentMessages.length === 0) return
+    const beforeId = currentMessages[0]?.id
+    if (!beforeId) return
+
+    setLoadingOlderMessages(true)
+    const previousScrollHeight = messagesWrapRef.current?.scrollHeight || 0
+
+    try {
+      const response = await api.listMessages(token, selectedConversationId, {
+        limit: 20,
+        beforeId,
+      })
+
+      if (response.messages.length === 0) {
+        setHasMoreHistory((prev) => ({ ...prev, [selectedConversationId]: false }))
+        return
+      }
+
+      const merged = [...response.messages, ...currentMessages]
+      setMessages(selectedConversationId, merged)
+      setHasMoreHistory((prev) => ({ ...prev, [selectedConversationId]: response.messages.length >= 20 }))
+      setMessageLimitByConversation((prev) => ({
+        ...prev,
+        [selectedConversationId]: response.messageLimit || prev[selectedConversationId] || null,
+      }))
+
+      requestAnimationFrame(() => {
+        if (!messagesWrapRef.current) return
+        const newScrollHeight = messagesWrapRef.current.scrollHeight
+        messagesWrapRef.current.scrollTop = newScrollHeight - previousScrollHeight
+      })
+    } catch (error) {
+      console.error('Không thể tải tin nhắn cũ hơn', error)
+    } finally {
+      setLoadingOlderMessages(false)
+    }
+  }
+
+  const handleSend = async () => {
+    if (!message.trim() || !token || !selectedConversationId || sendingMessageRef.current) return
+
+    sendingMessageRef.current = true
+    setIsSendingMessage(true)
+    try {
+      const response = await api.sendMessage(token, selectedConversationId, message)
+      upsertMessage(selectedConversationId, response.message)
+      setMessage('')
+      setChatNotice(null)
+      setShowEmojiPanel(false)
+      setShowStickerPanel(false)
+
+      setMessageLimitByConversation((prev) => {
+        const current = prev[selectedConversationId]
+        if (!current) return prev
+        return {
+          ...prev,
+          [selectedConversationId]: {
+            ...current,
+            sent: current.sent + 1,
+            remaining: Math.max(0, current.remaining - 1),
+          },
+        }
+      })
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
+        setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+      } else if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể gửi tin nhắn.')
+      }
+      console.error('Failed to send message:', error)
+    } finally {
+      sendingMessageRef.current = false
+      setIsSendingMessage(false)
+    }
+  }
+
+  const fileToBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : ''
+        const base64 = result.includes(',') ? result.split(',')[1] : result
+        resolve(base64)
+      }
+      reader.onerror = () => reject(new Error('Không thể đọc file'))
+      reader.readAsDataURL(file)
+    })
+
+  const mapTypeFromFile = (file: File): 'image' | 'video' | 'audio' | 'file' => {
+    if (file.type.startsWith('image/')) return 'image'
+    if (file.type.startsWith('video/')) return 'video'
+    if (file.type.startsWith('audio/')) return 'audio'
+    return 'file'
+  }
+
+  const handlePickAttachment = () => {
+    if (!selectedConversationId) {
+      setChatNotice('Vui lòng chọn cuộc trò chuyện trước khi gửi tệp.')
+      return
+    }
+    setComposerMenuOpen((prev) => !prev)
+  }
+
+  const handleFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !token || !selectedConversationId) return
+
+    setBusyUploading(true)
+    setChatNotice(null)
+    try {
+      const base64Data = await fileToBase64(file)
+      const upload = await api.uploadMessageBase64(token, selectedConversationId, {
+        fileName: file.name,
+        contentType: file.type || 'application/octet-stream',
+        base64Data,
+      })
+
+      const response = await api.sendMessagePayload(token, selectedConversationId, {
+        type: mapTypeFromFile(file),
+        mediaUrl: upload.mediaUrl,
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+      })
+      upsertMessage(selectedConversationId, response.message)
+      setChatNotice('Đã gửi tệp thành công.')
+      setMessageLimitByConversation((prev) => {
+        const current = prev[selectedConversationId]
+        if (!current) return prev
+        return {
+          ...prev,
+          [selectedConversationId]: {
+            ...current,
+            sent: current.sent + 1,
+            remaining: Math.max(0, current.remaining - 1),
+          },
+        }
+      })
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
+        setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+      } else if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể gửi file đính kèm.')
+      }
+      console.error('Không thể gửi file đính kèm:', error)
+    } finally {
+      setBusyUploading(false)
+      event.target.value = ''
+    }
+  }
+
+  const handleReaction = async (chatMessage: ChatMessage, reaction: 'like' | 'love' | 'care') => {
+    if (!token) return
+    setBusyActionId(chatMessage.id)
+    try {
+      let response: { chatMessage: ChatMessage }
+      if (chatMessage.viewerReaction === reaction) {
+        response = await api.removeMessageReaction(token, chatMessage.id)
+      } else {
+        response = await api.reactMessage(token, chatMessage.id, reaction)
+      }
+      upsertMessage(chatMessage.conversationId, response.chatMessage)
+    } catch (error) {
+      console.error('Không thể cập nhật cảm xúc:', error)
+      setChatNotice('Không thể cập nhật cảm xúc cho tin nhắn này.')
+    } finally {
+      setBusyActionId(null)
+    }
+  }
+
+  const handleRecall = async (chatMessage: ChatMessage) => {
+    if (!token || chatMessage.senderId !== user?.id) return
+    setBusyActionId(chatMessage.id)
+    try {
+      const response = await api.recallMessage(token, chatMessage.id)
+      upsertMessage(chatMessage.conversationId, response.chatMessage)
+    } catch (error) {
+      console.error('Không thể thu hồi tin nhắn:', error)
+      setChatNotice('Không thể thu hồi tin nhắn này.')
+    } finally {
+      setBusyActionId(null)
+    }
+  }
+
+  const handleForward = async (targetConversationId: number) => {
+    if (!token || !forwardingMessageId) return
+    setBusyActionId(forwardingMessageId)
+    try {
+      const response = await api.forwardMessage(token, forwardingMessageId, targetConversationId)
+      if (selectedConversationId === targetConversationId) {
+        upsertMessage(targetConversationId, response.chatMessage)
+      }
+      setForwardingMessageId(null)
+      setChatNotice('Đã chuyển tiếp tin nhắn thành công.')
+      api.listConversations(token).then((res) => setConversations(res.conversations)).catch(() => undefined)
+    } catch (error) {
+      console.error('Không thể chuyển tiếp tin nhắn:', error)
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể chuyển tiếp tin nhắn.')
+      }
+    } finally {
+      setBusyActionId(null)
+    }
+  }
+
+  const handleStartCall = async (callType: 'voice' | 'video') => {
+    const socket = getSocket()
+    if (!socket || !selectedConversationId || callTargets.length === 0) return
+
+    try {
+      await ensureLocalStream(callType)
+      for (const targetUserId of callTargets) {
+        const pc = await buildPeerConnection(targetUserId, callType)
+        if (!pc) continue
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+
+        socket.emit('call:offer', {
+          targetUserId,
+          conversationId: selectedConversationId,
+          callType,
+          offer,
+        })
+      }
+    } catch (error) {
+      console.error('Không thể bắt đầu cuộc gọi:', error)
+      return
+    }
+
+    setCallStatus(`Đang gọi ${callType === 'video' ? 'video' : 'thoại'} tới ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'người nhận'}`)
+    setCallAnswered(false)
+    setRingingStartedAt(Date.now())
+    setActiveCall({
+      type: callType,
+      withName: selectedConversation
+        ? getConversationDisplayName(selectedConversation, user?.id)
+        : `Người dùng #${callTargetId}`,
+      startedAt: Date.now(),
+    })
+  }
+
+  const handleAcceptIncomingCall = async () => {
+    const socket = getSocket()
+    if (!socket || !incomingCall || !selectedConversationId) return
+
+    try {
+      const pc = (await buildPeerConnection(incomingCall.fromUserId, incomingCall.callType)) || undefined
+      if (!pc) return
+      await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer))
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+
+      socket.emit('call:answer', {
+        targetUserId: incomingCall.fromUserId,
+        conversationId: selectedConversationId,
+        answer,
+      })
+    } catch (error) {
+      console.error('Không thể chấp nhận cuộc gọi:', error)
+      return
+    }
+
+    setCallStatus('Đã chấp nhận cuộc gọi')
+    setCallAnswered(true)
+    setRingingStartedAt(null)
+    setActiveCall({
+      type: incomingCall.callType,
+      withName: selectedConversation
+        ? getConversationDisplayName(selectedConversation, user?.id)
+        : `Người dùng #${incomingCall.fromUserId}`,
+      startedAt: Date.now(),
+    })
+    setIncomingCall(null)
+  }
+
+  const handleEndCall = () => {
+    const socket = getSocket()
+    if (!socket || !selectedConversationId) return
+    callTargets.forEach((targetUserId) => {
+      socket.emit('call:end', {
+        targetUserId,
+        conversationId: selectedConversationId,
+      })
+    })
+    closeCallResources()
+    setCallStatus('Bạn đã kết thúc cuộc gọi')
+    setIncomingCall(null)
+    setActiveCall(null)
+    setCallSeconds(0)
+    setCallAnswered(false)
+    setRingingStartedAt(null)
+  }
+
+  useEffect(() => {
+    return () => {
+      closeCallResources()
+    }
+  }, [])
+
+  useEffect(() => {
+    const closeMenu = () => setActionMenu(null)
+    window.addEventListener('click', closeMenu)
+    return () => window.removeEventListener('click', closeMenu)
+  }, [])
+
+  const selectedName = selectedConversation
+    ? getConversationDisplayName(selectedConversation, user?.id)
+    : 'Chọn cuộc trò chuyện'
+  const initials = (user?.fullName?.[0] || 'U').toUpperCase()
+  const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
+
+  const renderMessagePreview = (msg: ChatMessage) => {
+    const recalled = Boolean(msg.meta && (msg.meta as Record<string, unknown>).recalled)
+    const forwarded = Boolean(msg.meta && (msg.meta as Record<string, unknown>).forwarded)
+
+    if (recalled) {
+      return <p className={styles.recalledText}>Tin nhắn đã được thu hồi</p>
+    }
+
+    if (msg.type === 'image' && msg.mediaUrl) {
+      return (
+        <div className={styles.mediaWrap}>
+          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          <img
+            src={msg.mediaUrl}
+            alt={msg.fileName || 'image'}
+            loading="lazy"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none'
+            }}
+          />
+        </div>
+      )
+    }
+
+    if (msg.type === 'video' && msg.mediaUrl) {
+      return (
+        <div className={styles.mediaWrap}>
+          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          <video controls src={msg.mediaUrl} />
+        </div>
+      )
+    }
+
+    if (msg.type === 'audio' && msg.mediaUrl) {
+      return (
+        <div className={styles.mediaWrap}>
+          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          <audio controls src={msg.mediaUrl} />
+        </div>
+      )
+    }
+
+    if (msg.type === 'sticker') {
+      const sticker = (msg.meta?.sticker as string) || msg.text || '😀'
+      return <p className={styles.stickerBubble}>{sticker}</p>
+    }
+
+    if (msg.mediaUrl) {
+      return (
+        <div className={styles.mediaWrap}>
+          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className={styles.fileLink}>
+            {msg.fileName || 'Mở tệp đính kèm'}
+          </a>
+        </div>
+      )
+    }
+
+    return (
+      <p className={styles.messageText}>
+        {forwarded ? <small className={styles.forwardTagInline}>[Đã chuyển tiếp] </small> : null}
+        {msg.text || ''}
+      </p>
+    )
+  }
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.layout}>
+        <aside className={styles.rail}>
+          <div className={styles.railLogo}>M</div>
+          <nav className={styles.railNav}>
+            <button type="button" className={`${styles.railBtn} ${styles.railBtnActive}`}>
+              <Send size={16} />
+            </button>
+            <button type="button" className={styles.railBtn} onClick={() => setShowNewMessageModal(true)}>
+              <UserPlus size={16} />
+            </button>
+            <button type="button" className={styles.railBtn} onClick={() => setShowNotificationsDrawer(true)}>
+              <Bell size={16} />
+            </button>
+            <button type="button" className={`${styles.railBtn} ${styles.railBottomBtn}`}>
+              <Info size={16} />
+            </button>
+          </nav>
+          <div className={styles.railAvatar}>{initials}</div>
+        </aside>
+
+        <section className={styles.listPanel}>
+          <div className={styles.listHeader}>
+            <h1>Tất cả cuộc trò chuyện</h1>
+            <div className={styles.searchWrap}>
+              <Search size={14} />
+              <input
+                placeholder="Search conversations"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className={styles.convList}>
+            {filteredConversations.map((conv) => {
+              const isActive = conv.id === selectedConversationId
+              const name = getConversationDisplayName(conv, user?.id)
+              const fallback = (name[0] || 'C').toUpperCase()
+              return (
+                <button
+                  key={conv.id}
+                  type="button"
+                  onClick={() => selectConversation(conv.id)}
+                  className={`${styles.convItem} ${isActive ? styles.convItemActive : ''}`}
+                >
+                  <div className={styles.convAvatar}>{fallback}</div>
+                  <div className={styles.convText}>
+                    <div className={styles.convLineTop}>
+                      <strong>{name}</strong>
+                      <span>Chat</span>
+                    </div>
+                    <p>{conv.unreadCount > 0 ? `${conv.unreadCount} tin nhắn chưa đọc` : 'Nhấn để mở hội thoại'}</p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
+        <section className={styles.chatPanel}>
+          <header className={styles.chatHeader}>
+            <div className={styles.chatIdentity}>
+              <div className={styles.convAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
+              <div>
+                <h2>
+                  {directPeer ? <Link to={`/profile/${directPeer.id}`}>{selectedName}</Link> : selectedName}
+                </h2>
+                <p>
+                  {directPeer
+                    ? isDirectPeerFriend
+                      ? 'Bạn bè • Online'
+                      : 'Chưa kết bạn • Giới hạn 3 tin nhắn'
+                    : 'Online'}
+                </p>
+              </div>
+            </div>
+            <div className={styles.chatActions}>
+              <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId}>
+                <Video size={16} />
+              </button>
+              <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId}>
+                <Phone size={16} />
+              </button>
+              <button type="button">
+                <UserPlus size={16} />
+              </button>
+              <button type="button">
+                <Info size={16} />
+              </button>
+            </div>
+          </header>
+
+          {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
+            <div className={styles.limitBadge}>
+              Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phí trước khi cần kết bạn.
+            </div>
+          ) : null}
+
+          {directPeer ? (
+            <div className={styles.chatSocialBar}>
+              <button
+                type="button"
+                className={styles.socialActionBtn}
+                onClick={() => handleOpenOrCreateDirectConversation(directPeer.id)}
+                disabled={creatingDirectConversation}
+              >
+                {creatingDirectConversation ? 'Đang mở hội thoại...' : 'Nhắn tin'}
+              </button>
+              {!isDirectPeerFriend ? (
+                <button
+                  type="button"
+                  className={styles.socialActionBtnPrimary}
+                  onClick={handleRequestFriend}
+                  disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
+                >
+                  {pendingFriendRequestTo[directPeer.id] ? 'Đang gửi lời mời...' : 'Kết bạn để nhắn không giới hạn'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {chatNotice ? <p className={styles.chatNotice}>{chatNotice}</p> : null}
+
+          {(callStatus || incomingCall) && (
+            <div className={styles.callBanner}>
+              {callStatus ? <p>{callStatus}</p> : null}
+              {incomingCall ? (
+                <div className={styles.callBannerActions}>
+                  <button type="button" onClick={handleAcceptIncomingCall}>
+                    Chấp nhận
+                  </button>
+                  <button type="button" onClick={() => setIncomingCall(null)}>
+                    Từ chối
+                  </button>
+                </div>
+              ) : null}
+              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId}>
+                <PhoneOff size={14} />
+                Kết thúc
+              </button>
+            </div>
+          )}
+
+          <div className={styles.timeline}>TODAY</div>
+
+          <div
+            className={styles.messagesWrap}
+            ref={messagesWrapRef}
+            onScroll={(event) => {
+              const element = event.currentTarget
+              if (element.scrollTop <= 24) {
+                loadOlderMessages().catch(() => undefined)
+              }
+              const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
+              setShowJumpToLatest(fromBottom > 260)
+            }}
+          >
+            {loadingOlderMessages ? <p className={styles.historyLoading}>Đang tải tin nhắn cũ hơn...</p> : null}
+            {virtualSlice.startIndex > 0 ? (
+              <p className={styles.virtualHint}>Đang hiển thị {VIRTUAL_CHUNK} tin nhắn mới nhất. Cuộn lên để tải thêm lịch sử.</p>
+            ) : null}
+            {virtualSlice.items.map((msg) => {
+              const mine = msg.senderId === user?.id
+              return (
+                <div key={msg.id} className={`${styles.messageRow} ${mine ? styles.messageRowMine : ''}`}>
+                  {!mine ? <div className={styles.messageAvatar}>{(msg.senderName[0] || 'U').toUpperCase()}</div> : null}
+                  <div className={styles.messageBlock}>
+                    {!mine ? (
+                      <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
+                        {msg.senderName}
+                      </Link>
+                    ) : null}
+                    <div
+                      className={`${styles.bubble} ${mine ? styles.bubbleMine : ''}`}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        setActionMenu({ messageId: msg.id, x: event.clientX, y: event.clientY })
+                      }}
+                      onTouchStart={(event) => {
+                        const touch = event.touches[0]
+                        longPressTimer.current = window.setTimeout(() => {
+                          setActionMenu({ messageId: msg.id, x: touch.clientX, y: touch.clientY })
+                        }, 420)
+                      }}
+                      onTouchEnd={() => {
+                        if (longPressTimer.current) {
+                          window.clearTimeout(longPressTimer.current)
+                          longPressTimer.current = null
+                        }
+                      }}
+                    >
+                      {renderMessagePreview(msg)}
+                      {msg.reactionCount > 0 ? (
+                        <div className={styles.reactionSummary}>{reactionSummaryText(msg)}</div>
+                      ) : null}
+                      <div className={styles.reactionBar}>
+                        <button
+                          type="button"
+                          disabled={busyActionId === msg.id}
+                          onClick={() => handleReaction(msg, 'like')}
+                          className={msg.viewerReaction === 'like' ? styles.reactionActive : ''}
+                        >
+                          <ThumbsUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyActionId === msg.id}
+                          onClick={() => handleReaction(msg, 'love')}
+                          className={msg.viewerReaction === 'love' ? styles.reactionActive : ''}
+                        >
+                          <Heart size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyActionId === msg.id}
+                          onClick={() => handleReaction(msg, 'care')}
+                          className={msg.viewerReaction === 'care' ? styles.reactionActive : ''}
+                        >
+                          <Smile size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyActionId === msg.id}
+                          onClick={() => setForwardingMessageId(msg.id)}
+                        >
+                          <Forward size={13} />
+                        </button>
+                        {mine ? (
+                          <button type="button" disabled={busyActionId === msg.id} onClick={() => handleRecall(msg)}>
+                            Thu hồi
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <span className={styles.messageTime}>
+                      {formatVietnamTime(msg.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+
+            {messages.length === 0 ? <p className={styles.empty}>Chưa có tin nhắn trong cuộc trò chuyện này.</p> : null}
+          </div>
+
+          <footer className={styles.inputBar}>
+            <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} />
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className={styles.hiddenFileInput}
+              onChange={handleFileSelected}
+            />
+            <input
+              ref={videoInputRef}
+              type="file"
+              accept="video/*"
+              className={styles.hiddenFileInput}
+              onChange={handleFileSelected}
+            />
+            <button type="button" className={styles.inputIcon} onClick={handlePickAttachment} disabled={busyUploading}>
+              <CirclePlus size={18} />
+            </button>
+            {composerMenuOpen ? (
+              <div className={styles.composerPlusMenu}>
+                <button type="button" onClick={() => handlePickAttachmentType('image')}>
+                  <span>🖼️</span>
+                  <span>Gửi ảnh</span>
+                </button>
+                <button type="button" onClick={() => handlePickAttachmentType('video')}>
+                  <span>🎬</span>
+                  <span>Gửi video</span>
+                </button>
+                <button type="button" onClick={() => handlePickAttachmentType('file')}>
+                  <span>📎</span>
+                  <span>Gửi tệp</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEmojiPanel(true)
+                    setShowStickerPanel(false)
+                    setComposerMenuOpen(false)
+                  }}
+                >
+                  <span>😊</span>
+                  <span>Chèn emoji</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStickerPanel((prev) => !prev)
+                    setShowEmojiPanel(false)
+                    setComposerMenuOpen(false)
+                  }}
+                >
+                  <Sticker size={16} />
+                  <span>Gửi sticker</span>
+                </button>
+              </div>
+            ) : null}
+            <textarea
+              placeholder="Type a message..."
+              value={message}
+              rows={1}
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  handleSend()
+                }
+              }}
+            />
+            <button type="button" className={styles.inputIcon} onClick={() => fileInputRef.current?.click()} disabled={busyUploading}>
+              <Paperclip size={16} />
+            </button>
+            <button
+              type="button"
+              className={styles.inputIcon}
+              onClick={() => {
+                setShowEmojiPanel((prev) => !prev)
+                setShowStickerPanel(false)
+                setComposerMenuOpen(false)
+              }}
+              disabled={busyUploading}
+            >
+              <Smile size={16} />
+            </button>
+            <button
+              type="button"
+              className={styles.sendBtn}
+              onClick={handleSend}
+              disabled={!message.trim() || isSendingMessage}
+            >
+              <Send size={17} />
+            </button>
+
+            {showEmojiPanel ? (
+              <div className={styles.emojiPanel}>
+                {EMOJI_SET.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => setMessage((prev) => `${prev}${emoji}`)}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {showStickerPanel ? (
+              <div className={styles.stickerPanel}>
+                <div className={styles.stickerTabs}>
+                  {(Object.keys(STICKER_PACKS) as Array<keyof typeof STICKER_PACKS>).map((packName) => (
+                    <button
+                      key={packName}
+                      type="button"
+                      className={packName === activeStickerPack ? styles.stickerTabActive : ''}
+                      onClick={() => {
+                        setActiveStickerPack(packName)
+                        if (!loadedStickerPacks[packName]) {
+                          setTimeout(() => {
+                            setLoadedStickerPacks((prev) => ({ ...prev, [packName]: true }))
+                          }, 220)
+                        }
+                      }}
+                    >
+                      {packName}
+                    </button>
+                  ))}
+                </div>
+                {loadedStickerPacks[activeStickerPack] ? STICKER_PACKS[activeStickerPack].map((sticker) => (
+                  <button
+                    key={sticker}
+                    type="button"
+                    onClick={async () => {
+                      if (!token || !selectedConversationId) return
+                      try {
+                        const response = await api.sendMessagePayload(token, selectedConversationId, {
+                          type: 'sticker',
+                          text: sticker,
+                          sticker,
+                        })
+                        upsertMessage(selectedConversationId, response.message)
+                        setShowStickerPanel(false)
+                        setMessageLimitByConversation((prev) => {
+                          const current = prev[selectedConversationId]
+                          if (!current) return prev
+                          return {
+                            ...prev,
+                            [selectedConversationId]: {
+                              ...current,
+                              sent: current.sent + 1,
+                              remaining: Math.max(0, current.remaining - 1),
+                            },
+                          }
+                        })
+                      } catch (error) {
+                        if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
+                          setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+                        } else if (error instanceof Error) {
+                          setChatNotice(error.message)
+                        }
+                      }
+                    }}
+                  >
+                    {sticker}
+                  </button>
+                )) : <p className={styles.stickerLoading}>Đang tải pack {activeStickerPack}...</p>}
+              </div>
+            ) : null}
+          </footer>
+
+          {showJumpToLatest ? (
+            <button
+              type="button"
+              className={styles.jumpToLatestBtn}
+              onClick={() => {
+                if (!messagesWrapRef.current) return
+                messagesWrapRef.current.scrollTop = messagesWrapRef.current.scrollHeight
+                setShowJumpToLatest(false)
+              }}
+            >
+              Về tin nhắn mới nhất
+            </button>
+          ) : null}
+
+          {showNewMessageModal ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Tin nhắn mới</h3>
+                <input
+                  value={newMessageKeyword}
+                  onChange={(event) => setNewMessageKeyword(event.target.value)}
+                  placeholder="Nhập tên bạn bè hoặc email đăng ký"
+                />
+                <div className={styles.overlayList}>
+                  {searchUsersResult.map((item) => (
+                    <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)}>
+                      {item.name}
+                    </button>
+                  ))}
+                  {searchUsersResult.length === 0 ? <p>Không có kết quả phù hợp.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)}>
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showNotificationsDrawer ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Thông báo nâng cao</h3>
+                <div className={styles.overlayList}>
+                  {notifications.map((item) => {
+                    const conversationId = Number(item.meta?.conversationId || 0) || null
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleOpenNotificationConversation(conversationId)}
+                      >
+                        <strong>{item.title}</strong>
+                        <span>{item.body || 'Thông báo hệ thống'}</span>
+                        <small>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                      </button>
+                    )
+                  })}
+                  {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)}>
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {forwardingMessageId ? (
+            <div className={styles.forwardDialogBackdrop}>
+              <div className={styles.forwardDialog}>
+                <h3>Chuyển tiếp tin nhắn</h3>
+                <p>Chọn cuộc trò chuyện để chuyển tiếp:</p>
+                <div className={styles.forwardList}>
+                  {conversations
+                    .filter((conv) => conv.id !== selectedConversationId)
+                    .map((conv) => (
+                      <button key={conv.id} type="button" onClick={() => handleForward(conv.id)}>
+                        {getConversationDisplayName(conv, user?.id)}
+                      </button>
+                    ))}
+                </div>
+                <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)}>
+                  Hủy
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeCall ? (
+            <div className={styles.callOverlay}>
+              <div className={styles.callBackdropGlow} />
+              <div className={styles.callTopBar}>
+                <div>
+                  <small>Call in progress</small>
+                  <h3>{activeCall.withName}</h3>
+                </div>
+                <div className={styles.callBadge}>{formattedCallTime}</div>
+              </div>
+              <div className={styles.callMainVideo}>
+                {remoteStreams.length > 0 ? (
+                  <div className={styles.remoteGrid}>
+                    {remoteStreams.map((item) => (
+                      <video
+                        key={item.userId}
+                        autoPlay
+                        playsInline
+                        ref={(node) => {
+                          if (!node) return
+                          node.srcObject = item.stream
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.callAvatarBig}>{(activeCall.withName[0] || 'U').toUpperCase()}</div>
+                )}
+              </div>
+              <div className={styles.callMiniVideo}>
+                <video ref={localVideoRef} autoPlay muted playsInline className={styles.localVideo} />
+                <span>Bạn</span>
+              </div>
+              <div className={styles.callControls}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const stream = localStreamRef.current
+                    if (!stream) return
+                    const next = !mutedMic
+                    stream.getAudioTracks().forEach((track) => {
+                      track.enabled = !next
+                    })
+                    setMutedMic(next)
+                  }}
+                >
+                  <Phone size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const stream = localStreamRef.current
+                    if (!stream) return
+                    const next = !mutedCam
+                    stream.getVideoTracks().forEach((track) => {
+                      track.enabled = !next
+                    })
+                    setMutedCam(next)
+                  }}
+                >
+                  <Video size={16} />
+                </button>
+                <button type="button">
+                  <UserPlus size={16} />
+                </button>
+                <button type="button" className={styles.endCallOverlayBtn} onClick={handleEndCall}>
+                  <PhoneOff size={16} />
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {actionMenu ? (
+            <div className={styles.actionMenu} style={{ left: actionMenu.x, top: actionMenu.y }}>
+              {messages
+                .filter((msg) => msg.id === actionMenu.messageId)
+                .map((msg) => {
+                  const mine = msg.senderId === user?.id
+                  return (
+                    <div key={msg.id}>
+                      <button type="button" onClick={() => handleReaction(msg, 'like')}>
+                        Thích
+                      </button>
+                      <button type="button" onClick={() => handleReaction(msg, 'love')}>
+                        Yêu thích
+                      </button>
+                      <button type="button" onClick={() => handleReaction(msg, 'care')}>
+                        Quan tâm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForwardingMessageId(msg.id)
+                          setActionMenu(null)
+                        }}
+                      >
+                        Chuyển tiếp
+                      </button>
+                      {mine ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleRecall(msg)
+                            setActionMenu(null)
+                          }}
+                        >
+                          Thu hồi
+                        </button>
+                      ) : null}
+                    </div>
+                  )
+                })}
+            </div>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  )
+}
