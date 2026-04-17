@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -26,8 +28,8 @@
 }
 
 @theme inline {
-  --font-sans: 'Times New Roman', Times, serif;
-  --font-display: 'Times New Roman', Times, serif;
+  --font-sans: 'Be Vietnam Pro', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Manrope', 'Be Vietnam Pro', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
   --color-card: hsl(var(--card));
@@ -64,7 +66,7 @@
       radial-gradient(900px circle at 95% 8%, rgba(120, 157, 255, 0.18), transparent 52%),
       linear-gradient(180deg, rgba(245, 246, 247, 0.96), rgba(239, 241, 242, 0.96));
     min-height: 100vh;
-    font-family: 'Times New Roman', Times, serif;
+    font-family: var(--font-sans);
   }
 
   h1,
@@ -73,7 +75,7 @@
   h4,
   h5,
   h6 {
-    font-family: 'Times New Roman', Times, serif;
+    font-family: var(--font-display);
     letter-spacing: -0.02em;
   }
 

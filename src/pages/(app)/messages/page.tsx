@@ -1,14 +1,13 @@
 'use client'
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Bell,
   CirclePlus,
-  Forward,
-  Heart,
   Info,
+  MoreHorizontal,
   Paperclip,
   Phone,
   PhoneOff,
@@ -16,7 +15,6 @@ import {
   Send,
   Smile,
   Sticker,
-  ThumbsUp,
   UserPlus,
   Video,
 } from 'lucide-react'
@@ -179,6 +177,7 @@ export default function MessagesPage() {
   const localStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
 
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
@@ -195,6 +194,20 @@ export default function MessagesPage() {
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
   const queryConversationId = searchParams.get('conversation') || ''
+
+  const reloadFriendMap = useCallback(async () => {
+    if (!token || !user?.id) return
+    try {
+      const result = await api.listFriends(token)
+      const map: Record<number, FriendConnection> = {}
+      result.friends.forEach((friend) => {
+        map[friend.id] = friend
+      })
+      setFriendMap(map)
+    } catch (error) {
+      console.error('Không thể tải danh sách bạn bè', error)
+    }
+  }, [token, user?.id])
 
   useEffect(() => {
     if (!token) return
@@ -295,16 +308,23 @@ export default function MessagesPage() {
       upsertMessage(String(payload.conversationId), normalizeIncomingMessage(payload.message))
     })
 
-    socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage }) => {
+    socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage | null }) => {
+      if (!payload?.message) return
       upsertMessage(String(payload.conversationId), normalizeIncomingMessage(payload.message))
     })
 
     socket.on('notification:new', (payload) => {
-      if (!payload || payload.type !== 'message') return
-      api
-        .listConversations(token)
-        .then((response) => setConversations(response.conversations))
-        .catch(() => undefined)
+      if (!payload) return
+      if (payload.type === 'message') {
+        api
+          .listConversations(token)
+          .then((response) => setConversations(response.conversations))
+          .catch(() => undefined)
+      }
+
+      if (payload.type === 'friend-request' || payload.type === 'friend-accepted') {
+        reloadFriendMap().catch(() => undefined)
+      }
     })
 
     socket.on('call:offer', (payload) => {
@@ -366,7 +386,7 @@ export default function MessagesPage() {
       socket.off('call:end')
       disconnectSocket()
     }
-  }, [setConversations, token, upsertMessage])
+  }, [reloadFriendMap, setConversations, token, upsertMessage])
 
   useEffect(() => {
     if (!selectedConversationId) return
@@ -378,6 +398,12 @@ export default function MessagesPage() {
       socket.emit('leave-conversation', selectedConversationId)
     }
   }, [selectedConversationId])
+
+  useEffect(() => {
+    if (!actionMenu || !actionMenuRef.current) return
+    actionMenuRef.current.style.left = `${actionMenu.x}px`
+    actionMenuRef.current.style.top = `${actionMenu.y}px`
+  }, [actionMenu])
 
   useEffect(() => {
     if (!activeCall) return
@@ -399,18 +425,8 @@ export default function MessagesPage() {
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
-    if (!token || !user?.id) return
-    api
-      .listFriends(token)
-      .then((result) => {
-        const map: Record<number, FriendConnection> = {}
-        result.friends.forEach((friend) => {
-          map[friend.id] = friend
-        })
-        setFriendMap(map)
-      })
-      .catch((error) => console.error('Không thể tải danh sách bạn bè', error))
-  }, [token, user?.id])
+    reloadFriendMap().catch(() => undefined)
+  }, [reloadFriendMap])
 
   const filteredConversations = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
@@ -545,6 +561,7 @@ export default function MessagesPage() {
     try {
       await api.requestFriend(token, directPeer.id)
       setChatNotice('Đã gửi lời mời kết bạn. Hãy chờ đối phương chấp nhận để nhắn không giới hạn.')
+      await reloadFriendMap()
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
@@ -779,6 +796,13 @@ export default function MessagesPage() {
     const file = event.target.files?.[0]
     if (!file || !token || !selectedConversationId) return
 
+    const maxBytes = 12 * 1024 * 1024
+    if (file.size > maxBytes) {
+      setChatNotice('Tệp quá lớn. Vui lòng chọn tệp nhỏ hơn 12MB.')
+      event.target.value = ''
+      return
+    }
+
     setBusyUploading(true)
     setChatNotice(null)
     try {
@@ -788,6 +812,10 @@ export default function MessagesPage() {
         contentType: file.type || 'application/octet-stream',
         base64Data,
       })
+
+      if (!upload.mediaUrl) {
+        throw new Error('Tải tệp lên thất bại, không nhận được đường dẫn file.')
+      }
 
       const response = await api.sendMessagePayload(token, selectedConversationId, {
         type: mapTypeFromFile(file),
@@ -903,6 +931,20 @@ export default function MessagesPage() {
     } finally {
       setBusyActionId(null)
     }
+  }
+
+  const openMessageActions = (event: React.MouseEvent<HTMLElement>, messageId: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const menuWidth = 180
+    const x = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, rect.right - menuWidth))
+    const y = Math.max(12, Math.min(window.innerHeight - 240, rect.bottom + 8))
+    setActionMenu({
+      messageId,
+      x,
+      y,
+    })
   }
 
   const handleStartCall = async (callType: 'voice' | 'video') => {
@@ -1090,10 +1132,10 @@ export default function MessagesPage() {
         <aside className={styles.rail}>
           <div className={styles.railLogo}>M</div>
           <nav className={styles.railNav}>
-            <button type="button" className={`${styles.railBtn} ${styles.railBtnActive}`}>
+            <button type="button" className={`${styles.railBtn} ${styles.railBtnActive}`} title="Tin nhắn" aria-label="Tin nhắn">
               <Send size={16} />
             </button>
-            <button type="button" className={styles.railBtn} onClick={() => setShowNewMessageModal(true)}>
+            <button type="button" className={styles.railBtn} onClick={() => setShowNewMessageModal(true)} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
               <UserPlus size={16} />
             </button>
             <button
@@ -1104,13 +1146,15 @@ export default function MessagesPage() {
                 setGroupName('')
                 setGroupMemberIds([])
               }}
+              title="Tạo nhóm"
+              aria-label="Tạo nhóm"
             >
               <CirclePlus size={16} />
             </button>
-            <button type="button" className={styles.railBtn} onClick={() => setShowNotificationsDrawer(true)}>
+            <button type="button" className={styles.railBtn} onClick={() => setShowNotificationsDrawer(true)} title="Thông báo" aria-label="Thông báo">
               <Bell size={16} />
             </button>
-            <button type="button" className={`${styles.railBtn} ${styles.railBottomBtn}`}>
+            <button type="button" className={`${styles.railBtn} ${styles.railBottomBtn}`} title="Thông tin" aria-label="Thông tin">
               <Info size={16} />
             </button>
           </nav>
@@ -1174,16 +1218,16 @@ export default function MessagesPage() {
               </div>
             </div>
             <div className={styles.chatActions}>
-              <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId}>
+              <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
                 <Video size={16} />
               </button>
-              <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId}>
+              <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gọi thoại" aria-label="Gọi thoại">
                 <Phone size={16} />
               </button>
-              <button type="button">
+              <button type="button" title="Thêm người vào cuộc trò chuyện" aria-label="Thêm người vào cuộc trò chuyện">
                 <UserPlus size={16} />
               </button>
-              <button type="button">
+              <button type="button" title="Xem chi tiết cuộc trò chuyện" aria-label="Xem chi tiết cuộc trò chuyện">
                 <Info size={16} />
               </button>
             </div>
@@ -1225,15 +1269,15 @@ export default function MessagesPage() {
               {callStatus ? <p>{callStatus}</p> : null}
               {incomingCall ? (
                 <div className={styles.callBannerActions}>
-                  <button type="button" onClick={handleAcceptIncomingCall}>
+                  <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
                     Chấp nhận
                   </button>
-                  <button type="button" onClick={() => setIncomingCall(null)}>
+                  <button type="button" onClick={() => setIncomingCall(null)} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
                     Từ chối
                   </button>
                 </div>
               ) : null}
-              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId}>
+              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
                 <PhoneOff size={14} />
                 Kết thúc
               </button>
@@ -1289,55 +1333,19 @@ export default function MessagesPage() {
                         }
                       }}
                     >
+                      <button
+                        type="button"
+                        className={styles.messageActionTrigger}
+                        title="Mở menu thao tác"
+                        aria-label="Mở menu thao tác"
+                        onClick={(event) => openMessageActions(event, msg.id)}
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
                       {renderMessagePreview(msg)}
                       {msg.reactionCount > 0 ? (
                         <div className={styles.reactionSummary}>{reactionSummaryText(msg)}</div>
                       ) : null}
-                      <div className={styles.reactionBar}>
-                        <button
-                          type="button"
-                          disabled={busyActionId === msg.id}
-                          onClick={() => handleReaction(msg, 'like')}
-                          className={msg.viewerReaction === 'like' ? styles.reactionActive : ''}
-                        >
-                          <ThumbsUp size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyActionId === msg.id}
-                          onClick={() => handleReaction(msg, 'love')}
-                          className={msg.viewerReaction === 'love' ? styles.reactionActive : ''}
-                        >
-                          <Heart size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyActionId === msg.id}
-                          onClick={() => handleReaction(msg, 'care')}
-                          className={msg.viewerReaction === 'care' ? styles.reactionActive : ''}
-                        >
-                          <Smile size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyActionId === msg.id}
-                          onClick={() => setForwardingMessageId(msg.id)}
-                        >
-                          <Forward size={13} />
-                        </button>
-                        {mine ? (
-                          <button type="button" disabled={busyActionId === msg.id} onClick={() => handleRecall(msg)}>
-                            Thu hồi
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          disabled={busyActionId === msg.id}
-                          onClick={() => handleDeleteMessage(msg)}
-                        >
-                          Xóa
-                        </button>
-                      </div>
                     </div>
                     <span className={styles.messageTime}>
                       {formatVietnamTime(msg.createdAt)}
@@ -1351,13 +1359,15 @@ export default function MessagesPage() {
           </div>
 
           <footer className={styles.inputBar}>
-            <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} />
+            <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Đính kèm tệp" title="Đính kèm tệp" />
             <input
               ref={imageInputRef}
               type="file"
               accept="image/*"
               className={styles.hiddenFileInput}
               onChange={handleFileSelected}
+              aria-label="Gửi hình ảnh"
+              title="Gửi hình ảnh"
             />
             <input
               ref={videoInputRef}
@@ -1365,21 +1375,23 @@ export default function MessagesPage() {
               accept="video/*"
               className={styles.hiddenFileInput}
               onChange={handleFileSelected}
+              aria-label="Gửi video"
+              title="Gửi video"
             />
-            <button type="button" className={styles.inputIcon} onClick={handlePickAttachment} disabled={busyUploading}>
+            <button type="button" className={styles.inputIcon} onClick={handlePickAttachment} disabled={busyUploading} title="Chọn tệp đính kèm" aria-label="Chọn tệp đính kèm">
               <CirclePlus size={18} />
             </button>
             {composerMenuOpen ? (
               <div className={styles.composerPlusMenu}>
-                <button type="button" onClick={() => handlePickAttachmentType('image')}>
+                <button type="button" onClick={() => handlePickAttachmentType('image')} title="Gửi ảnh" aria-label="Gửi ảnh">
                   <span>🖼️</span>
                   <span>Gửi ảnh</span>
                 </button>
-                <button type="button" onClick={() => handlePickAttachmentType('video')}>
+                <button type="button" onClick={() => handlePickAttachmentType('video')} title="Gửi video" aria-label="Gửi video">
                   <span>🎬</span>
                   <span>Gửi video</span>
                 </button>
-                <button type="button" onClick={() => handlePickAttachmentType('file')}>
+                <button type="button" onClick={() => handlePickAttachmentType('file')} title="Gửi tệp" aria-label="Gửi tệp">
                   <span>📎</span>
                   <span>Gửi tệp</span>
                 </button>
@@ -1390,6 +1402,8 @@ export default function MessagesPage() {
                     setShowStickerPanel(false)
                     setComposerMenuOpen(false)
                   }}
+                  title="Chèn emoji"
+                  aria-label="Chèn emoji"
                 >
                   <span>😊</span>
                   <span>Chèn emoji</span>
@@ -1419,7 +1433,7 @@ export default function MessagesPage() {
                 }
               }}
             />
-            <button type="button" className={styles.inputIcon} onClick={() => fileInputRef.current?.click()} disabled={busyUploading}>
+            <button type="button" className={styles.inputIcon} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chọn tệp" aria-label="Chọn tệp">
               <Paperclip size={16} />
             </button>
             <button
@@ -1431,6 +1445,8 @@ export default function MessagesPage() {
                 setComposerMenuOpen(false)
               }}
               disabled={busyUploading}
+              title="Mở bảng emoji"
+              aria-label="Mở bảng emoji"
             >
               <Smile size={16} />
             </button>
@@ -1439,6 +1455,8 @@ export default function MessagesPage() {
               className={styles.sendBtn}
               onClick={handleSend}
               disabled={!message.trim() || isSendingMessage}
+              title="Gửi tin nhắn"
+              aria-label="Gửi tin nhắn"
             >
               <Send size={17} />
             </button>
@@ -1482,6 +1500,8 @@ export default function MessagesPage() {
                   <button
                     key={sticker}
                     type="button"
+                    title="Gửi sticker"
+                    aria-label="Gửi sticker"
                     onClick={async () => {
                       if (!token || !selectedConversationId) return
                       try {
@@ -1545,13 +1565,13 @@ export default function MessagesPage() {
                 />
                 <div className={styles.overlayList}>
                   {searchUsersResult.map((item) => (
-                    <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)}>
+                    <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)} title={`Tạo hội thoại với ${item.name}`} aria-label={`Tạo hội thoại với ${item.name}`}>
                       {item.name}
                     </button>
                   ))}
                   {searchUsersResult.length === 0 ? <p>Không có kết quả phù hợp.</p> : null}
                 </div>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)}>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)} title="Đóng" aria-label="Đóng">
                   Đóng
                 </button>
               </div>
@@ -1579,7 +1599,7 @@ export default function MessagesPage() {
                   })}
                   {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
                 </div>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)}>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
                   Đóng
                 </button>
               </div>
@@ -1595,12 +1615,12 @@ export default function MessagesPage() {
                   {conversations
                     .filter((conv) => conv.id !== selectedConversationId)
                     .map((conv) => (
-                      <button key={conv.id} type="button" onClick={() => handleForward(conv.id)}>
+                      <button key={conv.id} type="button" onClick={() => handleForward(conv.id)} title={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`} aria-label={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`}>
                         {getConversationDisplayName(conv, user?.id)}
                       </button>
                     ))}
                 </div>
-                <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)}>
+                <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)} title="Hủy chuyển tiếp" aria-label="Hủy chuyển tiếp">
                   Hủy
                 </button>
               </div>
@@ -1620,7 +1640,7 @@ export default function MessagesPage() {
                   {acceptedFriends.map((friend) => {
                     const checked = groupMemberIds.includes(friend.id)
                     return (
-                      <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)}>
+                      <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chọn ${friend.fullName}`} aria-label={`Chọn ${friend.fullName}`}>
                         <strong>{checked ? '✓ ' : ''}{friend.fullName}</strong>
                         <span>{friend.email || friend.phone || `ID ${friend.id}`}</span>
                       </button>
@@ -1636,7 +1656,7 @@ export default function MessagesPage() {
                 >
                   {creatingGroup ? 'Đang tạo nhóm...' : 'Tạo nhóm'}
                 </button>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)}>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)} title="Đóng" aria-label="Đóng">
                   Đóng
                 </button>
               </div>
@@ -1688,6 +1708,8 @@ export default function MessagesPage() {
                     })
                     setMutedMic(next)
                   }}
+                  title="Bật tắt micro"
+                  aria-label="Bật tắt micro"
                 >
                   <Phone size={16} />
                 </button>
@@ -1702,13 +1724,15 @@ export default function MessagesPage() {
                     })
                     setMutedCam(next)
                   }}
+                  title="Bật tắt camera"
+                  aria-label="Bật tắt camera"
                 >
                   <Video size={16} />
                 </button>
-                <button type="button">
+                <button type="button" title="Mời người khác" aria-label="Mời người khác">
                   <UserPlus size={16} />
                 </button>
-                <button type="button" className={styles.endCallOverlayBtn} onClick={handleEndCall}>
+                <button type="button" className={styles.endCallOverlayBtn} onClick={handleEndCall} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
                   <PhoneOff size={16} />
                 </button>
               </div>
@@ -1716,20 +1740,29 @@ export default function MessagesPage() {
           ) : null}
 
           {actionMenu ? (
-            <div className={styles.actionMenu} style={{ left: actionMenu.x, top: actionMenu.y }}>
+            <div ref={actionMenuRef} className={styles.actionMenu}>
               {messages
                 .filter((msg) => msg.id === actionMenu.messageId)
                 .map((msg) => {
                   const mine = msg.senderId === user?.id
                   return (
                     <div key={msg.id}>
-                      <button type="button" onClick={() => handleReaction(msg, 'like')}>
+                      <button type="button" onClick={() => {
+                        handleReaction(msg, 'like')
+                        setActionMenu(null)
+                      }} title="Thích" aria-label="Thích">
                         Thích
                       </button>
-                      <button type="button" onClick={() => handleReaction(msg, 'love')}>
+                      <button type="button" onClick={() => {
+                        handleReaction(msg, 'love')
+                        setActionMenu(null)
+                      }} title="Yêu thích" aria-label="Yêu thích">
                         Yêu thích
                       </button>
-                      <button type="button" onClick={() => handleReaction(msg, 'care')}>
+                      <button type="button" onClick={() => {
+                        handleReaction(msg, 'care')
+                        setActionMenu(null)
+                      }} title="Quan tâm" aria-label="Quan tâm">
                         Quan tâm
                       </button>
                       <button
@@ -1752,6 +1785,15 @@ export default function MessagesPage() {
                           Thu hồi
                         </button>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDeleteMessage(msg)
+                          setActionMenu(null)
+                        }}
+                      >
+                        Xóa
+                      </button>
                     </div>
                   )
                 })}

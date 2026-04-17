@@ -51,11 +51,9 @@ export default function SignupPage() {
       })
 
       if (response.requiresVerification) {
-        setError(
-          response.verificationCode
-            ? `Đăng ký thành công. Mã OTP dev: ${response.verificationCode}`
-            : 'Đăng ký thành công. Vui lòng xác thực OTP trước khi đăng nhập.'
-        )
+        const identifier = encodeURIComponent(response.emailOrPhone || formData.emailOrPhone)
+        const codeQuery = response.verificationCode ? `&code=${encodeURIComponent(response.verificationCode)}` : ''
+        navigate(`/auth/verify-otp?identifier=${identifier}${codeQuery}`)
       } else {
         navigate('/auth/login')
       }

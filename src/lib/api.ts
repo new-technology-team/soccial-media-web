@@ -186,13 +186,32 @@ export const api = {
     gender?: string
     password: string
   }) =>
-    request<{ requiresVerification?: boolean; verificationCode?: string }>(
+    request<{ requiresVerification?: boolean; verificationCode?: string; emailOrPhone?: string; message?: string }>(
       '/auth/register',
       {
         method: 'POST',
         body: JSON.stringify(payload),
       }
     ),
+
+  verifyRegistration: (payload: { emailOrPhone: string; code: string }) =>
+    request<AuthPayload>('/auth/verify-registration', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  resendVerificationCode: (emailOrPhone: string) =>
+    request<{
+      message: string
+      otpSent?: boolean
+      otpChannel?: string
+      otpDestination?: string
+      otpReason?: string
+      verificationCode?: string
+    }>('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ emailOrPhone }),
+    }),
 
   forgotPassword: (emailOrPhone: string) =>
     request<{

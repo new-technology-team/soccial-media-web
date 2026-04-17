@@ -46,7 +46,11 @@ export default function LoginPage() {
       setAuth(payload)
       navigate('/feed')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Email hoặc mật khẩu không hợp lệ. Vui lòng thử lại.')
+      const message = err instanceof Error ? err.message : 'Email hoặc mật khẩu không hợp lệ. Vui lòng thử lại.'
+      setError(message)
+      if (message.toLowerCase().includes('xác thực')) {
+        navigate(`/auth/verify-otp?identifier=${encodeURIComponent(formData.emailOrPhone)}`)
+      }
     } finally {
       setIsLoading(false)
     }

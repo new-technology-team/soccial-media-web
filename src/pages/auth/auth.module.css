@@ -294,6 +294,22 @@
   cursor: not-allowed;
 }
 
+.submitGhost {
+  height: 44px;
+  border: 1px solid #c7d7f8;
+  border-radius: 12px;
+  color: #1f4ea8;
+  font-size: 15px;
+  font-weight: 700;
+  background: #f3f7ff;
+  cursor: pointer;
+}
+
+.submitGhost:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
 .divider {
   position: relative;
   margin: 4px 0;

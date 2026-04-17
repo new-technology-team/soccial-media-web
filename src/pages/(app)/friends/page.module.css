@@ -22,6 +22,27 @@
   color: #66757f;
 }
 
+.noticeSuccess,
+.noticeError {
+  border-radius: 12px;
+  padding: 0.62rem 0.78rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+}
+
+.noticeSuccess {
+  border: 1px solid rgba(24, 120, 73, 0.32);
+  background: #e8f9ef;
+  color: #115235;
+}
+
+.noticeError {
+  border: 1px solid rgba(194, 62, 62, 0.35);
+  background: #fff0f0;
+  color: #8a1f1f;
+}
+
 .tabs {
   display: inline-flex;
   gap: 0.2rem;

@@ -1,7 +1,7 @@
 'use client'
 
 import { Link } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Users, UserPlus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store/auth-store'
@@ -26,14 +26,20 @@ export default function FriendsPage() {
   const [friends, setFriends] = useState<FriendConnection[]>([])
   const [activeTab, setActiveTab] = useState<FriendsTab>('received')
   const [busyIds, setBusyIds] = useState<number[]>([])
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const reloadFriends = useCallback(async () => {
+    if (!token) return
+    const res = await api.listFriends(token)
+    setFriends(res.friends)
+  }, [token])
 
   useEffect(() => {
-    if (!token) return
-    api
-      .listFriends(token)
-      .then((res) => setFriends(res.friends))
-      .catch((error) => console.error('Không thể tải danh sách bạn bè', error))
-  }, [token])
+    reloadFriends().catch((error) => {
+      console.error('Không thể tải danh sách bạn bè', error)
+      setNotice({ type: 'error', text: 'Không thể tải danh sách bạn bè. Vui lòng thử lại.' })
+    })
+  }, [reloadFriends])
 
   const receivedRequests = useMemo(
     () => friends.filter((item) => item.status === 'pending' && !item.requestedByMe),
@@ -56,9 +62,11 @@ export default function FriendsPage() {
     setBusyIds((prev) => [...prev, id])
     try {
       await api.acceptFriend(token, id)
-      setFriends((prev) => prev.map((item) => (item.id === id ? { ...item, status: 'accepted' } : item)))
+      await reloadFriends()
+      setNotice({ type: 'success', text: 'Đã chấp nhận lời mời kết bạn.' })
     } catch (error) {
       console.error('Không thể chấp nhận lời mời kết bạn', error)
+      setNotice({ type: 'error', text: 'Không thể chấp nhận lời mời. Vui lòng thử lại.' })
     } finally {
       setBusyIds((prev) => prev.filter((item) => item !== id))
     }
@@ -69,9 +77,11 @@ export default function FriendsPage() {
     setBusyIds((prev) => [...prev, id])
     try {
       await api.deleteFriend(token, id)
-      setFriends((prev) => prev.filter((item) => item.id !== id))
+      await reloadFriends()
+      setNotice({ type: 'success', text: 'Đã cập nhật danh sách kết bạn.' })
     } catch (error) {
       console.error('Không thể xóa lời mời hoặc hủy kết bạn', error)
+      setNotice({ type: 'error', text: 'Không thể cập nhật lời mời kết bạn.' })
     } finally {
       setBusyIds((prev) => prev.filter((item) => item !== id))
     }
@@ -110,6 +120,12 @@ export default function FriendsPage() {
           </button>
         </div>
       </header>
+
+      {notice ? (
+        <div className={notice.type === 'success' ? styles.noticeSuccess : styles.noticeError} role="status">
+          {notice.text}
+        </div>
+      ) : null}
 
       <div className={styles.layout}>
         <section className={styles.mainCol}>
