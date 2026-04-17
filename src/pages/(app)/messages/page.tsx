@@ -82,16 +82,17 @@ type ActiveCall = {
   startedAt: number
 }
 
+type MessageNotificationItem = {
+  id: number
+  type: string
+  title: string
+  body: string | null
+  created_at: string
+  is_read: number
+  meta?: Record<string, unknown> | null
+}
+
 type IncomingCallState = {
-  type MessageNotificationItem = {
-    id: number
-    type: string
-    title: string
-    body: string | null
-    created_at: string
-    is_read: number
-    meta?: Record<string, unknown> | null
-  }
   fromUserId: number
   callType: 'voice' | 'video'
   conversationId: string | null

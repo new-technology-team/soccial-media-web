@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell, MessageCircle, UserPlus, Heart, Share2, CheckCheck } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store/auth-store'
@@ -11,6 +12,11 @@ type NotifFilter = 'all' | 'social' | 'messages'
 
 type NotificationMeta = {
   requesterId?: number
+  requester_id?: number
+  friendshipId?: number
+  friendship_id?: number
+  conversationId?: string | number
+  conversation_id?: string | number
   requesterName?: string
   accepterId?: number
 }
@@ -61,6 +67,7 @@ const iconForType = (type: string) => {
 }
 
 export default function NotificationsPage() {
+  const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [activeFilter, setActiveFilter] = useState<NotifFilter>('all')
@@ -77,6 +84,13 @@ export default function NotificationsPage() {
     } catch {
       return null
     }
+  }
+
+  const getConversationIdFromMeta = (item: NotificationItem) => {
+    const meta = parseMeta(item)
+    if (!meta) return null
+    const value = meta.conversationId ?? meta.conversation_id
+    return value ? String(value) : null
   }
 
   useEffect(() => {
@@ -125,12 +139,14 @@ export default function NotificationsPage() {
   const handleAcceptInvite = async (item: NotificationItem) => {
     if (!token) return
     const meta = parseMeta(item)
-    const requesterId = Number(meta?.requesterId)
-    if (!requesterId) return
+    const requesterId = Number(meta?.requesterId ?? meta?.requester_id ?? 0)
+    const friendshipId = Number(meta?.friendshipId ?? meta?.friendship_id ?? 0)
+    const identifier = requesterId || friendshipId
+    if (!identifier) return
 
     setBusyActionId(item.id)
     try {
-      await api.acceptFriend(token, requesterId)
+      await api.acceptFriend(token, identifier)
       await api.readNotification(token, item.id)
       setNotifications((prev) =>
         prev.map((notif) =>
@@ -154,7 +170,7 @@ export default function NotificationsPage() {
   const handleDeleteInvite = async (item: NotificationItem) => {
     if (!token) return
     const meta = parseMeta(item)
-    const requesterId = Number(meta?.requesterId)
+    const requesterId = Number(meta?.requesterId ?? meta?.requester_id ?? 0)
     if (!requesterId) return
 
     setBusyActionId(item.id)
@@ -167,6 +183,12 @@ export default function NotificationsPage() {
     } finally {
       setBusyActionId(null)
     }
+  }
+
+  const handleOpenConversation = (item: NotificationItem) => {
+    const conversationId = getConversationIdFromMeta(item)
+    if (!conversationId) return
+    navigate(`/messages?conversation=${encodeURIComponent(conversationId)}`)
   }
 
   return (
@@ -241,6 +263,18 @@ export default function NotificationsPage() {
                       >
                         Chấp nhận
                       </button>
+                      {getConversationIdFromMeta(item) ? (
+                        <button
+                          type="button"
+                          className={styles.deleteBtn}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleOpenConversation(item)
+                          }}
+                        >
+                          Mở chat
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className={styles.deleteBtn}
