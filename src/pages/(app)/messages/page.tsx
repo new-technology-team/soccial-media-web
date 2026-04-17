@@ -158,7 +158,9 @@ export default function MessagesPage() {
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [showManageGroupModal, setShowManageGroupModal] = useState(false)
+  const [showGroupInfoModal, setShowGroupInfoModal] = useState(false)
   const [groupName, setGroupName] = useState('')
+  const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
   const [groupMemberIds, setGroupMemberIds] = useState<number[]>([])
   const [creatingGroup, setCreatingGroup] = useState(false)
   const [groupActionBusyId, setGroupActionBusyId] = useState<string | null>(null)
@@ -539,6 +541,18 @@ export default function MessagesPage() {
   const canDissolveSelectedGroup = Boolean(selectedGroup && myGroupRole === 'leader')
   const canAddMembers = canRemoveMembers
 
+  const groupLeader = useMemo(() => {
+    if (!selectedGroup) return null
+    const currentLeader = selectedGroup.members.find((member) => member.role === 'leader')
+    if (currentLeader) return currentLeader
+    return selectedGroup.members.find((member) => Number(member.userId) === Number(selectedGroup.createdBy)) || selectedGroup.members[0] || null
+  }, [selectedGroup])
+
+  const groupDeputy = useMemo(() => {
+    if (!selectedGroup) return null
+    return selectedGroup.members.find((member) => member.role === 'deputy') || null
+  }, [selectedGroup])
+
   const groupInviteCandidates = useMemo(() => {
     if (!selectedGroup) return []
     const existingIds = new Set(selectedGroup.members.map((member) => member.userId))
@@ -546,6 +560,16 @@ export default function MessagesPage() {
       .filter((friend) => friend.status === 'accepted')
       .filter((friend) => !existingIds.has(friend.id))
   }, [friendMap, selectedGroup])
+
+  const filteredGroupInviteCandidates = useMemo(() => {
+    const q = groupSearchKeyword.trim().toLowerCase()
+    if (!q) return groupInviteCandidates
+    return groupInviteCandidates.filter((friend) =>
+      [friend.fullName, friend.email || '', friend.phone || '', String(friend.id)].join(' ').toLowerCase().includes(q)
+    )
+  }, [groupInviteCandidates, groupSearchKeyword])
+
+  const pinnedMessageIds = useMemo(() => new Set((selectedConversation?.pinnedMessageIds || []).map((item) => String(item))), [selectedConversation])
 
   const directPeerFriendship = directPeer ? friendMap[directPeer.id] : null
   const isDirectPeerFriend = Boolean(directPeerFriendship && directPeerFriendship.status === 'accepted')
@@ -791,6 +815,7 @@ export default function MessagesPage() {
       selectConversation(created.conversation.id)
       setShowCreateGroupModal(false)
       setGroupName('')
+      setGroupSearchKeyword('')
       setGroupMemberIds([])
       setChatNotice('Đã tạo nhóm chat thành công.')
     } catch (error) {
@@ -1152,6 +1177,53 @@ export default function MessagesPage() {
     }
   }
 
+  const handleTogglePinMessage = async (chatMessage: ChatMessage) => {
+    if (!token) return
+    const wasPinned = pinnedMessageIds.has(chatMessage.id)
+    setBusyActionId(chatMessage.id)
+    try {
+      if (wasPinned) {
+        await api.unpinMessage(token, chatMessage.id)
+      } else {
+        await api.pinMessage(token, chatMessage.id)
+      }
+      const refreshed = await api.listConversations(token)
+      setConversations(refreshed.conversations)
+      setChatNotice(wasPinned ? 'Đã bỏ ghim tin nhắn.' : 'Đã ghim tin nhắn.')
+    } catch (error) {
+      console.error('Không thể ghim/bỏ ghim tin nhắn:', error)
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể ghim/bỏ ghim tin nhắn.')
+      }
+    } finally {
+      setBusyActionId(null)
+    }
+  }
+
+  const handleClearChatForMe = async () => {
+    if (!token || !selectedConversationId) return
+    const confirmed = window.confirm('Xóa toàn bộ đoạn chat ở phía bạn? Hành động này không ảnh hưởng người khác.')
+    if (!confirmed) return
+    setBusyActionId(`clear-${selectedConversationId}`)
+    try {
+      await api.clearConversationMessages(token, selectedConversationId)
+      const refreshed = await api.listMessages(token, selectedConversationId, { limit: 25 })
+      setMessages(selectedConversationId, refreshed.messages)
+      setChatNotice('Đã xóa đoạn chat ở phía bạn.')
+    } catch (error) {
+      console.error('Không thể xóa đoạn chat:', error)
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể xóa đoạn chat.')
+      }
+    } finally {
+      setBusyActionId(null)
+    }
+  }
+
   const openMessageActions = (event: React.MouseEvent<HTMLElement>, messageId: string) => {
     event.preventDefault()
     event.stopPropagation()
@@ -1363,6 +1435,7 @@ export default function MessagesPage() {
               onClick={() => {
                 setShowCreateGroupModal(true)
                 setGroupName('')
+                setGroupSearchKeyword('')
                 setGroupMemberIds([])
               }}
               title="Tạo nhóm"
@@ -1469,7 +1542,7 @@ export default function MessagesPage() {
                 title="Xem chi tiết cuộc trò chuyện"
                 aria-label="Xem chi tiết cuộc trò chuyện"
                 disabled={!selectedGroup}
-                onClick={() => setShowManageGroupModal(true)}
+                onClick={() => setShowGroupInfoModal(true)}
               >
                 <Info size={16} />
               </button>
@@ -1479,6 +1552,12 @@ export default function MessagesPage() {
           {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
             <div className={styles.limitBadge}>
               Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phí trước khi cần kết bạn.
+            </div>
+          ) : null}
+
+          {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
+            <div className={styles.limitBadge}>
+              Đang ghim {selectedConversation.pinnedMessageIds.length} tin nhắn trong cuộc trò chuyện này.
             </div>
           ) : null}
 
@@ -1606,6 +1685,7 @@ export default function MessagesPage() {
                         <MoreHorizontal size={14} />
                       </button>
                       {renderMessagePreview(msg)}
+                      {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
                       {msg.reactionCount > 0 ? (
                         <div className={styles.reactionSummary}>{reactionSummaryText(msg)}</div>
                       ) : null}
@@ -1925,8 +2005,13 @@ export default function MessagesPage() {
                   onChange={(event) => setGroupName(event.target.value)}
                   placeholder="Nhập tên nhóm"
                 />
+                <input
+                  value={groupSearchKeyword}
+                  onChange={(event) => setGroupSearchKeyword(event.target.value)}
+                  placeholder="Tìm bạn bè để thêm vào nhóm"
+                />
                 <div className={styles.overlayList}>
-                  {acceptedFriends.map((friend) => {
+                  {filteredGroupInviteCandidates.map((friend) => {
                     const checked = groupMemberIds.includes(friend.id)
                     return (
                       <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chọn ${friend.fullName}`} aria-label={`Chọn ${friend.fullName}`}>
@@ -1936,6 +2021,7 @@ export default function MessagesPage() {
                     )
                   })}
                   {acceptedFriends.length === 0 ? <p>Bạn chưa có bạn bè để tạo nhóm.</p> : null}
+                  {acceptedFriends.length > 0 && filteredGroupInviteCandidates.length === 0 ? <p>Không tìm thấy bạn bè phù hợp.</p> : null}
                 </div>
                 <button
                   type="button"
@@ -2082,6 +2168,83 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
+          {showGroupInfoModal && selectedGroup ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Thông tin nhóm: {selectedGroup.name || 'Nhóm chat'}</h3>
+                <div className={styles.groupManageSection}>
+                  <strong>Trưởng nhóm</strong>
+                  <div className={styles.groupMemberRow}>
+                    <div className={styles.groupMemberInfo}>
+                      <b>{groupLeader?.fullName || 'Chưa xác định'}</b>
+                      <small>ID {groupLeader?.userId ?? selectedGroup.createdBy}</small>
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.groupManageSection}>
+                  <strong>Phó nhóm</strong>
+                  <div className={styles.groupMemberRow}>
+                    <div className={styles.groupMemberInfo}>
+                      <b>{groupDeputy?.fullName || 'Chưa có phó nhóm'}</b>
+                      <small>{groupDeputy ? `ID ${groupDeputy.userId}` : 'Nhóm hiện chưa có phó nhóm'}</small>
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.groupManageSection}>
+                  <strong>Thành viên ({selectedGroup.members.length})</strong>
+                  <div className={styles.groupMemberList}>
+                    {selectedGroup.members.map((member) => (
+                      <div key={member.userId} className={styles.groupMemberRow}>
+                        <div className={styles.groupMemberInfo}>
+                          <b>{member.fullName}{Number(member.userId) === Number(selectedGroup.createdBy) ? ' (Người tạo nhóm)' : ''}</b>
+                          <small>
+                            {member.role === 'leader' ? 'Trưởng nhóm' : member.role === 'deputy' ? 'Phó nhóm' : 'Thành viên'} · ID {member.userId}
+                          </small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className={styles.groupManageSection}>
+                  <strong>Thao tác nhanh</strong>
+                  <div className={styles.groupMemberActions}>
+                    <button type="button" onClick={() => setShowManageGroupModal(true)}>
+                      Thêm / xóa / gán quyền
+                    </button>
+                    <button type="button" onClick={() => void handleClearChatForMe()}>
+                      Xóa đoạn chat
+                    </button>
+                    {selectedConversation?.pinnedMessageIds?.length ? (
+                      <button type="button" onClick={() => setShowGroupInfoModal(false)}>
+                        Xem tin đã ghim
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className={styles.overlayCloseBtn}
+                  onClick={() => {
+                    void handleClearChatForMe()
+                  }}
+                  title="Xóa đoạn chat ở phía bạn"
+                  aria-label="Xóa đoạn chat ở phía bạn"
+                >
+                  Xóa đoạn chat của bạn
+                </button>
+                <button
+                  type="button"
+                  className={styles.overlayCloseBtn}
+                  onClick={() => setShowGroupInfoModal(false)}
+                  title="Đóng"
+                  aria-label="Đóng"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {activeCall ? (
             <div className={styles.callOverlay}>
               <div className={styles.callBackdropGlow} />
@@ -2192,6 +2355,15 @@ export default function MessagesPage() {
                         }}
                       >
                         Chuyển tiếp
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleTogglePinMessage(msg)
+                          setActionMenu(null)
+                        }}
+                      >
+                        {pinnedMessageIds.has(msg.id) ? 'Bỏ ghim' : 'Ghim'}
                       </button>
                       {mine ? (
                         <button

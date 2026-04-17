@@ -50,6 +50,7 @@ export interface Conversation {
   name: string | null
   avatarUrl: string | null
   unreadCount: number
+  pinnedMessageIds?: string[]
   members: Array<{
     userId: number
     fullName: string

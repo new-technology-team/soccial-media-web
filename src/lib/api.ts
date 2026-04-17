@@ -45,6 +45,7 @@ const resolveApiAssetUrl = (value: string | null | undefined) => {
 const normalizeConversation = (conversation: Conversation): Conversation => ({
   ...conversation,
   id: String(conversation.id),
+  pinnedMessageIds: (conversation.pinnedMessageIds || []).map((item) => String(item)),
 })
 
 const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({
@@ -506,6 +507,15 @@ export const api = {
 
   deleteMessage: (token: string, messageId: string) =>
     request<{ message: string }>(`/chat/messages/${messageId}`, { method: 'DELETE' }, token),
+
+  pinMessage: (token: string, messageId: string) =>
+    request<{ message: string }>(`/chat/messages/${messageId}/pin`, { method: 'PATCH' }, token),
+
+  unpinMessage: (token: string, messageId: string) =>
+    request<{ message: string }>(`/chat/messages/${messageId}/pin`, { method: 'DELETE' }, token),
+
+  clearConversationMessages: (token: string, conversationId: string) =>
+    request<{ message: string }>(`/chat/conversations/${conversationId}/messages`, { method: 'DELETE' }, token),
 
   forwardMessage: (token: string, messageId: string, targetConversationId: string) =>
     request<{ message: string; chatMessage: ChatMessage }>(
