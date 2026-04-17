@@ -948,6 +948,90 @@
   cursor: pointer;
 }
 
+.groupManageHint {
+  margin: 0;
+  color: #5d6e7b;
+  font-size: 0.8rem;
+}
+
+.groupManageSection {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.groupManageSection strong {
+  font-size: 0.82rem;
+  color: #223340;
+}
+
+.groupMemberList {
+  max-height: 200px;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.groupMemberRow {
+  border-radius: 9px;
+  background: #e9eff7;
+  min-height: 44px;
+  padding: 0.45rem 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.groupMemberInfo {
+  min-width: 0;
+  display: grid;
+  gap: 0.08rem;
+}
+
+.groupMemberInfo b {
+  font-size: 0.8rem;
+  color: #223340;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.groupMemberInfo small {
+  font-size: 0.72rem;
+  color: #61717e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.groupMemberActions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.groupMemberActions button {
+  border: 0;
+  border-radius: 8px;
+  min-height: 29px;
+  padding: 0 0.65rem;
+  background: #d5e0eb;
+  color: #2a3f4f;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dangerBtn {
+  border: 0;
+  border-radius: 9px;
+  min-height: 34px;
+  background: #d94747;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .forwardDialogBackdrop {
   position: absolute;
   inset: 0;

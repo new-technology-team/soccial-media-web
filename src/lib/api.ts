@@ -384,6 +384,26 @@ export const api = {
       token
     ).then((data) => ({ conversation: normalizeConversation(data.conversation) })),
 
+  addGroupMember: (token: string, conversationId: string, userId: number) =>
+    request<{ message: string }>(
+      `/chat/conversations/${conversationId}/members`,
+      { method: 'POST', body: JSON.stringify({ userId }) },
+      token
+    ),
+
+  removeGroupMember: (token: string, conversationId: string, userId: number) =>
+    request<{ message: string }>(`/chat/conversations/${conversationId}/members/${userId}`, { method: 'DELETE' }, token),
+
+  updateGroupMemberAdmin: (token: string, conversationId: string, userId: number, isAdmin: boolean) =>
+    request<{ message: string }>(
+      `/chat/conversations/${conversationId}/admins`,
+      { method: 'PATCH', body: JSON.stringify({ userId, isAdmin }) },
+      token
+    ),
+
+  dissolveGroupConversation: (token: string, conversationId: string) =>
+    request<{ message: string }>(`/chat/conversations/${conversationId}`, { method: 'DELETE' }, token),
+
   listMessages: (
     token: string,
     conversationId: string,
