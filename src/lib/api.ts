@@ -14,6 +14,46 @@ const API_BASE =
   import.meta.env.NEXT_PUBLIC_API_BASE_URL ||
   '/backend/api'
 
+const resolveApiAssetUrl = (value: string | null | undefined) => {
+  if (!value) return null
+  if (/^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')) {
+    return value
+  }
+
+  if (value.startsWith('/uploads/')) {
+    if (API_BASE.startsWith('/backend')) {
+      return `/backend${value}`
+    }
+
+    if (API_BASE.startsWith('/api')) {
+      return value
+    }
+
+    try {
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost'
+      const base = new URL(API_BASE, origin)
+      return new URL(value, `${base.origin}/`).toString()
+    } catch {
+      return value
+    }
+  }
+
+  return value
+}
+
+const normalizeConversation = (conversation: Conversation): Conversation => ({
+  ...conversation,
+  id: String(conversation.id),
+})
+
+const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({
+  ...message,
+  id: String(message.id),
+  conversationId: String(message.conversationId),
+  mediaUrl: resolveApiAssetUrl(message.mediaUrl),
+})
+
 export class ApiError extends Error {
   status?: number
   code?: string
@@ -282,7 +322,9 @@ export const api = {
     ),
 
   listConversations: (token: string) =>
-    request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token),
+    request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token).then((data) => ({
+      conversations: (data.conversations || []).map(normalizeConversation),
+    })),
 
   searchUsers: (token: string, keyword: string) =>
     request<{ users: Array<Record<string, unknown>> }>(
@@ -311,7 +353,7 @@ export const api = {
       '/chat/conversations/direct',
       { method: 'POST', body: JSON.stringify({ userId }) },
       token
-    ),
+    ).then((data) => ({ conversation: normalizeConversation(data.conversation) })),
 
   createGroupConversation: (
     token: string,
@@ -321,14 +363,14 @@ export const api = {
       '/chat/conversations/group',
       { method: 'POST', body: JSON.stringify(payload) },
       token
-    ),
+    ).then((data) => ({ conversation: normalizeConversation(data.conversation) })),
 
   listMessages: (
     token: string,
-    conversationId: number,
+    conversationId: string,
     params?: {
       limit?: number
-      beforeId?: number
+      beforeId?: string
     }
   ) => {
     const query = new URLSearchParams()
@@ -344,19 +386,22 @@ export const api = {
         remaining: number
         isFriend: boolean
       } | null
-    }>(`/chat/conversations/${conversationId}/messages${suffix}`, { method: 'GET' }, token)
+    }>(`/chat/conversations/${conversationId}/messages${suffix}`, { method: 'GET' }, token).then((data) => ({
+      ...data,
+      messages: (data.messages || []).map(normalizeChatMessage),
+    }))
   },
 
-  sendMessage: (token: string, conversationId: number, text: string) =>
+  sendMessage: (token: string, conversationId: string, text: string) =>
     request<{ message: ChatMessage }>(
       `/chat/conversations/${conversationId}/messages`,
       { method: 'POST', body: JSON.stringify({ type: 'text', text }) },
       token
-    ),
+    ).then((data) => ({ message: normalizeChatMessage(data.message) })),
 
   sendMessagePayload: (
     token: string,
-    conversationId: number,
+    conversationId: string,
     payload: {
       type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'sticker'
       text?: string
@@ -371,38 +416,50 @@ export const api = {
       `/chat/conversations/${conversationId}/messages`,
       { method: 'POST', body: JSON.stringify(payload) },
       token
-    ),
+    ).then((data) => ({ message: normalizeChatMessage(data.message) })),
 
   uploadMessageBase64: (
     token: string,
-    conversationId: number,
+    conversationId: string,
     payload: { fileName: string; contentType: string; base64Data: string }
   ) =>
-    request<{ message: string; mediaUrl: string }>(
+    request<{ message?: string; mediaUrl?: string; fileUrl?: string }>(
       `/chat/conversations/${conversationId}/messages/upload-base64`,
       { method: 'POST', body: JSON.stringify(payload) },
       token
-    ),
+    ).then((data) => ({
+      message: data.message || 'Uploaded',
+      mediaUrl: resolveApiAssetUrl(data.mediaUrl || data.fileUrl || '') || '',
+    })),
 
-  reactMessage: (token: string, messageId: number, type: 'like' | 'love' | 'care') =>
+  reactMessage: (token: string, messageId: string, type: 'like' | 'love' | 'care') =>
     request<{ message: string; chatMessage: ChatMessage }>(
       `/chat/messages/${messageId}/reaction`,
       { method: 'POST', body: JSON.stringify({ type }) },
       token
-    ),
+    ).then((data) => ({ ...data, chatMessage: normalizeChatMessage(data.chatMessage) })),
 
-  removeMessageReaction: (token: string, messageId: number) =>
-    request<{ message: string; chatMessage: ChatMessage }>(`/chat/messages/${messageId}/reaction`, { method: 'DELETE' }, token),
+  removeMessageReaction: (token: string, messageId: string) =>
+    request<{ message: string; chatMessage: ChatMessage }>(`/chat/messages/${messageId}/reaction`, { method: 'DELETE' }, token).then((data) => ({
+      ...data,
+      chatMessage: normalizeChatMessage(data.chatMessage),
+    })),
 
-  recallMessage: (token: string, messageId: number) =>
-    request<{ message: string; chatMessage: ChatMessage }>(`/chat/messages/${messageId}/recall`, { method: 'PATCH' }, token),
+  recallMessage: (token: string, messageId: string) =>
+    request<{ message: string; chatMessage: ChatMessage }>(`/chat/messages/${messageId}/recall`, { method: 'PATCH' }, token).then((data) => ({
+      ...data,
+      chatMessage: normalizeChatMessage(data.chatMessage),
+    })),
 
-  forwardMessage: (token: string, messageId: number, targetConversationId: number) =>
+  deleteMessage: (token: string, messageId: string) =>
+    request<{ message: string }>(`/chat/messages/${messageId}`, { method: 'DELETE' }, token),
+
+  forwardMessage: (token: string, messageId: string, targetConversationId: string) =>
     request<{ message: string; chatMessage: ChatMessage }>(
       `/chat/messages/${messageId}/forward`,
       { method: 'POST', body: JSON.stringify({ targetConversationId }) },
       token
-    ),
+    ).then((data) => ({ ...data, chatMessage: normalizeChatMessage(data.chatMessage) })),
 
   aiChat: (token: string | undefined, message: string) =>
     request<{ message?: string; reply?: string }>('/social/ai/support', {

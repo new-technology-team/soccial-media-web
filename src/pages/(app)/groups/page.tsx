@@ -22,7 +22,7 @@ export default function GroupsPage() {
   const user = useAuthStore((state) => state.user)
 
   const [groups, setGroups] = useState<Conversation[]>([])
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState('')
@@ -62,6 +62,22 @@ export default function GroupsPage() {
     }
   }
 
+  const renderGroupMessageContent = (msg: ChatMessage) => {
+    if (msg.type === 'image' && msg.mediaUrl) {
+      return <img src={msg.mediaUrl} alt={msg.fileName || 'image'} className={styles.messageMedia} />
+    }
+
+    if (msg.mediaUrl) {
+      return (
+        <a href={msg.mediaUrl} target="_blank" rel="noreferrer">
+          {msg.fileName || 'Mở tệp đính kèm'}
+        </a>
+      )
+    }
+
+    return <p>{msg.text || ''}</p>
+  }
+
   return (
     <div className={styles.page}>
       <aside className={styles.groupsCol}>
@@ -97,8 +113,8 @@ export default function GroupsPage() {
             <p>{selectedGroup ? `${selectedGroup.members.length} thành viên` : '---'}</p>
           </div>
           <div className={styles.chatActions}>
-            <button type="button"><Search size={16} /></button>
-            <button type="button"><Video size={16} /></button>
+            <button type="button" title="Tìm trong nhóm"><Search size={16} /></button>
+            <button type="button" title="Gọi video nhóm"><Video size={16} /></button>
           </div>
         </header>
 
@@ -110,7 +126,7 @@ export default function GroupsPage() {
                 {!mine ? <div className={styles.msgAvatar}>{(msg.senderName?.[0] || 'U').toUpperCase()}</div> : null}
                 <div className={`${styles.msgBubble} ${mine ? styles.msgBubbleMine : ''}`}>
                   {!mine ? <Link to={`/profile/${msg.senderId}`}><b>{msg.senderName}</b></Link> : null}
-                  <p>{msg.text || ''}</p>
+                  {renderGroupMessageContent(msg)}
                   <small>
                     {parseGroupMessageDate(msg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                   </small>
@@ -122,7 +138,7 @@ export default function GroupsPage() {
         </div>
 
         <footer className={styles.composer}>
-          <button type="button" className={styles.iconBtn}><CirclePlus size={16} /></button>
+          <button type="button" className={styles.iconBtn} title="Thêm nội dung"><CirclePlus size={16} /></button>
           <input
             placeholder="Nhắn tin cho nhóm..."
             value={draft}
@@ -134,8 +150,8 @@ export default function GroupsPage() {
               }
             }}
           />
-          <button type="button" className={styles.iconBtn}><Smile size={16} /></button>
-          <button type="button" className={styles.sendBtn} onClick={handleSend} disabled={!draft.trim()}>
+          <button type="button" className={styles.iconBtn} title="Chèn emoji"><Smile size={16} /></button>
+          <button type="button" className={styles.sendBtn} title="Gửi tin nhắn" onClick={handleSend} disabled={!draft.trim()}>
             <Send size={16} />
           </button>
         </footer>

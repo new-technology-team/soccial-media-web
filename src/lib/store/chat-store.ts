@@ -3,13 +3,13 @@ import type { ChatMessage, Conversation } from '@/lib/types'
 
 type ChatState = {
   conversations: Conversation[]
-  selectedConversationId: number | null
-  messagesByConversation: Record<number, ChatMessage[]>
+  selectedConversationId: string | null
+  messagesByConversation: Record<string, ChatMessage[]>
   setConversations: (items: Conversation[]) => void
-  selectConversation: (conversationId: number) => void
-  setMessages: (conversationId: number, messages: ChatMessage[]) => void
-  appendMessage: (conversationId: number, message: ChatMessage) => void
-  upsertMessage: (conversationId: number, message: ChatMessage) => void
+  selectConversation: (conversationId: string) => void
+  setMessages: (conversationId: string, messages: ChatMessage[]) => void
+  appendMessage: (conversationId: string, message: ChatMessage) => void
+  upsertMessage: (conversationId: string, message: ChatMessage) => void
 }
 
 export const useChatStore = create<ChatState>((set) => ({

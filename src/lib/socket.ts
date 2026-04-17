@@ -14,7 +14,7 @@ export const connectSocket = (token: string) => {
 
   socketInstance = io(SOCKET_URL, {
     autoConnect: true,
-    transports: ['websocket'],
+    transports: ['polling', 'websocket'],
     auth: { token },
   })
 

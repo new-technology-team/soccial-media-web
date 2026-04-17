@@ -45,7 +45,7 @@ export interface FeedComment {
 }
 
 export interface Conversation {
-  id: number
+  id: string
   type: 'direct' | 'group'
   name: string | null
   avatarUrl: string | null
@@ -59,8 +59,8 @@ export interface Conversation {
 }
 
 export interface ChatMessage {
-  id: number
-  conversationId: number
+  id: string
+  conversationId: string
   senderId: number
   senderName: string
   senderAvatar: string | null

@@ -212,6 +212,12 @@
   line-height: 1.35;
 }
 
+.messageMedia {
+  max-width: 260px;
+  border-radius: 10px;
+  display: block;
+}
+
 .msgBubble small {
   display: block;
   margin-top: 0.2rem;

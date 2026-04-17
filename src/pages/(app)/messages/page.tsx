@@ -87,9 +87,27 @@ type ActiveCall = {
 type IncomingCallState = {
   fromUserId: number
   callType: 'voice' | 'video'
-  conversationId: number | null
+  conversationId: string | null
   offer: RTCSessionDescriptionInit
 }
+
+const resolveChatMediaUrl = (value: string | null | undefined) => {
+  if (!value) return null
+  if (/^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')) {
+    return value
+  }
+  if (value.startsWith('/uploads/')) {
+    return `/backend${value}`
+  }
+  return value
+}
+
+const normalizeIncomingMessage = (payload: ChatMessage): ChatMessage => ({
+  ...payload,
+  id: String(payload.id),
+  conversationId: String(payload.conversationId),
+  mediaUrl: resolveChatMediaUrl(payload.mediaUrl),
+})
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -119,10 +137,10 @@ export default function MessagesPage() {
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
   const [callSeconds, setCallSeconds] = useState(0)
   const [busyUploading, setBusyUploading] = useState(false)
-  const [busyActionId, setBusyActionId] = useState<number | null>(null)
-  const [forwardingMessageId, setForwardingMessageId] = useState<number | null>(null)
+  const [busyActionId, setBusyActionId] = useState<string | null>(null)
+  const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>([])
-  const [actionMenu, setActionMenu] = useState<{ messageId: number; x: number; y: number } | null>(null)
+  const [actionMenu, setActionMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [chatNotice, setChatNotice] = useState<string | null>(null)
   const [showEmojiPanel, setShowEmojiPanel] = useState(false)
@@ -130,15 +148,19 @@ export default function MessagesPage() {
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [showNewMessageModal, setShowNewMessageModal] = useState(false)
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [groupMemberIds, setGroupMemberIds] = useState<number[]>([])
+  const [creatingGroup, setCreatingGroup] = useState(false)
   const [newMessageKeyword, setNewMessageKeyword] = useState('')
   const [searchUsersResult, setSearchUsersResult] = useState<Array<{ id: number; name: string }>>([])
   const [notifications, setNotifications] = useState<Array<{ id: number; type: string; title: string; body: string | null; created_at: string; is_read: number; meta?: Record<string, unknown> | null }>>([])
   const [activeStickerPack, setActiveStickerPack] = useState<keyof typeof STICKER_PACKS>('Cute')
   const [loadedStickerPacks, setLoadedStickerPacks] = useState<Record<string, boolean>>({ Cute: true })
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
-  const [hasMoreHistory, setHasMoreHistory] = useState<Record<number, boolean>>({})
+  const [hasMoreHistory, setHasMoreHistory] = useState<Record<string, boolean>>({})
   const [messageLimitByConversation, setMessageLimitByConversation] = useState<
-    Record<number, { total: number; sent: number; remaining: number; isFriend: boolean } | null>
+    Record<string, { total: number; sent: number; remaining: number; isFriend: boolean } | null>
   >({})
   const [friendMap, setFriendMap] = useState<Record<number, FriendConnection>>({})
   const [pendingFriendRequestTo, setPendingFriendRequestTo] = useState<Record<number, boolean>>({})
@@ -172,7 +194,7 @@ export default function MessagesPage() {
   }, [messagesByConversation, selectedConversationId])
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
-  const queryConversationId = Number(searchParams.get('conversation') || 0)
+  const queryConversationId = searchParams.get('conversation') || ''
 
   useEffect(() => {
     if (!token) return
@@ -185,7 +207,7 @@ export default function MessagesPage() {
         selectConversation(response.conversations[0].id)
       }
 
-      if (queryConversationId > 0 && response.conversations.some((item) => item.id === queryConversationId)) {
+      if (queryConversationId && response.conversations.some((item) => item.id === queryConversationId)) {
         selectConversation(queryConversationId)
       }
     }
@@ -264,16 +286,17 @@ export default function MessagesPage() {
     if (!token) return
 
     const socket = connectSocket(token)
-    socket.on('message:new', (payload) => {
-      upsertMessage(payload.conversationId, payload)
+    socket.on('message:new', (payload: ChatMessage) => {
+      const normalized = normalizeIncomingMessage(payload)
+      upsertMessage(normalized.conversationId, normalized)
     })
 
-    socket.on('message:reaction', (payload) => {
-      upsertMessage(payload.conversationId, payload.message)
+    socket.on('message:reaction', (payload: { conversationId: string; message: ChatMessage }) => {
+      upsertMessage(String(payload.conversationId), normalizeIncomingMessage(payload.message))
     })
 
-    socket.on('message:updated', (payload) => {
-      upsertMessage(payload.conversationId, payload.message)
+    socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage }) => {
+      upsertMessage(String(payload.conversationId), normalizeIncomingMessage(payload.message))
     })
 
     socket.on('notification:new', (payload) => {
@@ -286,7 +309,7 @@ export default function MessagesPage() {
 
     socket.on('call:offer', (payload) => {
       if (!payload.offer) return
-      const incomingConversationId = Number(payload.conversationId || 0) || null
+      const incomingConversationId = payload.conversationId ? String(payload.conversationId) : null
       setIncomingCall({
         fromUserId: Number(payload.fromUserId),
         callType: payload.callType || 'voice',
@@ -598,10 +621,48 @@ export default function MessagesPage() {
     }
   }
 
-  const handleOpenNotificationConversation = (conversationId: number | null | undefined) => {
+  const handleOpenNotificationConversation = (conversationId: string | null | undefined) => {
     if (!conversationId) return
-    selectConversation(Number(conversationId))
+    selectConversation(String(conversationId))
     setShowNotificationsDrawer(false)
+  }
+
+  const acceptedFriends = useMemo(
+    () => Object.values(friendMap).filter((friend) => friend.status === 'accepted'),
+    [friendMap]
+  )
+
+  const toggleGroupMember = (friendId: number) => {
+    setGroupMemberIds((prev) =>
+      prev.includes(friendId) ? prev.filter((id) => id !== friendId) : [...prev, friendId]
+    )
+  }
+
+  const handleCreateGroupConversation = async () => {
+    if (!token || !groupName.trim() || groupMemberIds.length === 0 || creatingGroup) return
+
+    setCreatingGroup(true)
+    try {
+      const created = await api.createGroupConversation(token, {
+        name: groupName.trim(),
+        memberIds: groupMemberIds,
+      })
+      const refreshed = await api.listConversations(token)
+      setConversations(refreshed.conversations)
+      selectConversation(created.conversation.id)
+      setShowCreateGroupModal(false)
+      setGroupName('')
+      setGroupMemberIds([])
+      setChatNotice('Đã tạo nhóm chat thành công.')
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể tạo nhóm chat.')
+      }
+    } finally {
+      setCreatingGroup(false)
+    }
   }
 
   const loadOlderMessages = async () => {
@@ -797,7 +858,7 @@ export default function MessagesPage() {
     }
   }
 
-  const handleForward = async (targetConversationId: number) => {
+  const handleForward = async (targetConversationId: string) => {
     if (!token || !forwardingMessageId) return
     setBusyActionId(forwardingMessageId)
     try {
@@ -814,6 +875,30 @@ export default function MessagesPage() {
         setChatNotice(error.message)
       } else {
         setChatNotice('Không thể chuyển tiếp tin nhắn.')
+      }
+    } finally {
+      setBusyActionId(null)
+    }
+  }
+
+  const handleDeleteMessage = async (chatMessage: ChatMessage) => {
+    if (!token) return
+    setBusyActionId(chatMessage.id)
+    try {
+      await api.deleteMessage(token, chatMessage.id)
+      if (!selectedConversationId) return
+      const current = messagesByConversation[selectedConversationId] || []
+      setMessages(
+        selectedConversationId,
+        current.filter((item) => item.id !== chatMessage.id),
+      )
+      setChatNotice('Đã xóa tin nhắn.')
+    } catch (error) {
+      console.error('Không thể xóa tin nhắn:', error)
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể xóa tin nhắn này.')
       }
     } finally {
       setBusyActionId(null)
@@ -980,6 +1065,13 @@ export default function MessagesPage() {
           <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className={styles.fileLink}>
             {msg.fileName || 'Mở tệp đính kèm'}
           </a>
+          {(msg.mimeType || msg.fileSize) ? (
+            <small className={styles.fileMeta}>
+              {[msg.mimeType, msg.fileSize ? `${Math.max(1, Math.round(msg.fileSize / 1024))} KB` : null]
+                .filter(Boolean)
+                .join(' • ')}
+            </small>
+          ) : null}
         </div>
       )
     }
@@ -1003,6 +1095,17 @@ export default function MessagesPage() {
             </button>
             <button type="button" className={styles.railBtn} onClick={() => setShowNewMessageModal(true)}>
               <UserPlus size={16} />
+            </button>
+            <button
+              type="button"
+              className={styles.railBtn}
+              onClick={() => {
+                setShowCreateGroupModal(true)
+                setGroupName('')
+                setGroupMemberIds([])
+              }}
+            >
+              <CirclePlus size={16} />
             </button>
             <button type="button" className={styles.railBtn} onClick={() => setShowNotificationsDrawer(true)}>
               <Bell size={16} />
@@ -1157,13 +1260,14 @@ export default function MessagesPage() {
             ) : null}
             {virtualSlice.items.map((msg) => {
               const mine = msg.senderId === user?.id
+              const senderName = String(msg.senderName || msg.sender?.fullName || msg.sender?.name || 'Người dùng')
               return (
                 <div key={msg.id} className={`${styles.messageRow} ${mine ? styles.messageRowMine : ''}`}>
-                  {!mine ? <div className={styles.messageAvatar}>{(msg.senderName[0] || 'U').toUpperCase()}</div> : null}
+                  {!mine ? <div className={styles.messageAvatar}>{(senderName[0] || 'U').toUpperCase()}</div> : null}
                   <div className={styles.messageBlock}>
                     {!mine ? (
                       <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
-                        {msg.senderName}
+                        {senderName}
                       </Link>
                     ) : null}
                     <div
@@ -1226,6 +1330,13 @@ export default function MessagesPage() {
                             Thu hồi
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          disabled={busyActionId === msg.id}
+                          onClick={() => handleDeleteMessage(msg)}
+                        >
+                          Xóa
+                        </button>
                       </div>
                     </div>
                     <span className={styles.messageTime}>
@@ -1453,7 +1564,7 @@ export default function MessagesPage() {
                 <h3>Thông báo nâng cao</h3>
                 <div className={styles.overlayList}>
                   {notifications.map((item) => {
-                    const conversationId = Number(item.meta?.conversationId || 0) || null
+                    const conversationId = item.meta?.conversationId ? String(item.meta.conversationId) : null
                     return (
                       <button
                         key={item.id}
@@ -1491,6 +1602,42 @@ export default function MessagesPage() {
                 </div>
                 <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)}>
                   Hủy
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showCreateGroupModal ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Tạo nhóm chat</h3>
+                <input
+                  value={groupName}
+                  onChange={(event) => setGroupName(event.target.value)}
+                  placeholder="Nhập tên nhóm"
+                />
+                <div className={styles.overlayList}>
+                  {acceptedFriends.map((friend) => {
+                    const checked = groupMemberIds.includes(friend.id)
+                    return (
+                      <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)}>
+                        <strong>{checked ? '✓ ' : ''}{friend.fullName}</strong>
+                        <span>{friend.email || friend.phone || `ID ${friend.id}`}</span>
+                      </button>
+                    )
+                  })}
+                  {acceptedFriends.length === 0 ? <p>Bạn chưa có bạn bè để tạo nhóm.</p> : null}
+                </div>
+                <button
+                  type="button"
+                  className={styles.overlayCloseBtn}
+                  disabled={!groupName.trim() || groupMemberIds.length === 0 || creatingGroup}
+                  onClick={handleCreateGroupConversation}
+                >
+                  {creatingGroup ? 'Đang tạo nhóm...' : 'Tạo nhóm'}
+                </button>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)}>
+                  Đóng
                 </button>
               </div>
             </div>

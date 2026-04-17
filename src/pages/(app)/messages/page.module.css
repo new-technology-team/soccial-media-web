@@ -486,6 +486,11 @@
   font-size: 0.82rem;
 }
 
+.fileMeta {
+  font-size: 0.67rem;
+  opacity: 0.75;
+}
+
 .forwardTag,
 .forwardTagInline {
   display: inline-block;
