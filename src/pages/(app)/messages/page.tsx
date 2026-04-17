@@ -83,6 +83,15 @@ type ActiveCall = {
 }
 
 type IncomingCallState = {
+  type MessageNotificationItem = {
+    id: number
+    type: string
+    title: string
+    body: string | null
+    created_at: string
+    is_read: number
+    meta?: Record<string, unknown> | null
+  }
   fromUserId: number
   callType: 'voice' | 'video'
   conversationId: string | null
@@ -194,6 +203,32 @@ export default function MessagesPage() {
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
   const queryConversationId = searchParams.get('conversation') || ''
+  const parseNotificationMeta = useCallback((item: MessageNotificationItem) => {
+    const rawMeta = item?.meta
+    if (!rawMeta || typeof rawMeta !== 'object') return null
+    const source = rawMeta as Record<string, unknown>
+    const conversationId = source.conversationId ?? source.conversation_id ?? source.chatId ?? source.chat_id
+    const requesterId = source.requesterId ?? source.requester_id ?? source.fromUserId ?? source.from_user_id
+    const friendshipId = source.friendshipId ?? source.friendship_id
+    return {
+      conversationId: conversationId ? String(conversationId) : null,
+      requesterId: requesterId ? Number(requesterId) : null,
+      friendshipId: friendshipId ? Number(friendshipId) : null,
+    }
+  }, [])
+
+  const reloadNotifications = useCallback(async () => {
+    if (!token) return
+    try {
+      const result = await api.notifications(token)
+      const items = (result.notifications || [])
+        .filter((item) => item.type === 'missed-call' || item.type === 'message' || item.type === 'friend-request')
+        .slice(0, 40)
+      setNotifications(items)
+    } catch {
+      // Ignore transient notification reload issues.
+    }
+  }, [token])
 
   const reloadFriendMap = useCallback(async () => {
     if (!token || !user?.id) return
@@ -245,17 +280,8 @@ export default function MessagesPage() {
   }, [token, selectedConversationId, setMessages])
 
   useEffect(() => {
-    if (!token) return
-    api
-      .notifications(token)
-      .then((result) => {
-        const items = (result.notifications || [])
-          .filter((item) => item.type === 'missed-call' || item.type === 'message' || item.type === 'friend-request')
-          .slice(0, 40)
-        setNotifications(items)
-      })
-      .catch(() => undefined)
-  }, [token])
+    reloadNotifications().catch(() => undefined)
+  }, [reloadNotifications])
 
   useEffect(() => {
     if (!token || !newMessageKeyword.trim()) {
@@ -315,6 +341,7 @@ export default function MessagesPage() {
 
     socket.on('notification:new', (payload) => {
       if (!payload) return
+      reloadNotifications().catch(() => undefined)
       if (payload.type === 'message') {
         api
           .listConversations(token)
@@ -386,7 +413,7 @@ export default function MessagesPage() {
       socket.off('call:end')
       disconnectSocket()
     }
-  }, [reloadFriendMap, setConversations, token, upsertMessage])
+  }, [reloadFriendMap, reloadNotifications, setConversations, token, upsertMessage])
 
   useEffect(() => {
     if (!selectedConversationId) return
@@ -495,6 +522,8 @@ export default function MessagesPage() {
 
   const directPeerFriendship = directPeer ? friendMap[directPeer.id] : null
   const isDirectPeerFriend = Boolean(directPeerFriendship && directPeerFriendship.status === 'accepted')
+  const isDirectPeerPending = Boolean(directPeerFriendship && directPeerFriendship.status === 'pending')
+  const isDirectPeerRequestedByMe = Boolean(directPeerFriendship?.requestedByMe)
 
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
     if (localStreamRef.current) return localStreamRef.current
@@ -573,6 +602,42 @@ export default function MessagesPage() {
     }
   }
 
+  const handleCancelFriendRequest = async () => {
+    if (!token || !directPeer) return
+    setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: true }))
+    try {
+      await api.deleteFriend(token, directPeer.id)
+      await reloadFriendMap()
+      setChatNotice('Đã hủy lời mời kết bạn.')
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể hủy lời mời kết bạn.')
+      }
+    } finally {
+      setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
+    }
+  }
+
+  const handleAcceptFriendRequestDirect = async () => {
+    if (!token || !directPeer) return
+    setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: true }))
+    try {
+      await api.acceptFriend(token, directPeer.id)
+      await reloadFriendMap()
+      setChatNotice('Đã chấp nhận lời mời kết bạn.')
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể chấp nhận lời mời kết bạn.')
+      }
+    } finally {
+      setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
+    }
+  }
+
   const handleOpenOrCreateDirectConversation = async (targetUserId: number) => {
     if (!token) return
 
@@ -642,6 +707,31 @@ export default function MessagesPage() {
     if (!conversationId) return
     selectConversation(String(conversationId))
     setShowNotificationsDrawer(false)
+  }
+
+  const handleAcceptFromNotification = async (item: MessageNotificationItem) => {
+    if (!token) return
+    const meta = parseNotificationMeta(item)
+    const identifier = meta?.requesterId || meta?.friendshipId
+    if (!identifier) return
+    setBusyActionId(`notif-${item.id}`)
+    try {
+      await api.acceptFriend(token, identifier)
+      await reloadFriendMap()
+      await reloadNotifications()
+      setChatNotice('Đã chấp nhận lời mời kết bạn.')
+      if (meta?.conversationId) {
+        handleOpenNotificationConversation(meta.conversationId)
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể chấp nhận lời mời từ thông báo.')
+      }
+    } finally {
+      setBusyActionId(null)
+    }
   }
 
   const acceptedFriends = useMemo(
@@ -1163,7 +1253,19 @@ export default function MessagesPage() {
 
         <section className={styles.listPanel}>
           <div className={styles.listHeader}>
-            <h1>Tất cả cuộc trò chuyện</h1>
+            <div className={styles.listHeaderTop}>
+              <h1>Tất cả cuộc trò chuyện</h1>
+              <button
+                type="button"
+                className={styles.headerNotifyBtn}
+                onClick={() => setShowNotificationsDrawer(true)}
+                title="Thông báo"
+                aria-label="Thông báo"
+              >
+                <Bell size={14} />
+                {notifications.some((item) => !item.is_read) ? <i /> : null}
+              </button>
+            </div>
             <div className={styles.searchWrap}>
               <Search size={14} />
               <input
@@ -1249,7 +1351,7 @@ export default function MessagesPage() {
               >
                 {creatingDirectConversation ? 'Đang mở hội thoại...' : 'Nhắn tin'}
               </button>
-              {!isDirectPeerFriend ? (
+              {!isDirectPeerFriend && !isDirectPeerPending ? (
                 <button
                   type="button"
                   className={styles.socialActionBtnPrimary}
@@ -1257,6 +1359,26 @@ export default function MessagesPage() {
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
                   {pendingFriendRequestTo[directPeer.id] ? 'Đang gửi lời mời...' : 'Kết bạn để nhắn không giới hạn'}
+                </button>
+              ) : null}
+              {!isDirectPeerFriend && isDirectPeerPending && isDirectPeerRequestedByMe ? (
+                <button
+                  type="button"
+                  className={styles.socialActionBtn}
+                  onClick={handleCancelFriendRequest}
+                  disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
+                >
+                  {pendingFriendRequestTo[directPeer.id] ? 'Đang hủy...' : 'Hủy lời mời kết bạn'}
+                </button>
+              ) : null}
+              {!isDirectPeerFriend && isDirectPeerPending && !isDirectPeerRequestedByMe ? (
+                <button
+                  type="button"
+                  className={styles.socialActionBtnPrimary}
+                  onClick={handleAcceptFriendRequestDirect}
+                  disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
+                >
+                  {pendingFriendRequestTo[directPeer.id] ? 'Đang xử lý...' : 'Đồng ý lời mời kết bạn'}
                 </button>
               ) : null}
             </div>
@@ -1584,17 +1706,43 @@ export default function MessagesPage() {
                 <h3>Thông báo nâng cao</h3>
                 <div className={styles.overlayList}>
                   {notifications.map((item) => {
-                    const conversationId = item.meta?.conversationId ? String(item.meta.conversationId) : null
+                    const meta = parseNotificationMeta(item)
+                    const conversationId = meta?.conversationId
+                    const canAccept = item.type === 'friend-request' && !item.is_read && Boolean(meta?.requesterId || meta?.friendshipId)
                     return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => handleOpenNotificationConversation(conversationId)}
-                      >
-                        <strong>{item.title}</strong>
-                        <span>{item.body || 'Thông báo hệ thống'}</span>
-                        <small>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
-                      </button>
+                      <div key={item.id} className={styles.notifyCard}>
+                        <button
+                          type="button"
+                          className={styles.notifyMainBtn}
+                          onClick={() => handleOpenNotificationConversation(conversationId)}
+                        >
+                          <strong>{item.title}</strong>
+                          <span>{item.body || 'Thông báo hệ thống'}</span>
+                          <small>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                        </button>
+                        <div className={styles.notifyActions}>
+                          {conversationId ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenNotificationConversation(conversationId)}
+                            >
+                              Mở đoạn chat
+                            </button>
+                          ) : null}
+                          {canAccept ? (
+                            <button
+                              type="button"
+                              className={styles.notifyAcceptBtn}
+                              disabled={busyActionId === `notif-${item.id}`}
+                              onClick={() => {
+                                void handleAcceptFromNotification(item)
+                              }}
+                            >
+                              {busyActionId === `notif-${item.id}` ? 'Đang đồng ý...' : 'Đồng ý'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
                     )
                   })}
                   {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
