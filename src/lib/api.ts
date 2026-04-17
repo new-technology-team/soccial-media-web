@@ -401,6 +401,20 @@ export const api = {
       token
     ),
 
+  transferGroupLeader: (token: string, conversationId: string, userId: number) =>
+    request<{ message: string }>(
+      `/chat/conversations/${conversationId}/leader`,
+      { method: 'PATCH', body: JSON.stringify({ userId }) },
+      token
+    ),
+
+  setGroupDeputy: (token: string, conversationId: string, userId: number | null) =>
+    request<{ message: string }>(
+      `/chat/conversations/${conversationId}/deputy`,
+      { method: 'PATCH', body: JSON.stringify({ userId }) },
+      token
+    ),
+
   dissolveGroupConversation: (token: string, conversationId: string) =>
     request<{ message: string }>(`/chat/conversations/${conversationId}`, { method: 'DELETE' }, token),
 

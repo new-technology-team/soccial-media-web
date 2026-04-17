@@ -533,7 +533,11 @@ export default function MessagesPage() {
     return selectedGroup.members.find((item) => item.userId === user.id) || null
   }, [selectedGroup, user?.id])
 
-  const canManageSelectedGroup = Boolean(selectedGroup && myGroupMember?.role === 'admin')
+  const myGroupRole = myGroupMember?.role || 'member'
+  const canRemoveMembers = Boolean(selectedGroup && (myGroupRole === 'leader' || myGroupRole === 'deputy'))
+  const canManageRoles = Boolean(selectedGroup && myGroupRole === 'leader')
+  const canDissolveSelectedGroup = Boolean(selectedGroup && myGroupRole === 'leader')
+  const canAddMembers = canRemoveMembers
 
   const groupInviteCandidates = useMemo(() => {
     if (!selectedGroup) return []
@@ -801,7 +805,7 @@ export default function MessagesPage() {
   }
 
   const handleAddMemberToGroup = async (targetUserId: number) => {
-    if (!token || !selectedGroup || !canManageSelectedGroup) return
+    if (!token || !selectedGroup || !canAddMembers) return
     setGroupActionBusyId(`add-${targetUserId}`)
     try {
       await api.addGroupMember(token, selectedGroup.id, targetUserId)
@@ -819,7 +823,7 @@ export default function MessagesPage() {
   }
 
   const handleRemoveMemberFromGroup = async (targetUserId: number) => {
-    if (!token || !selectedGroup || !canManageSelectedGroup) return
+    if (!token || !selectedGroup || !canRemoveMembers) return
     setGroupActionBusyId(`remove-${targetUserId}`)
     try {
       await api.removeGroupMember(token, selectedGroup.id, targetUserId)
@@ -836,18 +840,36 @@ export default function MessagesPage() {
     }
   }
 
-  const handleUpdateGroupRole = async (targetUserId: number, toAdmin: boolean) => {
-    if (!token || !selectedGroup || !canManageSelectedGroup) return
-    setGroupActionBusyId(`role-${targetUserId}`)
+  const handleSetDeputyRole = async (targetUserId: number | null) => {
+    if (!token || !selectedGroup || !canManageRoles) return
+    setGroupActionBusyId(`deputy-${targetUserId ?? 'none'}`)
     try {
-      await api.updateGroupMemberAdmin(token, selectedGroup.id, targetUserId, toAdmin)
+      await api.setGroupDeputy(token, selectedGroup.id, targetUserId)
       await refreshConversations()
-      setChatNotice(toAdmin ? 'Đã cấp quyền admin cho thành viên.' : 'Đã thu hồi quyền admin.')
+      setChatNotice(targetUserId ? 'Đã cấp quyền phó nhóm.' : 'Đã thu hồi quyền phó nhóm.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể cập nhật quyền thành viên.')
+        setChatNotice('Không thể cập nhật phó nhóm.')
+      }
+    } finally {
+      setGroupActionBusyId(null)
+    }
+  }
+
+  const handleTransferLeader = async (targetUserId: number) => {
+    if (!token || !selectedGroup || !canManageRoles) return
+    setGroupActionBusyId(`role-${targetUserId}`)
+    try {
+      await api.transferGroupLeader(token, selectedGroup.id, targetUserId)
+      await refreshConversations()
+      setChatNotice('Đã chuyển quyền trưởng nhóm.')
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể chuyển quyền trưởng nhóm.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -855,7 +877,7 @@ export default function MessagesPage() {
   }
 
   const handleDissolveGroup = async () => {
-    if (!token || !selectedGroup || !canManageSelectedGroup) return
+    if (!token || !selectedGroup || !canDissolveSelectedGroup) return
     const confirmed = window.confirm('Bạn chắc chắn muốn giải tán nhóm này? Hành động này không thể hoàn tác.')
     if (!confirmed) return
     setGroupActionBusyId('dissolve-group')
@@ -1437,7 +1459,7 @@ export default function MessagesPage() {
                 type="button"
                 title="Thêm người vào cuộc trò chuyện"
                 aria-label="Thêm người vào cuộc trò chuyện"
-                disabled={!selectedGroup || !canManageSelectedGroup}
+                disabled={!selectedGroup || !canAddMembers}
                 onClick={() => setShowManageGroupModal(true)}
               >
                 <UserPlus size={16} />
@@ -1935,9 +1957,11 @@ export default function MessagesPage() {
               <div className={styles.overlayCard}>
                 <h3>Quản lý nhóm: {selectedGroup.name || 'Nhóm chat'}</h3>
                 <p className={styles.groupManageHint}>
-                  {canManageSelectedGroup
-                    ? 'Bạn có thể thêm/xóa thành viên, gán quyền admin và giải tán nhóm.'
-                    : 'Bạn chỉ có thể xem thành viên vì không phải admin nhóm.'}
+                  {canManageRoles
+                    ? 'Bạn có thể chuyển quyền trưởng nhóm, cấp quyền phó nhóm, quản lý thành viên và giải tán nhóm.'
+                    : canRemoveMembers
+                      ? 'Bạn là phó nhóm: có thể thêm/xóa thành viên (không được giải tán nhóm và chuyển quyền trưởng nhóm).'
+                      : 'Bạn chỉ có thể xem thành viên vì không có quyền quản lý nhóm.'}
                 </p>
 
                 <div className={styles.groupManageSection}>
@@ -1945,28 +1969,47 @@ export default function MessagesPage() {
                   <div className={styles.groupMemberList}>
                     {selectedGroup.members.map((member) => {
                       const isSelf = Number(member.userId) === Number(user?.id)
-                      const isAdmin = member.role === 'admin'
+                      const role = member.role === 'leader' ? 'Trưởng nhóm' : member.role === 'deputy' ? 'Phó nhóm' : 'Thành viên'
+                      const isLeader = member.role === 'leader'
+                      const isDeputy = member.role === 'deputy'
                       return (
                         <div key={member.userId} className={styles.groupMemberRow}>
                           <div className={styles.groupMemberInfo}>
                             <b>{member.fullName}{isSelf ? ' (Bạn)' : ''}</b>
-                            <small>{isAdmin ? 'Admin' : 'Thành viên'} · ID {member.userId}</small>
+                            <small>{role} · ID {member.userId}</small>
                           </div>
-                          {canManageSelectedGroup && !isSelf ? (
+                          {(canManageRoles || canRemoveMembers) && !isSelf ? (
                             <div className={styles.groupMemberActions}>
-                              <button
-                                type="button"
-                                disabled={groupActionBusyId === `role-${member.userId}`}
-                                onClick={() => {
-                                  void handleUpdateGroupRole(member.userId, !isAdmin)
-                                }}
-                              >
-                                {groupActionBusyId === `role-${member.userId}`
-                                  ? 'Đang cập nhật...'
-                                  : isAdmin
-                                    ? 'Hạ quyền'
-                                    : 'Cấp admin'}
-                              </button>
+                              {canManageRoles ? (
+                                <>
+                                  {!isLeader ? (
+                                    <button
+                                      type="button"
+                                      disabled={groupActionBusyId === `role-${member.userId}`}
+                                      onClick={() => {
+                                        void handleTransferLeader(member.userId)
+                                      }}
+                                    >
+                                      {groupActionBusyId === `role-${member.userId}` ? 'Đang chuyển...' : 'Chuyển quyền trưởng nhóm'}
+                                    </button>
+                                  ) : null}
+                                  {!isLeader ? (
+                                    <button
+                                      type="button"
+                                      disabled={groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`}
+                                      onClick={() => {
+                                        void handleSetDeputyRole(isDeputy ? null : member.userId)
+                                      }}
+                                    >
+                                      {groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`
+                                        ? 'Đang cập nhật...'
+                                        : isDeputy
+                                          ? 'Gỡ phó nhóm'
+                                          : 'Cấp phó nhóm'}
+                                    </button>
+                                  ) : null}
+                                </>
+                              ) : null}
                               <button
                                 type="button"
                                 className={styles.dangerBtn}
@@ -1985,7 +2028,7 @@ export default function MessagesPage() {
                   </div>
                 </div>
 
-                {canManageSelectedGroup ? (
+                {canAddMembers ? (
                   <div className={styles.groupManageSection}>
                     <strong>Thêm thành viên mới</strong>
                     <div className={styles.groupMemberList}>
@@ -2013,7 +2056,7 @@ export default function MessagesPage() {
                   </div>
                 ) : null}
 
-                {canManageSelectedGroup ? (
+                {canDissolveSelectedGroup ? (
                   <button
                     type="button"
                     className={styles.dangerBtn}
@@ -2161,15 +2204,17 @@ export default function MessagesPage() {
                           Thu hồi
                         </button>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleDeleteMessage(msg)
-                          setActionMenu(null)
-                        }}
-                      >
-                        Xóa
-                      </button>
+                      {mine ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleDeleteMessage(msg)
+                            setActionMenu(null)
+                          }}
+                        >
+                          Xóa
+                        </button>
+                      ) : null}
                     </div>
                   )
                 })}
