@@ -524,10 +524,10 @@ export const api = {
       token
     ).then((data) => ({ ...data, chatMessage: normalizeChatMessage(data.chatMessage) })),
 
-  aiChat: (token: string | undefined, message: string) =>
+  aiChat: (token: string | undefined, message: string, history?: { role: 'user' | 'model'; text: string }[]) =>
     request<{ message?: string; reply?: string }>('/social/ai/support', {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history }),
     }, token),
 
   notifications: (token: string) =>
