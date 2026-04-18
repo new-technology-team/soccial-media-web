@@ -395,6 +395,9 @@ export const api = {
   removeGroupMember: (token: string, conversationId: string, userId: number) =>
     request<{ message: string }>(`/chat/conversations/${conversationId}/members/${userId}`, { method: 'DELETE' }, token),
 
+  leaveGroupConversation: (token: string, conversationId: string) =>
+    request<{ message: string }>(`/chat/conversations/${conversationId}/leave`, { method: 'DELETE' }, token),
+
   updateGroupMemberAdmin: (token: string, conversationId: string, userId: number, isAdmin: boolean) =>
     request<{ message: string }>(
       `/chat/conversations/${conversationId}/admins`,

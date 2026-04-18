@@ -6,7 +6,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Bell,
   CirclePlus,
+  Crown,
   Info,
+  LogOut,
   MoreHorizontal,
   Paperclip,
   Phone,
@@ -15,6 +17,8 @@ import {
   Send,
   Smile,
   Sticker,
+  Trash2,
+  UserCheck,
   UserPlus,
   Video,
 } from 'lucide-react'
@@ -74,6 +78,17 @@ const getConversationDisplayName = (
   }
   const peer = conversation.members.find((member) => member.userId !== currentUserId)
   return peer?.fullName || conversation.name || 'Cuộc trò chuyện'
+}
+
+const getGroupRoleLabel = (role: string | null | undefined) => {
+  if (role === 'leader') return 'Trưởng nhóm'
+  if (role === 'deputy') return 'Phó nhóm'
+  return 'Thành viên'
+}
+
+const getAvatarInitial = (value: string | null | undefined) => {
+  const normalized = String(value || '').trim()
+  return (normalized[0] || 'U').toUpperCase()
 }
 
 type ActiveCall = {
@@ -157,8 +172,7 @@ export default function MessagesPage() {
   const [showNewMessageModal, setShowNewMessageModal] = useState(false)
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
-  const [showManageGroupModal, setShowManageGroupModal] = useState(false)
-  const [showGroupInfoModal, setShowGroupInfoModal] = useState(false)
+  const [rightPanelSection, setRightPanelSection] = useState<'overview' | 'members' | 'manage'>('overview')
   const [groupName, setGroupName] = useState('')
   const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
   const [groupMemberIds, setGroupMemberIds] = useState<number[]>([])
@@ -438,6 +452,22 @@ export default function MessagesPage() {
   }, [actionMenu])
 
   useEffect(() => {
+    if (!chatNotice) return
+    const timer = window.setTimeout(() => {
+      setChatNotice(null)
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [chatNotice])
+
+  useEffect(() => {
+    if (!callStatus || incomingCall || activeCall) return
+    const timer = window.setTimeout(() => {
+      setCallStatus(null)
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [callStatus, incomingCall, activeCall])
+
+  useEffect(() => {
     if (!activeCall) return
     setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
     const timer = window.setInterval(() => {
@@ -452,6 +482,11 @@ export default function MessagesPage() {
   const messages = useMemo(
     () => (selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []),
     [messagesByConversation, selectedConversationId]
+  )
+
+  const activeActionMessage = useMemo(
+    () => (actionMenu ? messages.find((msg) => msg.id === actionMenu.messageId) || null : null),
+    [actionMenu, messages]
   )
 
   const [searchTerm, setSearchTerm] = useState('')
@@ -553,6 +588,9 @@ export default function MessagesPage() {
     return selectedGroup.members.find((member) => member.role === 'deputy') || null
   }, [selectedGroup])
 
+  const canLeaveGroup = Boolean(selectedGroup && myGroupMember)
+  const canLeaderLeaveGroup = myGroupRole !== 'leader' || Boolean(groupDeputy && Number(groupDeputy.userId) !== Number(user?.id))
+
   const groupInviteCandidates = useMemo(() => {
     if (!selectedGroup) return []
     const existingIds = new Set(selectedGroup.members.map((member) => member.userId))
@@ -575,6 +613,10 @@ export default function MessagesPage() {
   const isDirectPeerFriend = Boolean(directPeerFriendship && directPeerFriendship.status === 'accepted')
   const isDirectPeerPending = Boolean(directPeerFriendship && directPeerFriendship.status === 'pending')
   const isDirectPeerRequestedByMe = Boolean(directPeerFriendship?.requestedByMe)
+
+  useEffect(() => {
+    setRightPanelSection('overview')
+  }, [selectedConversationId])
 
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
     if (localStreamRef.current) return localStreamRef.current
@@ -909,7 +951,6 @@ export default function MessagesPage() {
     try {
       await api.dissolveGroupConversation(token, selectedGroup.id)
       await refreshConversations()
-      setShowManageGroupModal(false)
       setChatNotice('Đã giải tán nhóm chat.')
       const fallback = conversations.find((item) => item.id !== selectedGroup.id)
       if (fallback) {
@@ -920,6 +961,47 @@ export default function MessagesPage() {
         setChatNotice(error.message)
       } else {
         setChatNotice('Không thể giải tán nhóm.')
+      }
+    } finally {
+      setGroupActionBusyId(null)
+    }
+  }
+
+  const handleLeaveGroup = async () => {
+    if (!token || !selectedGroup || !canLeaveGroup) return
+    if (myGroupRole === 'leader' && !canLeaderLeaveGroup) {
+      setChatNotice('Bạn đang là trưởng nhóm. Hãy chỉ định phó nhóm trước khi rời nhóm.')
+      setRightPanelSection('manage')
+      return
+    }
+
+    const confirmed = window.confirm('Bạn có chắc muốn rời nhóm này không?')
+    if (!confirmed) return
+
+    setGroupActionBusyId('leave-group')
+    try {
+      await api.leaveGroupConversation(token, selectedGroup.id)
+      await refreshConversations()
+      setChatNotice(
+        myGroupRole === 'leader'
+          ? 'Bạn đã rời nhóm. Quyền trưởng nhóm đã tự động chuyển cho phó nhóm.'
+          : 'Bạn đã rời nhóm chat.'
+      )
+
+      const fallback = conversations.find((item) => item.id !== selectedGroup.id)
+      if (fallback) {
+        selectConversation(fallback.id)
+      } else {
+        const refreshed = await api.listConversations(token)
+        if (refreshed.conversations.length > 0) {
+          selectConversation(refreshed.conversations[0].id)
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể rời nhóm lúc này.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -1533,7 +1615,7 @@ export default function MessagesPage() {
                 title="Thêm người vào cuộc trò chuyện"
                 aria-label="Thêm người vào cuộc trò chuyện"
                 disabled={!selectedGroup || !canAddMembers}
-                onClick={() => setShowManageGroupModal(true)}
+                onClick={() => setRightPanelSection('manage')}
               >
                 <UserPlus size={16} />
               </button>
@@ -1541,8 +1623,8 @@ export default function MessagesPage() {
                 type="button"
                 title="Xem chi tiết cuộc trò chuyện"
                 aria-label="Xem chi tiết cuộc trò chuyện"
-                disabled={!selectedGroup}
-                onClick={() => setShowGroupInfoModal(true)}
+                disabled={!selectedConversation}
+                onClick={() => setRightPanelSection('overview')}
               >
                 <Info size={16} />
               </button>
@@ -1909,7 +1991,13 @@ export default function MessagesPage() {
                 <div className={styles.overlayList}>
                   {searchUsersResult.map((item) => (
                     <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)} title={`Tạo hội thoại với ${item.name}`} aria-label={`Tạo hội thoại với ${item.name}`}>
-                      {item.name}
+                      <span className={styles.listEntryIdentity}>
+                        <span className={styles.listEntryAvatar}>{getAvatarInitial(item.name)}</span>
+                        <span className={styles.listEntryMeta}>
+                          <strong className={styles.listEntryTitle}>{item.name}</strong>
+                          <small className={styles.listEntrySubtitle}>ID {item.id}</small>
+                        </span>
+                      </span>
                     </button>
                   ))}
                   {searchUsersResult.length === 0 ? <p>Không có kết quả phù hợp.</p> : null}
@@ -1937,9 +2025,14 @@ export default function MessagesPage() {
                           className={styles.notifyMainBtn}
                           onClick={() => handleOpenNotificationConversation(conversationId)}
                         >
-                          <strong>{item.title}</strong>
-                          <span>{item.body || 'Thông báo hệ thống'}</span>
-                          <small>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                          <span className={styles.listEntryIdentity}>
+                            <span className={styles.listEntryAvatar}>{getAvatarInitial(item.title)}</span>
+                            <span className={styles.listEntryMeta}>
+                              <strong className={styles.listEntryTitle}>{item.title}</strong>
+                              <span className={styles.listEntrySubtitle}>{item.body || 'Thông báo hệ thống'}</span>
+                              <small className={styles.listEntrySubtitle}>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                            </span>
+                          </span>
                         </button>
                         <div className={styles.notifyActions}>
                           {conversationId ? (
@@ -1985,7 +2078,13 @@ export default function MessagesPage() {
                     .filter((conv) => conv.id !== selectedConversationId)
                     .map((conv) => (
                       <button key={conv.id} type="button" onClick={() => handleForward(conv.id)} title={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`} aria-label={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`}>
-                        {getConversationDisplayName(conv, user?.id)}
+                        <span className={styles.listEntryIdentity}>
+                          <span className={styles.listEntryAvatar}>{getAvatarInitial(getConversationDisplayName(conv, user?.id))}</span>
+                          <span className={styles.listEntryMeta}>
+                            <strong className={styles.listEntryTitle}>{getConversationDisplayName(conv, user?.id)}</strong>
+                            <small className={styles.listEntrySubtitle}>ID {conv.id}</small>
+                          </span>
+                        </span>
                       </button>
                     ))}
                 </div>
@@ -2015,8 +2114,13 @@ export default function MessagesPage() {
                     const checked = groupMemberIds.includes(friend.id)
                     return (
                       <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chọn ${friend.fullName}`} aria-label={`Chọn ${friend.fullName}`}>
-                        <strong>{checked ? '✓ ' : ''}{friend.fullName}</strong>
-                        <span>{friend.email || friend.phone || `ID ${friend.id}`}</span>
+                        <span className={styles.listEntryIdentity}>
+                          <span className={styles.listEntryAvatar}>{getAvatarInitial(friend.fullName)}</span>
+                          <span className={styles.listEntryMeta}>
+                            <strong className={styles.listEntryTitle}>{checked ? '✓ ' : ''}{friend.fullName}</strong>
+                            <span className={styles.listEntrySubtitle}>{friend.email || friend.phone || `ID ${friend.id}`}</span>
+                          </span>
+                        </span>
                       </button>
                     )
                   })}
@@ -2032,213 +2136,6 @@ export default function MessagesPage() {
                   {creatingGroup ? 'Đang tạo nhóm...' : 'Tạo nhóm'}
                 </button>
                 <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)} title="Đóng" aria-label="Đóng">
-                  Đóng
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {showManageGroupModal && selectedGroup ? (
-            <div className={styles.overlayBackdrop}>
-              <div className={styles.overlayCard}>
-                <h3>Quản lý nhóm: {selectedGroup.name || 'Nhóm chat'}</h3>
-                <p className={styles.groupManageHint}>
-                  {canManageRoles
-                    ? 'Bạn có thể chuyển quyền trưởng nhóm, cấp quyền phó nhóm, quản lý thành viên và giải tán nhóm.'
-                    : canRemoveMembers
-                      ? 'Bạn là phó nhóm: có thể thêm/xóa thành viên (không được giải tán nhóm và chuyển quyền trưởng nhóm).'
-                      : 'Bạn chỉ có thể xem thành viên vì không có quyền quản lý nhóm.'}
-                </p>
-
-                <div className={styles.groupManageSection}>
-                  <strong>Thành viên hiện tại ({selectedGroup.members.length})</strong>
-                  <div className={styles.groupMemberList}>
-                    {selectedGroup.members.map((member) => {
-                      const isSelf = Number(member.userId) === Number(user?.id)
-                      const role = member.role === 'leader' ? 'Trưởng nhóm' : member.role === 'deputy' ? 'Phó nhóm' : 'Thành viên'
-                      const isLeader = member.role === 'leader'
-                      const isDeputy = member.role === 'deputy'
-                      return (
-                        <div key={member.userId} className={styles.groupMemberRow}>
-                          <div className={styles.groupMemberInfo}>
-                            <b>{member.fullName}{isSelf ? ' (Bạn)' : ''}</b>
-                            <small>{role} · ID {member.userId}</small>
-                          </div>
-                          {(canManageRoles || canRemoveMembers) && !isSelf ? (
-                            <div className={styles.groupMemberActions}>
-                              {canManageRoles ? (
-                                <>
-                                  {!isLeader ? (
-                                    <button
-                                      type="button"
-                                      disabled={groupActionBusyId === `role-${member.userId}`}
-                                      onClick={() => {
-                                        void handleTransferLeader(member.userId)
-                                      }}
-                                    >
-                                      {groupActionBusyId === `role-${member.userId}` ? 'Đang chuyển...' : 'Chuyển quyền trưởng nhóm'}
-                                    </button>
-                                  ) : null}
-                                  {!isLeader ? (
-                                    <button
-                                      type="button"
-                                      disabled={groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`}
-                                      onClick={() => {
-                                        void handleSetDeputyRole(isDeputy ? null : member.userId)
-                                      }}
-                                    >
-                                      {groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`
-                                        ? 'Đang cập nhật...'
-                                        : isDeputy
-                                          ? 'Gỡ phó nhóm'
-                                          : 'Cấp phó nhóm'}
-                                    </button>
-                                  ) : null}
-                                </>
-                              ) : null}
-                              <button
-                                type="button"
-                                className={styles.dangerBtn}
-                                disabled={groupActionBusyId === `remove-${member.userId}`}
-                                onClick={() => {
-                                  void handleRemoveMemberFromGroup(member.userId)
-                                }}
-                              >
-                                {groupActionBusyId === `remove-${member.userId}` ? 'Đang xóa...' : 'Xóa'}
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {canAddMembers ? (
-                  <div className={styles.groupManageSection}>
-                    <strong>Thêm thành viên mới</strong>
-                    <div className={styles.groupMemberList}>
-                      {groupInviteCandidates.map((friend) => (
-                        <div key={friend.id} className={styles.groupMemberRow}>
-                          <div className={styles.groupMemberInfo}>
-                            <b>{friend.fullName}</b>
-                            <small>{friend.email || friend.phone || `ID ${friend.id}`}</small>
-                          </div>
-                          <div className={styles.groupMemberActions}>
-                            <button
-                              type="button"
-                              disabled={groupActionBusyId === `add-${friend.id}`}
-                              onClick={() => {
-                                void handleAddMemberToGroup(friend.id)
-                              }}
-                            >
-                              {groupActionBusyId === `add-${friend.id}` ? 'Đang thêm...' : 'Thêm'}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      {groupInviteCandidates.length === 0 ? <p>Không còn bạn bè nào để thêm vào nhóm.</p> : null}
-                    </div>
-                  </div>
-                ) : null}
-
-                {canDissolveSelectedGroup ? (
-                  <button
-                    type="button"
-                    className={styles.dangerBtn}
-                    disabled={groupActionBusyId === 'dissolve-group'}
-                    onClick={() => {
-                      void handleDissolveGroup()
-                    }}
-                  >
-                    {groupActionBusyId === 'dissolve-group' ? 'Đang giải tán nhóm...' : 'Giải tán nhóm'}
-                  </button>
-                ) : null}
-
-                <button
-                  type="button"
-                  className={styles.overlayCloseBtn}
-                  onClick={() => setShowManageGroupModal(false)}
-                  title="Đóng"
-                  aria-label="Đóng"
-                >
-                  Đóng
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {showGroupInfoModal && selectedGroup ? (
-            <div className={styles.overlayBackdrop}>
-              <div className={styles.overlayCard}>
-                <h3>Thông tin nhóm: {selectedGroup.name || 'Nhóm chat'}</h3>
-                <div className={styles.groupManageSection}>
-                  <strong>Trưởng nhóm</strong>
-                  <div className={styles.groupMemberRow}>
-                    <div className={styles.groupMemberInfo}>
-                      <b>{groupLeader?.fullName || 'Chưa xác định'}</b>
-                      <small>ID {groupLeader?.userId ?? selectedGroup.createdBy}</small>
-                    </div>
-                  </div>
-                </div>
-                <div className={styles.groupManageSection}>
-                  <strong>Phó nhóm</strong>
-                  <div className={styles.groupMemberRow}>
-                    <div className={styles.groupMemberInfo}>
-                      <b>{groupDeputy?.fullName || 'Chưa có phó nhóm'}</b>
-                      <small>{groupDeputy ? `ID ${groupDeputy.userId}` : 'Nhóm hiện chưa có phó nhóm'}</small>
-                    </div>
-                  </div>
-                </div>
-                <div className={styles.groupManageSection}>
-                  <strong>Thành viên ({selectedGroup.members.length})</strong>
-                  <div className={styles.groupMemberList}>
-                    {selectedGroup.members.map((member) => (
-                      <div key={member.userId} className={styles.groupMemberRow}>
-                        <div className={styles.groupMemberInfo}>
-                          <b>{member.fullName}{Number(member.userId) === Number(selectedGroup.createdBy) ? ' (Người tạo nhóm)' : ''}</b>
-                          <small>
-                            {member.role === 'leader' ? 'Trưởng nhóm' : member.role === 'deputy' ? 'Phó nhóm' : 'Thành viên'} · ID {member.userId}
-                          </small>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className={styles.groupManageSection}>
-                  <strong>Thao tác nhanh</strong>
-                  <div className={styles.groupMemberActions}>
-                    <button type="button" onClick={() => setShowManageGroupModal(true)}>
-                      Thêm / xóa / gán quyền
-                    </button>
-                    <button type="button" onClick={() => void handleClearChatForMe()}>
-                      Xóa đoạn chat
-                    </button>
-                    {selectedConversation?.pinnedMessageIds?.length ? (
-                      <button type="button" onClick={() => setShowGroupInfoModal(false)}>
-                        Xem tin đã ghim
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className={styles.overlayCloseBtn}
-                  onClick={() => {
-                    void handleClearChatForMe()
-                  }}
-                  title="Xóa đoạn chat ở phía bạn"
-                  aria-label="Xóa đoạn chat ở phía bạn"
-                >
-                  Xóa đoạn chat của bạn
-                </button>
-                <button
-                  type="button"
-                  className={styles.overlayCloseBtn}
-                  onClick={() => setShowGroupInfoModal(false)}
-                  title="Đóng"
-                  aria-label="Đóng"
-                >
                   Đóng
                 </button>
               </div>
@@ -2321,78 +2218,356 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
-          {actionMenu ? (
+          {actionMenu && activeActionMessage ? (
             <div ref={actionMenuRef} className={styles.actionMenu}>
-              {messages
-                .filter((msg) => msg.id === actionMenu.messageId)
-                .map((msg) => {
-                  const mine = msg.senderId === user?.id
-                  return (
-                    <div key={msg.id}>
-                      <button type="button" onClick={() => {
-                        handleReaction(msg, 'like')
-                        setActionMenu(null)
-                      }} title="Thích" aria-label="Thích">
-                        Thích
-                      </button>
-                      <button type="button" onClick={() => {
-                        handleReaction(msg, 'love')
-                        setActionMenu(null)
-                      }} title="Yêu thích" aria-label="Yêu thích">
-                        Yêu thích
-                      </button>
-                      <button type="button" onClick={() => {
-                        handleReaction(msg, 'care')
-                        setActionMenu(null)
-                      }} title="Quan tâm" aria-label="Quan tâm">
-                        Quan tâm
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForwardingMessageId(msg.id)
-                          setActionMenu(null)
-                        }}
-                      >
-                        Chuyển tiếp
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleTogglePinMessage(msg)
-                          setActionMenu(null)
-                        }}
-                      >
-                        {pinnedMessageIds.has(msg.id) ? 'Bỏ ghim' : 'Ghim'}
-                      </button>
-                      {mine ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleRecall(msg)
-                            setActionMenu(null)
-                          }}
-                        >
-                          Thu hồi
-                        </button>
-                      ) : null}
-                      {mine ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleDeleteMessage(msg)
-                            setActionMenu(null)
-                          }}
-                        >
-                          Xóa
-                        </button>
-                      ) : null}
-                    </div>
-                  )
-                })}
+              <div className={styles.actionMenuHeader}>
+                <span className={styles.listEntryAvatar}>{getAvatarInitial(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name)}</span>
+                <div className={styles.actionMenuMeta}>
+                  <strong>{String(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name || 'Người dùng')}</strong>
+                  <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
+                </div>
+              </div>
+              <button type="button" onClick={() => {
+                handleReaction(activeActionMessage, 'like')
+                setActionMenu(null)
+              }} title="Thích" aria-label="Thích">
+                Thích
+              </button>
+              <button type="button" onClick={() => {
+                handleReaction(activeActionMessage, 'love')
+                setActionMenu(null)
+              }} title="Yêu thích" aria-label="Yêu thích">
+                Yêu thích
+              </button>
+              <button type="button" onClick={() => {
+                handleReaction(activeActionMessage, 'care')
+                setActionMenu(null)
+              }} title="Quan tâm" aria-label="Quan tâm">
+                Quan tâm
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForwardingMessageId(activeActionMessage.id)
+                  setActionMenu(null)
+                }}
+              >
+                Chuyển tiếp
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleTogglePinMessage(activeActionMessage)
+                  setActionMenu(null)
+                }}
+              >
+                {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
+              </button>
+              {activeActionMessage.senderId === user?.id ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleRecall(activeActionMessage)
+                    setActionMenu(null)
+                  }}
+                >
+                  Thu hồi
+                </button>
+              ) : null}
+              {activeActionMessage.senderId === user?.id ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteMessage(activeActionMessage)
+                    setActionMenu(null)
+                  }}
+                >
+                  Xóa
+                </button>
+              ) : null}
             </div>
           ) : null}
         </section>
+
+        <aside className={styles.detailsPanel}>
+          {!selectedConversation ? (
+            <div className={styles.detailsEmpty}>
+              <Info size={16} />
+              <p>Chọn một cuộc trò chuyện để xem thông tin và thao tác nhanh.</p>
+            </div>
+          ) : null}
+
+          {selectedConversation && selectedConversation.type === 'direct' ? (
+            <div className={styles.detailsBody}>
+              <div className={styles.detailsHeader}>
+                <h3>Thông tin đoạn chat</h3>
+                <span>Chat đơn</span>
+              </div>
+
+              <div className={styles.detailsIdentity}>
+                <div className={styles.detailsAvatar}>{(selectedName[0] || 'U').toUpperCase()}</div>
+                <div>
+                  <strong>{selectedName}</strong>
+                  <small>
+                    {isDirectPeerFriend
+                      ? 'Đã kết bạn'
+                      : isDirectPeerPending
+                        ? 'Đang chờ xác nhận kết bạn'
+                        : 'Chưa kết bạn'}
+                  </small>
+                </div>
+              </div>
+
+              <div className={styles.detailsSection}>
+                <strong>Tùy chọn nhanh</strong>
+                <div className={styles.detailActionsGrid}>
+                  {directPeer ? (
+                    <Link to={`/profile/${directPeer.id}`} className={styles.detailLinkAction}>
+                      Xem trang cá nhân
+                    </Link>
+                  ) : null}
+                  <button type="button" onClick={() => void handleClearChatForMe()}>
+                    Xóa đoạn chat phía bạn
+                  </button>
+                  <button type="button" onClick={() => setShowNotificationsDrawer(true)}>
+                    Mở thông báo
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {selectedGroup ? (
+            <div className={styles.detailsBody}>
+              <div className={styles.detailsHeader}>
+                <h3>Thông tin nhóm</h3>
+                <span>{selectedGroup.members.length} thành viên</span>
+              </div>
+
+              <div className={styles.detailsIdentity}>
+                <div className={styles.detailsAvatar}>{(selectedGroup.name?.[0] || 'G').toUpperCase()}</div>
+                <div>
+                  <strong>{selectedGroup.name || 'Nhóm chat'}</strong>
+                  <small>Bạn: {getGroupRoleLabel(myGroupRole)}</small>
+                </div>
+              </div>
+
+              <div className={styles.detailsTabs}>
+                <button
+                  type="button"
+                  className={rightPanelSection === 'overview' ? styles.detailsTabActive : ''}
+                  onClick={() => setRightPanelSection('overview')}
+                >
+                  Tổng quan
+                </button>
+                <button
+                  type="button"
+                  className={rightPanelSection === 'members' ? styles.detailsTabActive : ''}
+                  onClick={() => setRightPanelSection('members')}
+                >
+                  Thành viên
+                </button>
+                <button
+                  type="button"
+                  className={rightPanelSection === 'manage' ? styles.detailsTabActive : ''}
+                  onClick={() => setRightPanelSection('manage')}
+                >
+                  Quản lý
+                </button>
+              </div>
+
+              {rightPanelSection === 'overview' ? (
+                <>
+                  <div className={styles.detailsSection}>
+                    <strong>Vai trò chính</strong>
+                    <div className={styles.groupMemberList}>
+                      <div className={styles.groupMemberRow}>
+                        <div className={styles.groupMemberInfo}>
+                          <b>{groupLeader?.fullName || 'Chưa xác định'}</b>
+                          <small>Trưởng nhóm · ID {groupLeader?.userId ?? selectedGroup.createdBy}</small>
+                        </div>
+                        <Crown size={14} />
+                      </div>
+                      <div className={styles.groupMemberRow}>
+                        <div className={styles.groupMemberInfo}>
+                          <b>{groupDeputy?.fullName || 'Chưa có phó nhóm'}</b>
+                          <small>{groupDeputy ? `Phó nhóm · ID ${groupDeputy.userId}` : 'Cần chỉ định để trưởng nhóm có thể rời nhóm'}</small>
+                        </div>
+                        <UserCheck size={14} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={styles.detailsSection}>
+                    <strong>Thao tác nhanh</strong>
+                    <div className={styles.detailActionsGrid}>
+                      <button type="button" onClick={() => setRightPanelSection('manage')}>
+                        Quản lý quyền & thành viên
+                      </button>
+                      <button type="button" onClick={() => void handleClearChatForMe()}>
+                        Xóa đoạn chat phía bạn
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
+              {rightPanelSection === 'members' ? (
+                <div className={styles.detailsSection}>
+                  <strong>Danh sách thành viên ({selectedGroup.members.length})</strong>
+                  <div className={styles.groupMemberList}>
+                    {selectedGroup.members.map((member) => (
+                      <div key={member.userId} className={styles.groupMemberRow}>
+                        <div className={styles.groupMemberInfo}>
+                          <b>{member.fullName}{Number(member.userId) === Number(user?.id) ? ' (Bạn)' : ''}</b>
+                          <small>{getGroupRoleLabel(member.role)} · ID {member.userId}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {rightPanelSection === 'manage' ? (
+                <>
+                  <p className={styles.groupManageHint}>
+                    {canManageRoles
+                      ? 'Bạn là trưởng nhóm: có thể phân quyền, thêm/xóa thành viên, giải tán nhóm và rời nhóm.'
+                      : canRemoveMembers
+                        ? 'Bạn là phó nhóm: có thể thêm/xóa thành viên.'
+                        : 'Bạn là thành viên: chỉ có thể rời nhóm.'}
+                  </p>
+
+                  <div className={styles.detailsSection}>
+                    <strong>Quản lý thành viên hiện tại</strong>
+                    <div className={styles.groupMemberList}>
+                      {selectedGroup.members.map((member) => {
+                        const isSelf = Number(member.userId) === Number(user?.id)
+                        const isLeader = member.role === 'leader'
+                        const isDeputy = member.role === 'deputy'
+                        return (
+                          <div key={member.userId} className={styles.groupMemberRow}>
+                            <div className={styles.groupMemberInfo}>
+                              <b>{member.fullName}{isSelf ? ' (Bạn)' : ''}</b>
+                              <small>{getGroupRoleLabel(member.role)} · ID {member.userId}</small>
+                            </div>
+                            {(canManageRoles || canRemoveMembers) && !isSelf ? (
+                              <div className={styles.groupMemberActions}>
+                                {canManageRoles && !isLeader ? (
+                                  <button
+                                    type="button"
+                                    disabled={groupActionBusyId === `role-${member.userId}`}
+                                    onClick={() => {
+                                      void handleTransferLeader(member.userId)
+                                    }}
+                                  >
+                                    {groupActionBusyId === `role-${member.userId}` ? 'Đang chuyển...' : 'Làm trưởng nhóm'}
+                                  </button>
+                                ) : null}
+                                {canManageRoles && !isLeader ? (
+                                  <button
+                                    type="button"
+                                    disabled={groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`}
+                                    onClick={() => {
+                                      void handleSetDeputyRole(isDeputy ? null : member.userId)
+                                    }}
+                                  >
+                                    {groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`
+                                      ? 'Đang cập nhật...'
+                                      : isDeputy
+                                        ? 'Gỡ phó nhóm'
+                                        : 'Gán phó nhóm'}
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className={styles.dangerBtn}
+                                  disabled={groupActionBusyId === `remove-${member.userId}`}
+                                  onClick={() => {
+                                    void handleRemoveMemberFromGroup(member.userId)
+                                  }}
+                                >
+                                  {groupActionBusyId === `remove-${member.userId}` ? 'Đang xóa...' : 'Xóa'}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {canAddMembers ? (
+                    <div className={styles.detailsSection}>
+                      <strong>Thêm thành viên</strong>
+                      <input
+                        className={styles.detailsSearchInput}
+                        value={groupSearchKeyword}
+                        onChange={(event) => setGroupSearchKeyword(event.target.value)}
+                        placeholder="Tìm bạn bè theo tên, email hoặc ID"
+                      />
+                      <div className={styles.groupMemberList}>
+                        {filteredGroupInviteCandidates.map((friend) => (
+                          <div key={friend.id} className={styles.groupMemberRow}>
+                            <div className={styles.groupMemberInfo}>
+                              <b>{friend.fullName}</b>
+                              <small>{friend.email || friend.phone || `ID ${friend.id}`}</small>
+                            </div>
+                            <div className={styles.groupMemberActions}>
+                              <button
+                                type="button"
+                                disabled={groupActionBusyId === `add-${friend.id}`}
+                                onClick={() => {
+                                  void handleAddMemberToGroup(friend.id)
+                                }}
+                              >
+                                {groupActionBusyId === `add-${friend.id}` ? 'Đang thêm...' : 'Thêm'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {filteredGroupInviteCandidates.length === 0 ? <p>Không còn bạn bè phù hợp để thêm.</p> : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className={styles.detailsSection}>
+                    <strong>Hành động nhóm</strong>
+                    <div className={styles.detailActionsGrid}>
+                      <button
+                        type="button"
+                        className={styles.dangerBtn}
+                        disabled={groupActionBusyId === 'leave-group' || (myGroupRole === 'leader' && !canLeaderLeaveGroup)}
+                        onClick={() => {
+                          void handleLeaveGroup()
+                        }}
+                      >
+                        <LogOut size={14} />
+                        {groupActionBusyId === 'leave-group' ? 'Đang rời nhóm...' : 'Rời nhóm'}
+                      </button>
+                      {canDissolveSelectedGroup ? (
+                        <button
+                          type="button"
+                          className={styles.dangerBtn}
+                          disabled={groupActionBusyId === 'dissolve-group'}
+                          onClick={() => {
+                            void handleDissolveGroup()
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          {groupActionBusyId === 'dissolve-group' ? 'Đang giải tán...' : 'Giải tán nhóm'}
+                        </button>
+                      ) : null}
+                    </div>
+                    {myGroupRole === 'leader' && !canLeaderLeaveGroup ? (
+                      <small className={styles.groupManageHint}>Trưởng nhóm chỉ có thể rời nhóm sau khi đã có phó nhóm.</small>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </aside>
       </div>
     </div>
   )
