@@ -1,35 +1,58 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Sparkles, Trash2, UserRound } from 'lucide-react'
+import { Bot, Send, Sparkles, Trash2, UserRound, AlertCircle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store/auth-store'
 import styles from './page.module.css'
 
+type ChatMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
+  isError?: boolean
+}
+
+function buildHistory(messages: ChatMessage[]) {
+  // Lọc lấy các tin nhắn không lỗi và map sang dạng { role, text }
+  const mapped = messages
+    .filter((m) => !m.isError)
+    .map((m) => ({
+      role: m.role === 'user' ? ('user' as const) : ('model' as const),
+      text: m.content,
+    }))
+
+  // Google Generative AI yêu cầu history phải BẮT ĐẦU bằng 'user'
+  // Do đó ta loại bỏ các tin nhắn 'model' (như tin nhắn welcome) ở đầu mảng
+  while (mapped.length > 0 && mapped[0].role === 'model') {
+    mapped.shift()
+  }
+
+  return mapped
+}
+
+const WELCOME_MESSAGE: ChatMessage = {
+  id: 'welcome',
+  role: 'assistant',
+  content: 'Xin chào! Tôi là trợ lý AI của ZChat. Bạn có thể hỏi về cách sử dụng nền tảng, tìm nội dung hoặc nhận hỗ trợ nhanh.',
+  timestamp: new Date(),
+}
+
+const quickPrompts = [
+  'Hướng dẫn tôi đăng bài trên ZChat',
+  'Làm sao để gửi ảnh trong chat?',
+  'Cách kết bạn trên ZChat?',
+  'Tôi quên mật khẩu phải làm gì?',
+]
+
 export default function AIChatPage() {
   const token = useAuthStore((state) => state.accessToken || undefined)
-  const [messages, setMessages] = useState<Array<{
-    id: string
-    role: 'user' | 'assistant'
-    content: string
-    timestamp: Date
-  }>>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Xin chào! Tôi là trợ lý AI của hệ thống. Bạn có thể hỏi về cách sử dụng nền tảng, tìm nội dung hoặc nhận hỗ trợ nhanh.',
-      timestamp: new Date(),
-    },
-  ])
+  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const quickPrompts = [
-    '/search zchat',
-    '/translate en: xin chào',
-    'Hướng dẫn đăng bài chuẩn trên ZChat',
-    'Tóm tắt tính năng dành cho khách vãng lai',
-  ]
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -40,44 +63,55 @@ export default function AIChatPage() {
   }, [messages])
 
   const handleSend = async () => {
-    if (!input.trim()) return
+    const text = input.trim()
+    if (!text || isLoading) return
 
-    // Add user message
-    const userMessage = {
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
-      role: 'user' as const,
-      content: input,
+      role: 'user',
+      content: text,
       timestamp: new Date(),
     }
-    setMessages((prev) => [...prev, userMessage])
+
+    const updatedMessages = [...messages, userMessage]
+    setMessages(updatedMessages)
     setInput('')
     setIsLoading(true)
 
     try {
-      const data = await api.aiChat(token, input)
-      const assistantMessage = {
+      // Gửi history (loại bỏ tin nhắn lỗi) để AI nhớ ngữ cảnh
+      const history = buildHistory(messages) // messages trước khi có userMessage mới nhất
+      const data = await api.aiChat(token, text, history)
+
+      const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        role: 'assistant' as const,
+        role: 'assistant',
         content: data.reply || data.message || 'Xin lỗi, hiện chưa có phản hồi.',
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
-      console.error('Failed to send message:', error)
+      const errText = error instanceof Error ? error.message : 'Đã có lỗi xảy ra. Vui lòng thử lại.'
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 2).toString(),
+          role: 'assistant',
+          content: errText,
+          timestamp: new Date(),
+          isError: true,
+        },
+      ])
     } finally {
       setIsLoading(false)
+      inputRef.current?.focus()
     }
   }
 
   const handleClearChat = () => {
-    setMessages([
-      {
-        id: '1',
-        role: 'assistant',
-        content: 'Bạn muốn mình hỗ trợ gì tiếp theo?',
-        timestamp: new Date(),
-      },
-    ])
+    setMessages([{ ...WELCOME_MESSAGE, id: Date.now().toString(), timestamp: new Date() }])
+    setInput('')
+    inputRef.current?.focus()
   }
 
   return (
@@ -103,7 +137,10 @@ export default function AIChatPage() {
             <button
               key={prompt}
               type="button"
-              onClick={() => setInput(prompt)}
+              onClick={() => {
+                setInput(prompt)
+                inputRef.current?.focus()
+              }}
               className={styles.promptChip}
             >
               {prompt}
@@ -118,8 +155,9 @@ export default function AIChatPage() {
                 <div className={styles.avatar}>
                   {msg.role === 'assistant' ? <Bot size={16} /> : <UserRound size={16} />}
                 </div>
-                <div className={`${styles.bubble} ${msg.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant}`}>
-                  <p>{msg.content}</p>
+                <div className={`${styles.bubble} ${msg.role === 'user' ? styles.bubbleUser : msg.isError ? styles.bubbleError : styles.bubbleAssistant}`}>
+                  {msg.isError && <AlertCircle size={14} style={{ marginBottom: 4, opacity: 0.8 }} />}
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</p>
                   <time dateTime={msg.timestamp.toISOString()}>
                     {msg.timestamp.toLocaleTimeString('vi-VN', {
                       hour: '2-digit',
@@ -148,7 +186,8 @@ export default function AIChatPage() {
 
           <div className={styles.inputBar}>
             <input
-              placeholder="Nhập câu hỏi của bạn..."
+              ref={inputRef}
+              placeholder={token ? 'Nhập câu hỏi của bạn...' : 'Vui lòng đăng nhập để chat với AI...'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -157,9 +196,9 @@ export default function AIChatPage() {
                   handleSend()
                 }
               }}
-              disabled={isLoading}
+              disabled={isLoading || !token}
             />
-            <button type="button" onClick={handleSend} disabled={!input.trim() || isLoading}>
+            <button type="button" onClick={handleSend} disabled={!input.trim() || isLoading || !token}>
               <Send size={16} /> Gửi
             </button>
           </div>
