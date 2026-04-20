@@ -7,7 +7,7 @@ const SOCKET_URL =
 
 let socketInstance: Socket | null = null
 
-export const connectSocket = (token: string) => {
+export const connectSocket = (token: string, userId?: number) => {
   if (socketInstance?.connected) {
     return socketInstance
   }
@@ -15,7 +15,10 @@ export const connectSocket = (token: string) => {
   socketInstance = io(SOCKET_URL, {
     autoConnect: true,
     transports: ['polling', 'websocket'],
-    auth: { token },
+    auth: {
+      token,
+      userId: Number(userId || 0) || undefined,
+    },
   })
 
   return socketInstance

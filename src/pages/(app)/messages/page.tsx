@@ -25,7 +25,8 @@ import {
 import { ApiError, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store/auth-store'
 import { useChatStore } from '@/lib/store/chat-store'
-import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket'
+import { useCallStore, type IncomingCallState } from '@/lib/store/call-store'
+import { connectSocket, getSocket } from '@/lib/socket'
 import type { ChatMessage, FriendConnection } from '@/lib/types'
 import styles from './page.module.css'
 
@@ -50,15 +51,12 @@ const formatVietnamTime = (value: string) =>
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    timeZone: VN_TIMEZONE,
   }).format(parseChatDate(value))
 
 const parseChatDate = (value: string) => {
   const base = new Date(value)
   if (Number.isNaN(base.getTime())) return new Date()
-  // Backend returns Z values shifted by UTC offset, align display with VN wall-clock.
-  if (typeof value === 'string' && value.endsWith('Z')) {
-    return new Date(base.getTime() + 7 * 60 * 60 * 1000)
-  }
   return base
 }
 
@@ -107,13 +105,6 @@ type MessageNotificationItem = {
   meta?: Record<string, unknown> | null
 }
 
-type IncomingCallState = {
-  fromUserId: number
-  callType: 'voice' | 'video'
-  conversationId: string | null
-  offer: RTCSessionDescriptionInit
-}
-
 const resolveChatMediaUrl = (value: string | null | undefined) => {
   if (!value) return null
   if (/^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')) {
@@ -136,6 +127,15 @@ const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    ...(import.meta.env.VITE_TURN_URL
+      ? [
+          {
+            urls: import.meta.env.VITE_TURN_URL,
+            username: import.meta.env.VITE_TURN_USERNAME,
+            credential: import.meta.env.VITE_TURN_CREDENTIAL,
+          },
+        ]
+      : []),
   ],
 }
 
@@ -158,6 +158,7 @@ export default function MessagesPage() {
   const [callStatus, setCallStatus] = useState<string | null>(null)
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null)
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
+  const [joinedCallUserIds, setJoinedCallUserIds] = useState<number[]>([])
   const [callSeconds, setCallSeconds] = useState(0)
   const [busyUploading, setBusyUploading] = useState(false)
   const [busyActionId, setBusyActionId] = useState<string | null>(null)
@@ -222,6 +223,8 @@ export default function MessagesPage() {
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
   const queryConversationId = searchParams.get('conversation') || ''
+  const globalIncomingCall = useCallStore((state) => state.incomingCall)
+  const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
   const parseNotificationMeta = useCallback((item: MessageNotificationItem) => {
     const rawMeta = item?.meta
     if (!rawMeta || typeof rawMeta !== 'object') return null
@@ -343,7 +346,7 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!token) return
 
-    const socket = connectSocket(token)
+    const socket = connectSocket(token, user?.id)
     socket.on('message:new', (payload: ChatMessage) => {
       const normalized = normalizeIncomingMessage(payload)
       upsertMessage(normalized.conversationId, normalized)
@@ -376,12 +379,14 @@ export default function MessagesPage() {
     socket.on('call:offer', (payload) => {
       if (!payload.offer) return
       const incomingConversationId = payload.conversationId ? String(payload.conversationId) : null
-      setIncomingCall({
+      const incomingPayload: IncomingCallState = {
         fromUserId: Number(payload.fromUserId),
         callType: payload.callType || 'voice',
         conversationId: incomingConversationId,
         offer: payload.offer,
-      })
+      }
+      setIncomingCall(incomingPayload)
+      setGlobalIncomingCall(incomingPayload)
       setCallStatus(`Cuộc gọi ${payload.callType === 'video' ? 'video' : 'thoại'} đến`)
     })
 
@@ -391,9 +396,26 @@ export default function MessagesPage() {
       if (peer && payload.answer) {
         await peer.setRemoteDescription(new RTCSessionDescription(payload.answer))
       }
+      const answeredAt = Number(payload?.answeredAt || 0) || Date.now()
       setCallAnswered(true)
       setRingingStartedAt(null)
+      setCallSeconds(0)
+      setActiveCall((prev) => (prev ? { ...prev, startedAt: answeredAt } : prev))
       setCallStatus('Người nhận đã tham gia cuộc gọi')
+    })
+
+    socket.on('call:join', (payload) => {
+      const fromUserId = Number(payload?.fromUserId || 0)
+      if (fromUserId > 0) {
+        setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
+      }
+    })
+
+    socket.on('call:leave', (payload) => {
+      const fromUserId = Number(payload?.fromUserId || 0)
+      if (fromUserId > 0) {
+        setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
+      }
     })
 
     socket.on('call:ice-candidate', async (payload) => {
@@ -407,14 +429,49 @@ export default function MessagesPage() {
       }
     })
 
-    socket.on('call:end', () => {
+    socket.on('call:end', (payload) => {
+      const endedByUserId = Number(payload?.fromUserId || 0)
+
+      if (endedByUserId > 0 && activeCall) {
+        const peer = peersRef.current.get(endedByUserId)
+        if (peer) {
+          peer.close()
+          peersRef.current.delete(endedByUserId)
+        }
+
+        setRemoteStreams((prev) => prev.filter((item) => item.userId !== endedByUserId))
+
+        const nextJoined = joinedCallUserIds.filter((id) => id !== endedByUserId)
+        setJoinedCallUserIds(nextJoined)
+
+        const myId = Number(user?.id || 0)
+        const remainingOthers = nextJoined.filter((id) => id !== myId)
+
+        if (remainingOthers.length === 0) {
+          localStreamRef.current?.getTracks().forEach((track) => track.stop())
+          localStreamRef.current = null
+          setRemoteStreams([])
+          setJoinedCallUserIds([])
+          setActiveCall(null)
+          setCallSeconds(0)
+          setCallAnswered(false)
+          setRingingStartedAt(null)
+          setCallStatus('Mọi người đã rời cuộc gọi')
+        } else {
+          setCallStatus('Một người đã rời cuộc gọi')
+        }
+        return
+      }
+
       setCallStatus('Cuộc gọi đã kết thúc')
       setIncomingCall(null)
+      setGlobalIncomingCall(null)
       peersRef.current.forEach((peer) => peer.close())
       peersRef.current.clear()
       localStreamRef.current?.getTracks().forEach((track) => track.stop())
       localStreamRef.current = null
       setRemoteStreams([])
+      setJoinedCallUserIds([])
       setActiveCall(null)
       setCallSeconds(0)
       setCallAnswered(false)
@@ -428,11 +485,18 @@ export default function MessagesPage() {
       socket.off('notification:new')
       socket.off('call:offer')
       socket.off('call:answer')
+      socket.off('call:join')
+      socket.off('call:leave')
       socket.off('call:ice-candidate')
       socket.off('call:end')
-      disconnectSocket()
     }
-  }, [reloadFriendMap, reloadNotifications, setConversations, token, upsertMessage])
+  }, [activeCall, joinedCallUserIds, reloadFriendMap, reloadNotifications, setConversations, setGlobalIncomingCall, token, upsertMessage, user?.id])
+
+  useEffect(() => {
+    if (!globalIncomingCall || incomingCall) return
+    setIncomingCall(globalIncomingCall)
+    setCallStatus(`Cuộc gọi ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
+  }, [globalIncomingCall, incomingCall])
 
   useEffect(() => {
     if (!selectedConversationId) return
@@ -468,7 +532,7 @@ export default function MessagesPage() {
   }, [callStatus, incomingCall, activeCall])
 
   useEffect(() => {
-    if (!activeCall) return
+    if (!activeCall || !callAnswered) return
     setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
     const timer = window.setInterval(() => {
       setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
@@ -477,7 +541,7 @@ export default function MessagesPage() {
     return () => {
       window.clearInterval(timer)
     }
-  }, [activeCall])
+  }, [activeCall, callAnswered])
 
   const messages = useMemo(
     () => (selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []),
@@ -599,6 +663,11 @@ export default function MessagesPage() {
       .filter((friend) => !existingIds.has(friend.id))
   }, [friendMap, selectedGroup])
 
+  const createGroupInviteCandidates = useMemo(
+    () => Object.values(friendMap).filter((friend) => friend.status === 'accepted'),
+    [friendMap]
+  )
+
   const filteredGroupInviteCandidates = useMemo(() => {
     const q = groupSearchKeyword.trim().toLowerCase()
     if (!q) return groupInviteCandidates
@@ -606,6 +675,14 @@ export default function MessagesPage() {
       [friend.fullName, friend.email || '', friend.phone || '', String(friend.id)].join(' ').toLowerCase().includes(q)
     )
   }, [groupInviteCandidates, groupSearchKeyword])
+
+  const filteredCreateGroupInviteCandidates = useMemo(() => {
+    const q = groupSearchKeyword.trim().toLowerCase()
+    if (!q) return createGroupInviteCandidates
+    return createGroupInviteCandidates.filter((friend) =>
+      [friend.fullName, friend.email || '', friend.phone || '', String(friend.id)].join(' ').toLowerCase().includes(q)
+    )
+  }, [createGroupInviteCandidates, groupSearchKeyword])
 
   const pinnedMessageIds = useMemo(() => new Set((selectedConversation?.pinnedMessageIds || []).map((item) => String(item))), [selectedConversation])
 
@@ -645,6 +722,7 @@ export default function MessagesPage() {
     pc.ontrack = (event) => {
       const [stream] = event.streams
       if (!stream) return
+      setJoinedCallUserIds((prev) => (prev.includes(targetUserId) ? prev : [...prev, targetUserId]))
       setRemoteStreams((prev) => {
         const found = prev.find((item) => item.userId === targetUserId)
         if (found) {
@@ -673,6 +751,7 @@ export default function MessagesPage() {
     localStreamRef.current?.getTracks().forEach((track) => track.stop())
     localStreamRef.current = null
     setRemoteStreams([])
+    setJoinedCallUserIds([])
     setMutedCam(false)
     setMutedMic(false)
   }
@@ -1347,6 +1426,7 @@ export default function MessagesPage() {
     setCallStatus(`Đang gọi ${callType === 'video' ? 'video' : 'thoại'} tới ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'người nhận'}`)
     setCallAnswered(false)
     setRingingStartedAt(Date.now())
+    setCallSeconds(0)
     setActiveCall({
       type: callType,
       withName: selectedConversation
@@ -1354,11 +1434,19 @@ export default function MessagesPage() {
         : `Người dùng #${callTargetId}`,
       startedAt: Date.now(),
     })
+    setJoinedCallUserIds(user?.id ? [user.id] : [])
+    socket.emit('call:join', {
+      conversationId: selectedConversationId,
+    })
   }
 
   const handleAcceptIncomingCall = async () => {
     const socket = getSocket()
-    if (!socket || !incomingCall || !selectedConversationId) return
+    if (!socket || !incomingCall) return
+
+    const activeConversationId = incomingCall.conversationId || selectedConversationId
+    if (!activeConversationId) return
+    const answeredAt = Date.now()
 
     try {
       const pc = (await buildPeerConnection(incomingCall.fromUserId, incomingCall.callType)) || undefined
@@ -1369,8 +1457,9 @@ export default function MessagesPage() {
 
       socket.emit('call:answer', {
         targetUserId: incomingCall.fromUserId,
-        conversationId: selectedConversationId,
+        conversationId: activeConversationId,
         answer,
+        answeredAt,
       })
     } catch (error) {
       console.error('Không thể chấp nhận cuộc gọi:', error)
@@ -1380,19 +1469,52 @@ export default function MessagesPage() {
     setCallStatus('Đã chấp nhận cuộc gọi')
     setCallAnswered(true)
     setRingingStartedAt(null)
+    setCallSeconds(0)
     setActiveCall({
       type: incomingCall.callType,
       withName: selectedConversation
         ? getConversationDisplayName(selectedConversation, user?.id)
         : `Người dùng #${incomingCall.fromUserId}`,
-      startedAt: Date.now(),
+      startedAt: answeredAt,
+    })
+    setJoinedCallUserIds(user?.id ? [user.id, incomingCall.fromUserId] : [incomingCall.fromUserId])
+    socket.emit('call:join', {
+      conversationId: activeConversationId,
     })
     setIncomingCall(null)
+    setGlobalIncomingCall(null)
+  }
+
+  const handleDeclineIncomingCall = () => {
+    const socket = getSocket()
+    if (!socket || !incomingCall) {
+      setIncomingCall(null)
+      setGlobalIncomingCall(null)
+      return
+    }
+
+    const activeConversationId = incomingCall.conversationId || selectedConversationId
+    if (activeConversationId) {
+      socket.emit('call:leave', {
+        conversationId: activeConversationId,
+      })
+      socket.emit('call:end', {
+        targetUserId: incomingCall.fromUserId,
+        conversationId: activeConversationId,
+      })
+    }
+
+    setIncomingCall(null)
+    setGlobalIncomingCall(null)
+    setCallStatus('Đã từ chối cuộc gọi')
   }
 
   const handleEndCall = () => {
     const socket = getSocket()
     if (!socket || !selectedConversationId) return
+    socket.emit('call:leave', {
+      conversationId: selectedConversationId,
+    })
     callTargets.forEach((targetUserId) => {
       socket.emit('call:end', {
         targetUserId,
@@ -1402,6 +1524,7 @@ export default function MessagesPage() {
     closeCallResources()
     setCallStatus('Bạn đã kết thúc cuộc gọi')
     setIncomingCall(null)
+    setGlobalIncomingCall(null)
     setActiveCall(null)
     setCallSeconds(0)
     setCallAnswered(false)
@@ -1425,6 +1548,40 @@ export default function MessagesPage() {
     : 'Chọn cuộc trò chuyện'
   const initials = (user?.fullName?.[0] || 'U').toUpperCase()
   const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
+
+  const callParticipantProfiles = useMemo(() => {
+    if (!activeCall) return [] as Array<{ userId: number; name: string; avatarUrl: string | null }>
+
+    const ids = new Set<number>()
+    if (user?.id) ids.add(user.id)
+    joinedCallUserIds.forEach((id) => ids.add(id))
+    remoteStreams.forEach((item) => ids.add(item.userId))
+
+    return Array.from(ids)
+      .filter((id) => id > 0)
+      .map((id) => {
+        const member = selectedConversation?.members.find((item) => item.userId === id)
+        if (member) {
+          return {
+            userId: id,
+            name: member.fullName,
+            avatarUrl: member.avatarUrl,
+          }
+        }
+        if (id === user?.id) {
+          return {
+            userId: id,
+            name: user.fullName || 'Bạn',
+            avatarUrl: user.avatarUrl || null,
+          }
+        }
+        return {
+          userId: id,
+          name: `Người dùng #${id}`,
+          avatarUrl: null,
+        }
+      })
+  }, [activeCall, joinedCallUserIds, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
 
   const renderMessagePreview = (msg: ChatMessage) => {
     const recalled = Boolean(msg.meta && (msg.meta as Record<string, unknown>).recalled)
@@ -1696,7 +1853,7 @@ export default function MessagesPage() {
                   <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
                     Chấp nhận
                   </button>
-                  <button type="button" onClick={() => setIncomingCall(null)} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
+                  <button type="button" onClick={handleDeclineIncomingCall} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
                     Từ chối
                   </button>
                 </div>
@@ -2110,7 +2267,7 @@ export default function MessagesPage() {
                   placeholder="Tìm bạn bè để thêm vào nhóm"
                 />
                 <div className={styles.overlayList}>
-                  {filteredGroupInviteCandidates.map((friend) => {
+                  {filteredCreateGroupInviteCandidates.map((friend) => {
                     const checked = groupMemberIds.includes(friend.id)
                     return (
                       <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chọn ${friend.fullName}`} aria-label={`Chọn ${friend.fullName}`}>
@@ -2125,7 +2282,7 @@ export default function MessagesPage() {
                     )
                   })}
                   {acceptedFriends.length === 0 ? <p>Bạn chưa có bạn bè để tạo nhóm.</p> : null}
-                  {acceptedFriends.length > 0 && filteredGroupInviteCandidates.length === 0 ? <p>Không tìm thấy bạn bè phù hợp.</p> : null}
+                  {acceptedFriends.length > 0 && filteredCreateGroupInviteCandidates.length === 0 ? <p>Không tìm thấy bạn bè phù hợp.</p> : null}
                 </div>
                 <button
                   type="button"
@@ -2149,22 +2306,43 @@ export default function MessagesPage() {
                 <div>
                   <small>Call in progress</small>
                   <h3>{activeCall.withName}</h3>
+                  <p className={styles.callParticipantCount}>
+                    {callParticipantProfiles.length} người đang tham gia
+                  </p>
                 </div>
-                <div className={styles.callBadge}>{formattedCallTime}</div>
+                <div className={styles.callBadge}>{callAnswered ? formattedCallTime : 'Đổ chuông...'}</div>
               </div>
+              {callParticipantProfiles.length > 0 ? (
+                <div className={styles.callParticipantList}>
+                  {callParticipantProfiles.map((member) => (
+                    <div key={member.userId} className={styles.callParticipantItem}>
+                      {member.avatarUrl ? (
+                        <img src={member.avatarUrl} alt={member.name} />
+                      ) : (
+                        <span>{(member.name[0] || 'U').toUpperCase()}</span>
+                      )}
+                      <strong>{member.name}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className={styles.callMainVideo}>
                 {remoteStreams.length > 0 ? (
                   <div className={styles.remoteGrid}>
                     {remoteStreams.map((item) => (
-                      <video
-                        key={item.userId}
-                        autoPlay
-                        playsInline
-                        ref={(node) => {
-                          if (!node) return
-                          node.srcObject = item.stream
-                        }}
-                      />
+                      <div key={item.userId} className={styles.remoteVideoCard}>
+                        <video
+                          autoPlay
+                          playsInline
+                          ref={(node) => {
+                            if (!node) return
+                            node.srcObject = item.stream
+                          }}
+                        />
+                        <span className={styles.remoteVideoLabel}>
+                          {callParticipantProfiles.find((member) => member.userId === item.userId)?.name || `Người dùng #${item.userId}`}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 ) : (

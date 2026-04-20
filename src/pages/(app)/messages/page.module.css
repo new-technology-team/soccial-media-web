@@ -1360,6 +1360,57 @@
   font-size: 1.2rem;
 }
 
+.callParticipantCount {
+  margin: 0.26rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+.callParticipantList {
+  position: absolute;
+  left: 1rem;
+  right: 8.8rem;
+  top: 4.7rem;
+  z-index: 3;
+  display: flex;
+  gap: 0.46rem;
+  flex-wrap: wrap;
+}
+
+.callParticipantItem {
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0 0.55rem 0 0.3rem;
+  max-width: 210px;
+}
+
+.callParticipantItem img,
+.callParticipantItem span {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #5e95ff, #8cc3ff);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.callParticipantItem strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
 .callBadge {
   min-width: 72px;
   height: 30px;
@@ -1429,6 +1480,10 @@
   gap: 0.5rem;
 }
 
+.remoteVideoCard {
+  position: relative;
+}
+
 .remoteGrid video {
   width: 100%;
   height: min(30vw, 220px);
@@ -1436,6 +1491,21 @@
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(0, 0, 0, 0.5);
+}
+
+.remoteVideoLabel {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 0.45rem;
+  max-width: calc(100% - 0.9rem);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .callMiniVideo span {
