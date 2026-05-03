@@ -9,30 +9,29 @@ export class Message {
   conversationId: string;
 
   @Column()
+  senderId: number;
+
+  @Column({ nullable: true })
+  senderName: string;
+
+  @Column({ nullable: true })
+  senderFullName: string;
+
+  @Column({ nullable: true })
+  senderAvatar: string;
+
+  @Column()
   content: string;
+
+  @Column({ default: 'text' })
+  type: string;
+
+  @Column({ nullable: true })
+  mediaUrl: string;
+
+  @Column({ default: false })
+  isRecalled: boolean;
 
   @Column()
   createdAt: Date;
-
-  @Column({ nullable: true })
-  fileUrl: string;
-
-  @Column()
-  isRecalled: boolean;
-
-  constructor(
-    _id: ObjectId,
-    conversationId: string,
-    content: string,
-    createdAt: Date,
-    fileUrl: string,
-    isRecalled: boolean,
-  ) {
-    this._id = _id;
-    this.conversationId = conversationId;
-    this.content = content;
-    this.createdAt = createdAt;
-    this.fileUrl = fileUrl;
-    this.isRecalled = isRecalled;
-  }
 }

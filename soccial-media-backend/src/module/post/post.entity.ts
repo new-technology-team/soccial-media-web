@@ -14,27 +14,20 @@ export class Post {
   content: string;
 
   @Column()
+  visibility: string;
+
+  @Column()
+  mediaUrl: string;
+
+  @Column()
   createdAt: Date;
+
+  @Column({ type: 'int', default: 0 })
+  commentCount: number;
 
   @Column()
   interacts: Interacts[];
 
   @Column()
   owner: Owner;
-
-  constructor(
-    _id: ObjectId,
-    title: string,
-    content: string,
-    createdAt: Date,
-    interacts: Interacts[],
-    owner: Owner,
-  ) {
-    this._id = _id;
-    this.title = title;
-    this.content = content;
-    this.createdAt = createdAt;
-    this.interacts = interacts;
-    this.owner = owner;
-  }
 }

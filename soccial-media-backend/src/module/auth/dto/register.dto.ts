@@ -1,27 +1,33 @@
-﻿export class RegisterDto {
-  username: string;
-  email: string;
-  password: string;
-  displayName: string;
-  sex: number;
-  dateOfBirth: Date;
-  phone: string;
+﻿import { IsString, IsEmail, IsOptional, MinLength, IsDateString } from 'class-validator';
 
-  constructor(
-    username: string,
-    email: string,
-    password: string,
-    displayName: string,
-    sex: number,
-    dateOfBirth: Date,
-    phone: string,
-  ) {
-    this.username = username;
-    this.email = email;
-    this.password = password;
-    this.displayName = displayName;
-    this.sex = sex;
-    this.dateOfBirth = dateOfBirth;
-    this.phone = phone;
-  }
+export class RegisterDto {
+  @IsString()
+  @IsOptional()
+  username?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  emailOrPhone?: string;
+
+  @IsString()
+  @MinLength(6)
+  password: string;
+
+  @IsString()
+  fullName: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  sex?: number;
+
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
 }

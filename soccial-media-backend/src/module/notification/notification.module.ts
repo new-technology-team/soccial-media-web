@@ -8,6 +8,6 @@ import { Notification } from './notification.entity';
   imports: [TypeOrmModule.forFeature([Notification], 'mongodb')],
   controllers: [NotificationController],
   providers: [NotificationService],
-  exports: [NotificationService, TypeOrmModule],
+  exports: [NotificationService],
 })
 export class NotificationModule {}

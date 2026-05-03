@@ -1,6 +1,14 @@
 ﻿import { Entity, ObjectIdColumn, ObjectId, Column } from 'typeorm';
 import { Owner } from '../../common/embedded/owner.embed';
 
+export class CommentReact {
+  userId: number;
+  displayName: string;
+  avatarUrl: string;
+  type: string;
+  createdAt: Date;
+}
+
 @Entity()
 export class Comment {
   @ObjectIdColumn()
@@ -13,22 +21,17 @@ export class Comment {
   content: string;
 
   @Column({ nullable: true })
-  file: string;
+  parentId: string;
 
-  @Column(() => Owner)
+  @Column()
+  fileUrl: string;
+
+  @Column()
+  createdAt: Date;
+
+  @Column()
   owner: Owner;
 
-  constructor(
-    _id: ObjectId,
-    postId: string,
-    content: string,
-    file: string,
-    owner: Owner,
-  ) {
-    this._id = _id;
-    this.postId = postId;
-    this.content = content;
-    this.file = file;
-    this.owner = owner;
-  }
+  @Column(() => CommentReact)
+  reacts: CommentReact[];
 }

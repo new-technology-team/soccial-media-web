@@ -1,11 +1,8 @@
-﻿export class CreatePostDto {
-  title: string;
-  content: string;
-  ownerId: number;
+﻿import { IsString, IsOptional, IsEnum, MaxLength } from 'class-validator';
 
-  constructor(title: string, content: string, ownerId: number) {
-    this.title = title;
-    this.content = content;
-    this.ownerId = ownerId;
-  }
+export class CreatePostDto {
+  title?: string;
+  content: string;
+  visibility?: 'public' | 'private' = 'public';
+  mediaUrl?: string;
 }

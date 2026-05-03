@@ -1,35 +1,35 @@
 ﻿import { Entity, ObjectIdColumn, ObjectId, Column } from 'typeorm';
 import { Member } from '../../common/embedded/member.embed';
-import { ConversationStatus } from '../../common/enum/conversation-status.enum';
 
 @Entity()
 export class Conversation {
   @ObjectIdColumn()
   _id: ObjectId;
 
-  @Column()
+  @Column({ nullable: true })
+  type: string;
+
+  @Column({ nullable: true })
   conversationName: string;
 
-  @Column()
-  status: ConversationStatus;
+  @Column({ default: 'active' })
+  status: string;
 
   @Column()
   createdAt: Date;
 
+  @Column({ default: () => 'new Date()' })
+  lastMessageAt: Date;
+
+  @Column({ nullable: true })
+  lastMessage: any;
+
+  @Column({ default: 0 })
+  unreadCount: number;
+
   @Column(() => Member)
   members: Member[];
 
-  constructor(
-    _id: ObjectId,
-    conversationName: string,
-    status: ConversationStatus,
-    createdAt: Date,
-    members: Member[],
-  ) {
-    this._id = _id;
-    this.conversationName = conversationName;
-    this.status = status;
-    this.createdAt = createdAt;
-    this.members = members;
-  }
+  @Column({ type: 'simple-array', nullable: true })
+  memberIds: string[];
 }

@@ -20,19 +20,6 @@ export class Notification {
   @Column()
   createdAt: Date;
 
-  constructor(
-    _id: ObjectId,
-    userId: string,
-    title: string,
-    content: string,
-    link: string,
-    createdAt: Date,
-  ) {
-    this._id = _id;
-    this.userId = userId;
-    this.title = title;
-    this.content = content;
-    this.link = link;
-    this.createdAt = createdAt;
-  }
+  @Column({ default: false })
+  isRead: boolean;
 }

@@ -20,6 +20,7 @@ import { Report } from './module/report/report.entity';
 import { Comment } from './module/comment/comment.entity';
 import { Notification } from './module/notification/notification.entity';
 import { Post } from './module/post/post.entity';
+import { ChatGateway } from './common/socket/chat.gateway';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { Post } from './module/post/post.entity';
       url: process.env.DATABASE_URL_MARIA,
       synchronize: true,
       entities: [User, Friendship, Report],
+      logging: false,
     }),
     TypeOrmModule.forRoot({
       name: 'mongodb',
@@ -39,6 +41,7 @@ import { Post } from './module/post/post.entity';
       url: process.env.DATABASE_URL_MONGO,
       synchronize: true,
       entities: [Comment, Conversation, Message, Notification, Post],
+      logging: false,
     }),
     AuthModule,
     CommentModule,
@@ -51,6 +54,6 @@ import { Post } from './module/post/post.entity';
     UserModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, ChatGateway],
 })
 export class AppModule {}
