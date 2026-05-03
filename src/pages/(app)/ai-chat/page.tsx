@@ -62,6 +62,29 @@ export default function AIChatPage() {
     scrollToBottom()
   }, [messages])
 
+  useEffect(() => {
+    if (!token) return
+
+    const fetchHistory = async () => {
+      try {
+        const historyData = await api.getAiHistory(token)
+        if (historyData && historyData.length > 0) {
+          const loadedMessages: ChatMessage[] = historyData.map((h, i) => ({
+            id: `hist-${i}`,
+            role: h.role === 'user' ? 'user' : 'assistant',
+            content: h.text,
+            timestamp: new Date(), // API backend hiện chưa trả về createdAt trong DTO history, ta dùng tạm Date.now. Có thể cải thiện sau.
+          }))
+          setMessages(loadedMessages)
+        }
+      } catch (error) {
+        console.error('Failed to load AI chat history', error)
+      }
+    }
+
+    fetchHistory()
+  }, [token])
+
   const handleSend = async () => {
     const text = input.trim()
     if (!text || isLoading) return
@@ -79,9 +102,8 @@ export default function AIChatPage() {
     setIsLoading(true)
 
     try {
-      // Gửi history (loại bỏ tin nhắn lỗi) để AI nhớ ngữ cảnh
-      const history = buildHistory(messages) // messages trước khi có userMessage mới nhất
-      const data = await api.aiChat(token, text, history)
+      // Backend đã tự lấy lịch sử từ Database nên không cần gửi history từ Frontend nữa
+      const data = await api.aiChat(token, text, [])
 
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),

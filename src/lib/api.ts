@@ -533,6 +533,9 @@ export const api = {
       body: JSON.stringify({ message, history }),
     }, token),
 
+  getAiHistory: (token: string) =>
+    request<Array<{ role: 'user' | 'model'; text: string }>>('/social/ai/history', { method: 'GET' }, token),
+
   notifications: (token: string) =>
     request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token),
 
