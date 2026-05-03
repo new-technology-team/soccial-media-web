@@ -1,6 +1,7 @@
 .page {
-  min-height: calc(100vh - 64px);
+  height: calc(100vh - 64px);
   padding: 0.8rem 0 1rem;
+  overflow: hidden;
 }
 
 .layout {
@@ -8,6 +9,8 @@
   margin: 0 auto;
   display: grid;
   grid-template-columns: 74px 300px minmax(0, 1fr) 320px;
+  height: calc(100vh - 112px);
+  min-height: 0;
   border: 1px solid rgba(171, 173, 174, 0.2);
   border-radius: 18px;
   overflow: hidden;
@@ -80,7 +83,9 @@
   border-right: 1px solid rgba(171, 173, 174, 0.2);
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 112px);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .listHeader {
@@ -222,18 +227,21 @@
 .chatPanel {
   position: relative;
   background: #f5f6f7;
-  min-height: calc(100vh - 112px);
+  height: calc(100vh - 112px);
+  min-height: 0;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   opacity: 1;
   filter: none;
   pointer-events: auto;
+  overflow: hidden;
 }
 
 .detailsPanel {
   background: #edf1f5;
   border-left: 1px solid rgba(171, 173, 174, 0.22);
-  min-height: calc(100vh - 112px);
+  min-height: 0;
+  height: 100%;
   overflow-y: auto;
   padding: 0.85rem;
 }
@@ -579,8 +587,13 @@
 .messagesWrap {
   padding: 0.85rem 1rem;
   overflow-y: auto;
+  overflow-x: hidden;
   display: grid;
   gap: 0.75rem;
+  height: 100%;
+  min-height: 0;
+  grid-auto-rows: max-content;
+  align-content: start;
 }
 
 .historyLoading {
@@ -736,41 +749,6 @@
   opacity: 0.8;
 }
 
-.reactionBar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.28rem;
-}
-
-.reactionBar button {
-  border: 0;
-  min-height: 24px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.32);
-  color: inherit;
-  font-size: 0.67rem;
-  padding: 0 0.4rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.2rem;
-  cursor: pointer;
-}
-
-.reactionBar button:hover {
-  background: rgba(255, 255, 255, 0.52);
-}
-
-.bubbleMine .reactionBar button {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.reactionActive {
-  outline: 2px solid rgba(0, 82, 206, 0.72);
-  background: rgba(0, 82, 206, 0.28) !important;
-  box-shadow: 0 0 0 2px rgba(0, 82, 206, 0.15);
-}
-
 .reactionSummary {
   display: inline-flex;
   align-items: center;
@@ -783,9 +761,104 @@
   padding: 0.16rem 0.52rem;
 }
 
+.reactionsPill {
+  display: flex;
+  gap: 0.2rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+  padding: 0.3rem 0.4rem;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  max-width: 100%;
+}
+
+.reactionEmoji {
+  font-size: 1.1em;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0.1rem 0.15rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.reactionEmoji:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.2);
+}
+
+.reactionMore {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: inherit;
+  opacity: 0.8;
+  padding: 0.05rem 0.15rem;
+}
+
+.messageFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.2rem;
+  gap: 0.3rem;
+}
+
+.reactionTrigger {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: #e7edf4;
+  color: #526270;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.reactionTrigger:hover,
+.reactionTriggerActive {
+  background: #d8e6f7;
+  color: #0052ce;
+}
+
+.reactionPicker {
+  justify-self: end;
+  display: flex;
+  gap: 0.24rem;
+  border: 1px solid rgba(171, 173, 174, 0.28);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(14, 20, 28, 0.18);
+  padding: 0.24rem;
+  margin-top: 0.2rem;
+  z-index: 4;
+}
+
+.reactionPicker button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  display: grid;
+  place-items: center;
+}
+
+.reactionPicker button:hover,
+.reactionPickerActive {
+  background: #edf3fb !important;
+  transform: translateY(-1px);
+}
+
 .messageTime {
   display: block;
-  margin-top: 0.15rem;
   font-size: 0.7rem;
   color: #62717b;
 }
@@ -1554,7 +1627,9 @@
   background: #fff;
   box-shadow: 0 16px 34px rgba(10, 15, 20, 0.25);
   padding: 0.32rem;
-  min-width: 210px;
+  min-width: 200px;
+  max-width: 240px;
+  overflow: visible;
 }
 
 .actionMenuHeader {

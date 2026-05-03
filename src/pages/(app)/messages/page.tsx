@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -30,19 +30,33 @@ import { connectSocket, getSocket } from '@/lib/socket'
 import type { ChatMessage, FriendConnection } from '@/lib/types'
 import styles from './page.module.css'
 
-const EMOJI_SET = ['😀', '😄', '😂', '🥹', '😍', '😘', '🤝', '🙏', '🔥', '🎉', '💙', '👍', '🤔', '😎', '😢', '😡']
+// 26 emoji for message composer
+const EMOJI_SET = ['đŸ˜€', 'đŸ˜„', 'đŸ˜‚', 'đŸ¥¹', 'đŸ˜', 'đŸ˜˜', 'đŸ¤', 'đŸ™', 'đŸ”¥', 'đŸ‰', 'đŸ’™', 'đŸ‘', 'đŸ¤”', 'đŸ˜', 'đŸ˜¢', 'đŸ˜¡', 'â¤ï¸', 'đŸ¤—', 'đŸ‘', 'đŸ’ª', 'đŸ™Œ', 'âœ¨', 'đŸ', 'đŸ’¯', 'đŸ€', 'đŸŒŸ']
+
+const MESSAGE_REACTIONS = [
+  { type: 'smile', emoji: '\u{1f604}', label: 'Cười' },
+  { type: 'sad', emoji: '\u{1f622}', label: 'Buồn' },
+  { type: 'like', emoji: '\u{1f44d}', label: 'Like' },
+  { type: 'love', emoji: '\u2764\ufe0f', label: 'Tym' },
+  { type: 'wow', emoji: '\u{1f62e}', label: 'Bất ngờ' },
+  { type: 'cry', emoji: '\u{1f62d}', label: 'Khóc' },
+  { type: 'angry', emoji: '\u{1f621}', label: 'Tức giận' },
+] as const
+
 const STICKER_PACKS: Record<string, string[]> = {
-  Cute: ['🐼', '🐱', '🐶', '🦊', '🐵', '🐸', '🐯', '🦄'],
-  Meme: ['🤣', '🫠', '😏', '😵', '🤯', '🤡', '👀', '💀'],
-  Animals: ['🐨', '🐻', '🦁', '🐮', '🐷', '🐔', '🐧', '🐙'],
-  Party: ['🎉', '🥳', '🎊', '🔥', '💥', '✨', '🍾', '🎈'],
+  Cute: ['đŸ¼', 'đŸ±', 'đŸ¶', 'đŸ¦', 'đŸµ', 'đŸ¸', 'đŸ¯', 'đŸ¦„'],
+  Meme: ['đŸ¤£', 'đŸ« ', 'đŸ˜', 'đŸ˜µ', 'đŸ¤¯', 'đŸ¤¡', 'đŸ‘€', 'đŸ’€'],
+  Animals: ['đŸ¨', 'đŸ»', 'đŸ¦', 'đŸ®', 'đŸ·', 'đŸ”', 'đŸ§', 'đŸ™'],
+  Party: ['đŸ‰', 'đŸ¥³', 'đŸ', 'đŸ”¥', 'đŸ’¥', 'âœ¨', 'đŸ¾', 'đŸˆ'],
 }
 
-const REACTION_META = {
-  like: { emoji: '👍', label: 'Thích' },
-  love: { emoji: '❤️', label: 'Yêu thích' },
-  care: { emoji: '🤗', label: 'Quan tâm' },
-} as const
+const getMessageReactionMeta = (reaction: string) =>
+  MESSAGE_REACTIONS.find((item) => item.type === reaction) || MESSAGE_REACTIONS[2]
+
+const getMessageReactionItems = (msg: ChatMessage) =>
+  (msg.reactions || [])
+    .map((item) => ({ ...item, meta: getMessageReactionMeta(item.reaction) }))
+    .filter((item) => MESSAGE_REACTIONS.some((reaction) => reaction.type === item.reaction))
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
 
@@ -60,28 +74,21 @@ const parseChatDate = (value: string) => {
   return base
 }
 
-const reactionSummaryText = (msg: ChatMessage) => {
-  if (!msg.reactionCount) return null
-  if (!msg.viewerReaction) return `${msg.reactionCount} cảm xúc`
-  const reaction = REACTION_META[msg.viewerReaction]
-  return `${reaction.emoji} Bạn đã ${reaction.label.toLowerCase()} · ${msg.reactionCount} cảm xúc`
-}
-
 const getConversationDisplayName = (
   conversation: { type: 'direct' | 'group'; name: string | null; members: Array<{ userId: number; fullName: string }> },
   currentUserId?: number
 ) => {
   if (conversation.type === 'group') {
-    return conversation.name || 'Nhóm chat'
+    return conversation.name || 'NhĂ³m chat'
   }
   const peer = conversation.members.find((member) => member.userId !== currentUserId)
-  return peer?.fullName || conversation.name || 'Cuộc trò chuyện'
+  return peer?.fullName || conversation.name || 'Cuá»™c trĂ² chuyá»‡n'
 }
 
 const getGroupRoleLabel = (role: string | null | undefined) => {
-  if (role === 'leader') return 'Trưởng nhóm'
-  if (role === 'deputy') return 'Phó nhóm'
-  return 'Thành viên'
+  if (role === 'leader') return 'TrÆ°á»Ÿng nhĂ³m'
+  if (role === 'deputy') return 'PhĂ³ nhĂ³m'
+  return 'ThĂ nh viĂªn'
 }
 
 const getAvatarInitial = (value: string | null | undefined) => {
@@ -122,6 +129,16 @@ const normalizeIncomingMessage = (payload: ChatMessage): ChatMessage => ({
   conversationId: String(payload.conversationId),
   mediaUrl: resolveChatMediaUrl(payload.mediaUrl),
 })
+
+const normalizeIncomingMessageForViewer = (payload: ChatMessage, viewerUserId?: number): ChatMessage => {
+  const normalized = normalizeIncomingMessage(payload)
+  if (!viewerUserId || !normalized.reactions) return normalized
+  return {
+    ...normalized,
+    viewerReaction:
+      normalized.reactions.find((item) => Number(item.userId) === Number(viewerUserId))?.reaction || null,
+  }
+}
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -165,6 +182,7 @@ export default function MessagesPage() {
   const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>([])
   const [actionMenu, setActionMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [chatNotice, setChatNotice] = useState<string | null>(null)
   const [showEmojiPanel, setShowEmojiPanel] = useState(false)
@@ -197,6 +215,8 @@ export default function MessagesPage() {
   const [callAnswered, setCallAnswered] = useState(false)
   const [ringingStartedAt, setRingingStartedAt] = useState<number | null>(null)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
+  const [typingUserIds, setTypingUserIds] = useState<Set<number>>(new Set())
+  const typingTimeoutRef = useRef<number | null>(null)
   const sendingMessageRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
@@ -210,7 +230,8 @@ export default function MessagesPage() {
 
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
-    const allMessages = selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []
+    if (!selectedConversationId) return { items: [], startIndex: 0, endIndex: 0 }
+    const allMessages = messagesByConversation[selectedConversationId] || []
     if (allMessages.length <= VIRTUAL_CHUNK) {
       return { items: allMessages, startIndex: 0, endIndex: allMessages.length }
     }
@@ -225,6 +246,13 @@ export default function MessagesPage() {
   const queryConversationId = searchParams.get('conversation') || ''
   const globalIncomingCall = useCallStore((state) => state.incomingCall)
   const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
+  const openConversation = useCallback(
+    (conversationId: string) => {
+      selectConversation(conversationId)
+      navigate(`/messages?conversation=${encodeURIComponent(conversationId)}`, { replace: true })
+    },
+    [navigate, selectConversation]
+  )
   const parseNotificationMeta = useCallback((item: MessageNotificationItem) => {
     const rawMeta = item?.meta
     if (!rawMeta || typeof rawMeta !== 'object') return null
@@ -262,7 +290,7 @@ export default function MessagesPage() {
       })
       setFriendMap(map)
     } catch (error) {
-      console.error('Không thể tải danh sách bạn bè', error)
+      console.error('KhĂ´ng thá»ƒ táº£i danh sĂ¡ch báº¡n bĂ¨', error)
     }
   }, [token, user?.id])
 
@@ -273,12 +301,10 @@ export default function MessagesPage() {
       const response = await api.listConversations(token)
       setConversations(response.conversations)
 
-      if (!selectedConversationId && response.conversations.length > 0) {
-        selectConversation(response.conversations[0].id)
-      }
-
       if (queryConversationId && response.conversations.some((item) => item.id === queryConversationId)) {
         selectConversation(queryConversationId)
+      } else if (!selectedConversationId && response.conversations.length > 0) {
+        selectConversation(response.conversations[0].id)
       }
     }
 
@@ -335,30 +361,43 @@ export default function MessagesPage() {
     setShowEmojiPanel(false)
     setShowStickerPanel(false)
     setShowJumpToLatest(false)
+    setReactionPickerMessageId(null)
   }, [selectedConversationId])
 
   useEffect(() => {
-    if (!selectedConversationId || !queryConversationId) return
-    if (selectedConversationId === queryConversationId) return
-    selectConversation(queryConversationId)
-  }, [queryConversationId, selectedConversationId, selectConversation])
+    if (!selectedConversationId || queryConversationId === selectedConversationId) return
+    navigate(`/messages?conversation=${encodeURIComponent(selectedConversationId)}`, { replace: true })
+  }, [navigate, queryConversationId, selectedConversationId])
 
   useEffect(() => {
     if (!token) return
 
     const socket = connectSocket(token, user?.id)
     socket.on('message:new', (payload: ChatMessage) => {
-      const normalized = normalizeIncomingMessage(payload)
+      const normalized = normalizeIncomingMessageForViewer(payload, user?.id)
       upsertMessage(normalized.conversationId, normalized)
     })
 
     socket.on('message:reaction', (payload: { conversationId: string; message: ChatMessage }) => {
-      upsertMessage(String(payload.conversationId), normalizeIncomingMessage(payload.message))
+      upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
     })
 
     socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage | null }) => {
       if (!payload?.message) return
-      upsertMessage(String(payload.conversationId), normalizeIncomingMessage(payload.message))
+      upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
+    })
+
+    socket.on('message:typing', (payload: { conversationId: string; fromUserId: number; isTyping: boolean }) => {
+      if (!payload) return
+      setTypingUserIds((prev) => {
+        const next = new Set(prev)
+        if (payload.isTyping) {
+          next.add(payload.fromUserId)
+        } else {
+          next.delete(payload.fromUserId)
+        }
+        return next
+      })
     })
 
     socket.on('notification:new', (payload) => {
@@ -387,7 +426,7 @@ export default function MessagesPage() {
       }
       setIncomingCall(incomingPayload)
       setGlobalIncomingCall(incomingPayload)
-      setCallStatus(`Cuộc gọi ${payload.callType === 'video' ? 'video' : 'thoại'} đến`)
+      setCallStatus(`Cuá»™c gá»i ${payload.callType === 'video' ? 'video' : 'thoáº¡i'} Ä‘áº¿n`)
     })
 
     socket.on('call:answer', async (payload) => {
@@ -401,7 +440,7 @@ export default function MessagesPage() {
       setRingingStartedAt(null)
       setCallSeconds(0)
       setActiveCall((prev) => (prev ? { ...prev, startedAt: answeredAt } : prev))
-      setCallStatus('Người nhận đã tham gia cuộc gọi')
+      setCallStatus('NgÆ°á»i nháº­n Ä‘Ă£ tham gia cuá»™c gá»i')
     })
 
     socket.on('call:join', (payload) => {
@@ -456,14 +495,14 @@ export default function MessagesPage() {
           setCallSeconds(0)
           setCallAnswered(false)
           setRingingStartedAt(null)
-          setCallStatus('Mọi người đã rời cuộc gọi')
+          setCallStatus('Má»i ngÆ°á»i Ä‘Ă£ rá»i cuá»™c gá»i')
         } else {
-          setCallStatus('Một người đã rời cuộc gọi')
+          setCallStatus('Má»™t ngÆ°á»i Ä‘Ă£ rá»i cuá»™c gá»i')
         }
         return
       }
 
-      setCallStatus('Cuộc gọi đã kết thúc')
+      setCallStatus('Cuá»™c gá»i Ä‘Ă£ káº¿t thĂºc')
       setIncomingCall(null)
       setGlobalIncomingCall(null)
       peersRef.current.forEach((peer) => peer.close())
@@ -478,10 +517,19 @@ export default function MessagesPage() {
       setRingingStartedAt(null)
     })
 
+    socket.on('call:participants', (payload) => {
+      // Update participant display for group calls
+      if (payload?.participantIds) {
+        setJoinedCallUserIds(payload.participantIds)
+        setCallStatus(`Cuá»™c gá»i Ä‘ang cĂ³ ${payload.participantCount} ngÆ°á»i tham gia`)
+      }
+    })
+
     return () => {
       socket.off('message:new')
       socket.off('message:reaction')
       socket.off('message:updated')
+      socket.off('message:typing')
       socket.off('notification:new')
       socket.off('call:offer')
       socket.off('call:answer')
@@ -489,13 +537,14 @@ export default function MessagesPage() {
       socket.off('call:leave')
       socket.off('call:ice-candidate')
       socket.off('call:end')
+      socket.off('call:participants')
     }
   }, [activeCall, joinedCallUserIds, reloadFriendMap, reloadNotifications, setConversations, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
     setIncomingCall(globalIncomingCall)
-    setCallStatus(`Cuộc gọi ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
+    setCallStatus(`Cuá»™c gá»i ${globalIncomingCall.callType === 'video' ? 'video' : 'thoáº¡i'} Ä‘áº¿n`)
   }, [globalIncomingCall, incomingCall])
 
   useEffect(() => {
@@ -596,7 +645,7 @@ export default function MessagesPage() {
         })
       }
       closeCallResources()
-      setCallStatus('Không có phản hồi sau 1 phút. Cuộc gọi đã tự kết thúc.')
+      setCallStatus('KhĂ´ng cĂ³ pháº£n há»“i sau 1 phĂºt. Cuá»™c gá»i Ä‘Ă£ tá»± káº¿t thĂºc.')
       setIncomingCall(null)
       setActiveCall(null)
       setCallSeconds(0)
@@ -761,13 +810,13 @@ export default function MessagesPage() {
     setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: true }))
     try {
       await api.requestFriend(token, directPeer.id)
-      setChatNotice('Đã gửi lời mời kết bạn. Hãy chờ đối phương chấp nhận để nhắn không giới hạn.')
+      setChatNotice('ÄĂ£ gá»­i lá»i má»i káº¿t báº¡n. HĂ£y chá» Ä‘á»‘i phÆ°Æ¡ng cháº¥p nháº­n Ä‘á»ƒ nháº¯n khĂ´ng giá»›i háº¡n.')
       await reloadFriendMap()
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể gửi lời mời kết bạn.')
+        setChatNotice('KhĂ´ng thá»ƒ gá»­i lá»i má»i káº¿t báº¡n.')
       }
     } finally {
       setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
@@ -780,12 +829,12 @@ export default function MessagesPage() {
     try {
       await api.deleteFriend(token, directPeer.id)
       await reloadFriendMap()
-      setChatNotice('Đã hủy lời mời kết bạn.')
+      setChatNotice('ÄĂ£ há»§y lá»i má»i káº¿t báº¡n.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể hủy lời mời kết bạn.')
+        setChatNotice('KhĂ´ng thá»ƒ há»§y lá»i má»i káº¿t báº¡n.')
       }
     } finally {
       setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
@@ -798,12 +847,12 @@ export default function MessagesPage() {
     try {
       await api.acceptFriend(token, directPeer.id)
       await reloadFriendMap()
-      setChatNotice('Đã chấp nhận lời mời kết bạn.')
+      setChatNotice('ÄĂ£ cháº¥p nháº­n lá»i má»i káº¿t báº¡n.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể chấp nhận lời mời kết bạn.')
+        setChatNotice('KhĂ´ng thá»ƒ cháº¥p nháº­n lá»i má»i káº¿t báº¡n.')
       }
     } finally {
       setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
@@ -817,7 +866,7 @@ export default function MessagesPage() {
       (conv) => conv.type === 'direct' && conv.members.some((m) => m.userId === targetUserId)
     )
     if (existing) {
-      selectConversation(existing.id)
+      openConversation(existing.id)
       return
     }
 
@@ -826,13 +875,13 @@ export default function MessagesPage() {
       const result = await api.createDirectConversation(token, targetUserId)
       const refreshed = await api.listConversations(token)
       setConversations(refreshed.conversations)
-      selectConversation(result.conversation.id)
-      setChatNotice('Đã mở cuộc trò chuyện trực tiếp.')
+      openConversation(result.conversation.id)
+      setChatNotice('ÄĂ£ má»Ÿ cuá»™c trĂ² chuyá»‡n trá»±c tiáº¿p.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể mở cuộc trò chuyện.')
+        setChatNotice('KhĂ´ng thá»ƒ má»Ÿ cuá»™c trĂ² chuyá»‡n.')
       }
     } finally {
       setCreatingDirectConversation(false)
@@ -841,7 +890,7 @@ export default function MessagesPage() {
 
   const handlePickAttachmentType = (type: 'image' | 'video' | 'file') => {
     if (!selectedConversationId) {
-      setChatNotice('Vui lòng chọn cuộc trò chuyện trước khi gửi tệp.')
+      setChatNotice('Vui lĂ²ng chá»n cuá»™c trĂ² chuyá»‡n trÆ°á»›c khi gá»­i tá»‡p.')
       setComposerMenuOpen(false)
       return
     }
@@ -864,7 +913,7 @@ export default function MessagesPage() {
       const created = await api.createDirectConversation(token, targetUserId)
       const refreshed = await api.listConversations(token)
       setConversations(refreshed.conversations)
-      selectConversation(created.conversation.id)
+      openConversation(created.conversation.id)
       setShowNewMessageModal(false)
       setNewMessageKeyword('')
       setSearchUsersResult([])
@@ -877,7 +926,7 @@ export default function MessagesPage() {
 
   const handleOpenNotificationConversation = (conversationId: string | null | undefined) => {
     if (!conversationId) return
-    selectConversation(String(conversationId))
+    openConversation(String(conversationId))
     setShowNotificationsDrawer(false)
   }
 
@@ -891,7 +940,7 @@ export default function MessagesPage() {
       await api.acceptFriend(token, identifier)
       await reloadFriendMap()
       await reloadNotifications()
-      setChatNotice('Đã chấp nhận lời mời kết bạn.')
+      setChatNotice('ÄĂ£ cháº¥p nháº­n lá»i má»i káº¿t báº¡n.')
       if (meta?.conversationId) {
         handleOpenNotificationConversation(meta.conversationId)
       }
@@ -899,7 +948,7 @@ export default function MessagesPage() {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể chấp nhận lời mời từ thông báo.')
+        setChatNotice('KhĂ´ng thá»ƒ cháº¥p nháº­n lá»i má»i tá»« thĂ´ng bĂ¡o.')
       }
     } finally {
       setBusyActionId(null)
@@ -933,17 +982,17 @@ export default function MessagesPage() {
         memberIds: groupMemberIds,
       })
       await refreshConversations()
-      selectConversation(created.conversation.id)
+      openConversation(created.conversation.id)
       setShowCreateGroupModal(false)
       setGroupName('')
       setGroupSearchKeyword('')
       setGroupMemberIds([])
-      setChatNotice('Đã tạo nhóm chat thành công.')
+      setChatNotice('ÄĂ£ táº¡o nhĂ³m chat thĂ nh cĂ´ng.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể tạo nhóm chat.')
+        setChatNotice('KhĂ´ng thá»ƒ táº¡o nhĂ³m chat.')
       }
     } finally {
       setCreatingGroup(false)
@@ -956,12 +1005,12 @@ export default function MessagesPage() {
     try {
       await api.addGroupMember(token, selectedGroup.id, targetUserId)
       await refreshConversations()
-      setChatNotice('Đã thêm thành viên vào nhóm.')
+      setChatNotice('ÄĂ£ thĂªm thĂ nh viĂªn vĂ o nhĂ³m.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể thêm thành viên.')
+        setChatNotice('KhĂ´ng thá»ƒ thĂªm thĂ nh viĂªn.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -974,12 +1023,12 @@ export default function MessagesPage() {
     try {
       await api.removeGroupMember(token, selectedGroup.id, targetUserId)
       await refreshConversations()
-      setChatNotice('Đã xóa thành viên khỏi nhóm.')
+      setChatNotice('ÄĂ£ xĂ³a thĂ nh viĂªn khá»i nhĂ³m.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể xóa thành viên.')
+        setChatNotice('KhĂ´ng thá»ƒ xĂ³a thĂ nh viĂªn.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -992,12 +1041,12 @@ export default function MessagesPage() {
     try {
       await api.setGroupDeputy(token, selectedGroup.id, targetUserId)
       await refreshConversations()
-      setChatNotice(targetUserId ? 'Đã cấp quyền phó nhóm.' : 'Đã thu hồi quyền phó nhóm.')
+      setChatNotice(targetUserId ? 'ÄĂ£ cáº¥p quyá»n phĂ³ nhĂ³m.' : 'ÄĂ£ thu há»“i quyá»n phĂ³ nhĂ³m.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể cập nhật phó nhóm.')
+        setChatNotice('KhĂ´ng thá»ƒ cáº­p nháº­t phĂ³ nhĂ³m.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -1010,12 +1059,12 @@ export default function MessagesPage() {
     try {
       await api.transferGroupLeader(token, selectedGroup.id, targetUserId)
       await refreshConversations()
-      setChatNotice('Đã chuyển quyền trưởng nhóm.')
+      setChatNotice('ÄĂ£ chuyá»ƒn quyá»n trÆ°á»Ÿng nhĂ³m.')
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể chuyển quyền trưởng nhóm.')
+        setChatNotice('KhĂ´ng thá»ƒ chuyá»ƒn quyá»n trÆ°á»Ÿng nhĂ³m.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -1024,22 +1073,22 @@ export default function MessagesPage() {
 
   const handleDissolveGroup = async () => {
     if (!token || !selectedGroup || !canDissolveSelectedGroup) return
-    const confirmed = window.confirm('Bạn chắc chắn muốn giải tán nhóm này? Hành động này không thể hoàn tác.')
+    const confirmed = window.confirm('Báº¡n cháº¯c cháº¯n muá»‘n giáº£i tĂ¡n nhĂ³m nĂ y? HĂ nh Ä‘á»™ng nĂ y khĂ´ng thá»ƒ hoĂ n tĂ¡c.')
     if (!confirmed) return
     setGroupActionBusyId('dissolve-group')
     try {
       await api.dissolveGroupConversation(token, selectedGroup.id)
       await refreshConversations()
-      setChatNotice('Đã giải tán nhóm chat.')
+      setChatNotice('ÄĂ£ giáº£i tĂ¡n nhĂ³m chat.')
       const fallback = conversations.find((item) => item.id !== selectedGroup.id)
       if (fallback) {
-        selectConversation(fallback.id)
+        openConversation(fallback.id)
       }
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể giải tán nhóm.')
+        setChatNotice('KhĂ´ng thá»ƒ giáº£i tĂ¡n nhĂ³m.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -1049,12 +1098,12 @@ export default function MessagesPage() {
   const handleLeaveGroup = async () => {
     if (!token || !selectedGroup || !canLeaveGroup) return
     if (myGroupRole === 'leader' && !canLeaderLeaveGroup) {
-      setChatNotice('Bạn đang là trưởng nhóm. Hãy chỉ định phó nhóm trước khi rời nhóm.')
+      setChatNotice('Báº¡n Ä‘ang lĂ  trÆ°á»Ÿng nhĂ³m. HĂ£y chá»‰ Ä‘á»‹nh phĂ³ nhĂ³m trÆ°á»›c khi rá»i nhĂ³m.')
       setRightPanelSection('manage')
       return
     }
 
-    const confirmed = window.confirm('Bạn có chắc muốn rời nhóm này không?')
+    const confirmed = window.confirm('Báº¡n cĂ³ cháº¯c muá»‘n rá»i nhĂ³m nĂ y khĂ´ng?')
     if (!confirmed) return
 
     setGroupActionBusyId('leave-group')
@@ -1063,24 +1112,24 @@ export default function MessagesPage() {
       await refreshConversations()
       setChatNotice(
         myGroupRole === 'leader'
-          ? 'Bạn đã rời nhóm. Quyền trưởng nhóm đã tự động chuyển cho phó nhóm.'
-          : 'Bạn đã rời nhóm chat.'
+          ? 'Báº¡n Ä‘Ă£ rá»i nhĂ³m. Quyá»n trÆ°á»Ÿng nhĂ³m Ä‘Ă£ tá»± Ä‘á»™ng chuyá»ƒn cho phĂ³ nhĂ³m.'
+          : 'Báº¡n Ä‘Ă£ rá»i nhĂ³m chat.'
       )
 
       const fallback = conversations.find((item) => item.id !== selectedGroup.id)
       if (fallback) {
-        selectConversation(fallback.id)
+        openConversation(fallback.id)
       } else {
         const refreshed = await api.listConversations(token)
         if (refreshed.conversations.length > 0) {
-          selectConversation(refreshed.conversations[0].id)
+          openConversation(refreshed.conversations[0].id)
         }
       }
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể rời nhóm lúc này.')
+        setChatNotice('KhĂ´ng thá»ƒ rá»i nhĂ³m lĂºc nĂ y.')
       }
     } finally {
       setGroupActionBusyId(null)
@@ -1124,7 +1173,7 @@ export default function MessagesPage() {
         messagesWrapRef.current.scrollTop = newScrollHeight - previousScrollHeight
       })
     } catch (error) {
-      console.error('Không thể tải tin nhắn cũ hơn', error)
+      console.error('KhĂ´ng thá»ƒ táº£i tin nháº¯n cÅ© hÆ¡n', error)
     } finally {
       setLoadingOlderMessages(false)
     }
@@ -1157,11 +1206,11 @@ export default function MessagesPage() {
       })
     } catch (error) {
       if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
-        setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+        setChatNotice('Báº¡n chá»‰ gá»­i Ä‘Æ°á»£c tá»‘i Ä‘a 3 tin nháº¯n khi chÆ°a káº¿t báº¡n. HĂ£y káº¿t báº¡n Ä‘á»ƒ tiáº¿p tá»¥c.')
       } else if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể gửi tin nhắn.')
+        setChatNotice('KhĂ´ng thá»ƒ gá»­i tin nháº¯n.')
       }
       console.error('Failed to send message:', error)
     } finally {
@@ -1178,7 +1227,7 @@ export default function MessagesPage() {
         const base64 = result.includes(',') ? result.split(',')[1] : result
         resolve(base64)
       }
-      reader.onerror = () => reject(new Error('Không thể đọc file'))
+      reader.onerror = () => reject(new Error('KhĂ´ng thá»ƒ Ä‘á»c file'))
       reader.readAsDataURL(file)
     })
 
@@ -1191,7 +1240,7 @@ export default function MessagesPage() {
 
   const handlePickAttachment = () => {
     if (!selectedConversationId) {
-      setChatNotice('Vui lòng chọn cuộc trò chuyện trước khi gửi tệp.')
+      setChatNotice('Vui lĂ²ng chá»n cuá»™c trĂ² chuyá»‡n trÆ°á»›c khi gá»­i tá»‡p.')
       return
     }
     setComposerMenuOpen((prev) => !prev)
@@ -1203,7 +1252,7 @@ export default function MessagesPage() {
 
     const maxBytes = 12 * 1024 * 1024
     if (file.size > maxBytes) {
-      setChatNotice('Tệp quá lớn. Vui lòng chọn tệp nhỏ hơn 12MB.')
+      setChatNotice('Tá»‡p quĂ¡ lá»›n. Vui lĂ²ng chá»n tá»‡p nhá» hÆ¡n 12MB.')
       event.target.value = ''
       return
     }
@@ -1219,7 +1268,7 @@ export default function MessagesPage() {
       })
 
       if (!upload.mediaUrl) {
-        throw new Error('Tải tệp lên thất bại, không nhận được đường dẫn file.')
+        throw new Error('Táº£i tá»‡p lĂªn tháº¥t báº¡i, khĂ´ng nháº­n Ä‘Æ°á»£c Ä‘Æ°á»ng dáº«n file.')
       }
 
       const response = await api.sendMessagePayload(token, selectedConversationId, {
@@ -1230,7 +1279,7 @@ export default function MessagesPage() {
         fileSize: file.size,
       })
       upsertMessage(selectedConversationId, response.message)
-      setChatNotice('Đã gửi tệp thành công.')
+      setChatNotice('ÄĂ£ gá»­i tá»‡p thĂ nh cĂ´ng.')
       setMessageLimitByConversation((prev) => {
         const current = prev[selectedConversationId]
         if (!current) return prev
@@ -1245,20 +1294,20 @@ export default function MessagesPage() {
       })
     } catch (error) {
       if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
-        setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+        setChatNotice('Báº¡n chá»‰ gá»­i Ä‘Æ°á»£c tá»‘i Ä‘a 3 tin nháº¯n khi chÆ°a káº¿t báº¡n. HĂ£y káº¿t báº¡n Ä‘á»ƒ tiáº¿p tá»¥c.')
       } else if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể gửi file đính kèm.')
+        setChatNotice('KhĂ´ng thá»ƒ gá»­i file Ä‘Ă­nh kĂ¨m.')
       }
-      console.error('Không thể gửi file đính kèm:', error)
+      console.error('KhĂ´ng thá»ƒ gá»­i file Ä‘Ă­nh kĂ¨m:', error)
     } finally {
       setBusyUploading(false)
       event.target.value = ''
     }
   }
 
-  const handleReaction = async (chatMessage: ChatMessage, reaction: 'like' | 'love' | 'care') => {
+  const handleReaction = async (chatMessage: ChatMessage, reaction: string) => {
     if (!token) return
     setBusyActionId(chatMessage.id)
     try {
@@ -1270,8 +1319,8 @@ export default function MessagesPage() {
       }
       upsertMessage(chatMessage.conversationId, response.chatMessage)
     } catch (error) {
-      console.error('Không thể cập nhật cảm xúc:', error)
-      setChatNotice('Không thể cập nhật cảm xúc cho tin nhắn này.')
+      console.error('KhĂ´ng thá»ƒ cáº­p nháº­t cáº£m xĂºc:', error)
+      setChatNotice('KhĂ´ng thá»ƒ cáº­p nháº­t cáº£m xĂºc cho tin nháº¯n nĂ y.')
     } finally {
       setBusyActionId(null)
     }
@@ -1284,8 +1333,8 @@ export default function MessagesPage() {
       const response = await api.recallMessage(token, chatMessage.id)
       upsertMessage(chatMessage.conversationId, response.chatMessage)
     } catch (error) {
-      console.error('Không thể thu hồi tin nhắn:', error)
-      setChatNotice('Không thể thu hồi tin nhắn này.')
+      console.error('KhĂ´ng thá»ƒ thu há»“i tin nháº¯n:', error)
+      setChatNotice('KhĂ´ng thá»ƒ thu há»“i tin nháº¯n nĂ y.')
     } finally {
       setBusyActionId(null)
     }
@@ -1300,14 +1349,14 @@ export default function MessagesPage() {
         upsertMessage(targetConversationId, response.chatMessage)
       }
       setForwardingMessageId(null)
-      setChatNotice('Đã chuyển tiếp tin nhắn thành công.')
+      setChatNotice('ÄĂ£ chuyá»ƒn tiáº¿p tin nháº¯n thĂ nh cĂ´ng.')
       api.listConversations(token).then((res) => setConversations(res.conversations)).catch(() => undefined)
     } catch (error) {
-      console.error('Không thể chuyển tiếp tin nhắn:', error)
+      console.error('KhĂ´ng thá»ƒ chuyá»ƒn tiáº¿p tin nháº¯n:', error)
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể chuyển tiếp tin nhắn.')
+        setChatNotice('KhĂ´ng thá»ƒ chuyá»ƒn tiáº¿p tin nháº¯n.')
       }
     } finally {
       setBusyActionId(null)
@@ -1325,13 +1374,13 @@ export default function MessagesPage() {
         selectedConversationId,
         current.filter((item) => item.id !== chatMessage.id),
       )
-      setChatNotice('Đã xóa tin nhắn.')
+      setChatNotice('ÄĂ£ xĂ³a tin nháº¯n.')
     } catch (error) {
-      console.error('Không thể xóa tin nhắn:', error)
+      console.error('KhĂ´ng thá»ƒ xĂ³a tin nháº¯n:', error)
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể xóa tin nhắn này.')
+        setChatNotice('KhĂ´ng thá»ƒ xĂ³a tin nháº¯n nĂ y.')
       }
     } finally {
       setBusyActionId(null)
@@ -1350,13 +1399,13 @@ export default function MessagesPage() {
       }
       const refreshed = await api.listConversations(token)
       setConversations(refreshed.conversations)
-      setChatNotice(wasPinned ? 'Đã bỏ ghim tin nhắn.' : 'Đã ghim tin nhắn.')
+      setChatNotice(wasPinned ? 'ÄĂ£ bá» ghim tin nháº¯n.' : 'ÄĂ£ ghim tin nháº¯n.')
     } catch (error) {
-      console.error('Không thể ghim/bỏ ghim tin nhắn:', error)
+      console.error('KhĂ´ng thá»ƒ ghim/bá» ghim tin nháº¯n:', error)
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể ghim/bỏ ghim tin nhắn.')
+        setChatNotice('KhĂ´ng thá»ƒ ghim/bá» ghim tin nháº¯n.')
       }
     } finally {
       setBusyActionId(null)
@@ -1365,20 +1414,20 @@ export default function MessagesPage() {
 
   const handleClearChatForMe = async () => {
     if (!token || !selectedConversationId) return
-    const confirmed = window.confirm('Xóa toàn bộ đoạn chat ở phía bạn? Hành động này không ảnh hưởng người khác.')
+    const confirmed = window.confirm('XĂ³a toĂ n bá»™ Ä‘oáº¡n chat á»Ÿ phĂ­a báº¡n? HĂ nh Ä‘á»™ng nĂ y khĂ´ng áº£nh hÆ°á»Ÿng ngÆ°á»i khĂ¡c.')
     if (!confirmed) return
     setBusyActionId(`clear-${selectedConversationId}`)
     try {
       await api.clearConversationMessages(token, selectedConversationId)
       const refreshed = await api.listMessages(token, selectedConversationId, { limit: 25 })
       setMessages(selectedConversationId, refreshed.messages)
-      setChatNotice('Đã xóa đoạn chat ở phía bạn.')
+      setChatNotice('ÄĂ£ xĂ³a Ä‘oáº¡n chat á»Ÿ phĂ­a báº¡n.')
     } catch (error) {
-      console.error('Không thể xóa đoạn chat:', error)
+      console.error('KhĂ´ng thá»ƒ xĂ³a Ä‘oáº¡n chat:', error)
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
-        setChatNotice('Không thể xóa đoạn chat.')
+        setChatNotice('KhĂ´ng thá»ƒ xĂ³a Ä‘oáº¡n chat.')
       }
     } finally {
       setBusyActionId(null)
@@ -1419,25 +1468,35 @@ export default function MessagesPage() {
         })
       }
     } catch (error) {
-      console.error('Không thể bắt đầu cuộc gọi:', error)
+      console.error('KhĂ´ng thá»ƒ báº¯t Ä‘áº§u cuá»™c gá»i:', error)
       return
     }
 
-    setCallStatus(`Đang gọi ${callType === 'video' ? 'video' : 'thoại'} tới ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'người nhận'}`)
+    setCallStatus(`Äang gá»i ${callType === 'video' ? 'video' : 'thoáº¡i'} tá»›i ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'ngÆ°á»i nháº­n'}`)
     setCallAnswered(false)
     setRingingStartedAt(Date.now())
     setCallSeconds(0)
+    const initialParticipants = user?.id ? [user.id] : []
     setActiveCall({
       type: callType,
       withName: selectedConversation
         ? getConversationDisplayName(selectedConversation, user?.id)
-        : `Người dùng #${callTargetId}`,
+        : `NgÆ°á»i dĂ¹ng #${callTargetId}`,
       startedAt: Date.now(),
     })
-    setJoinedCallUserIds(user?.id ? [user.id] : [])
+    setJoinedCallUserIds(initialParticipants)
     socket.emit('call:join', {
       conversationId: selectedConversationId,
     })
+    
+    // Broadcast initial participant count for group calls
+    if (callTargets.length > 1) {
+      socket.emit('call:participants', {
+        conversationId: selectedConversationId,
+        participantCount: 1 + callTargets.length, // Me + all targets (even if not answered yet)
+        participantIds: [...initialParticipants, ...callTargets],
+      })
+    }
   }
 
   const handleAcceptIncomingCall = async () => {
@@ -1462,11 +1521,11 @@ export default function MessagesPage() {
         answeredAt,
       })
     } catch (error) {
-      console.error('Không thể chấp nhận cuộc gọi:', error)
+      console.error('KhĂ´ng thá»ƒ cháº¥p nháº­n cuá»™c gá»i:', error)
       return
     }
 
-    setCallStatus('Đã chấp nhận cuộc gọi')
+    setCallStatus('ÄĂ£ cháº¥p nháº­n cuá»™c gá»i')
     setCallAnswered(true)
     setRingingStartedAt(null)
     setCallSeconds(0)
@@ -1474,13 +1533,22 @@ export default function MessagesPage() {
       type: incomingCall.callType,
       withName: selectedConversation
         ? getConversationDisplayName(selectedConversation, user?.id)
-        : `Người dùng #${incomingCall.fromUserId}`,
+        : `NgÆ°á»i dĂ¹ng #${incomingCall.fromUserId}`,
       startedAt: answeredAt,
     })
-    setJoinedCallUserIds(user?.id ? [user.id, incomingCall.fromUserId] : [incomingCall.fromUserId])
+    const newJoinedIds = user?.id ? [user.id, incomingCall.fromUserId] : [incomingCall.fromUserId]
+    setJoinedCallUserIds(newJoinedIds)
     socket.emit('call:join', {
       conversationId: activeConversationId,
     })
+    
+    // Broadcast updated participant count
+    socket.emit('call:participants', {
+      conversationId: activeConversationId,
+      participantCount: newJoinedIds.length,
+      participantIds: newJoinedIds,
+    })
+    
     setIncomingCall(null)
     setGlobalIncomingCall(null)
   }
@@ -1506,23 +1574,37 @@ export default function MessagesPage() {
 
     setIncomingCall(null)
     setGlobalIncomingCall(null)
-    setCallStatus('Đã từ chối cuộc gọi')
+    setCallStatus('ÄĂ£ tá»« chá»‘i cuá»™c gá»i')
   }
 
   const handleEndCall = () => {
     const socket = getSocket()
     if (!socket || !selectedConversationId) return
+    
+    // Get current participant count before leaving
+    const remainingCount = Math.max(0, joinedCallUserIds.length - 1) // -1 because we're leaving
+    
     socket.emit('call:leave', {
       conversationId: selectedConversationId,
     })
+    
+    // Notify other participants about the count update
+    socket.emit('call:participants', {
+      conversationId: selectedConversationId,
+      participantCount: remainingCount,
+      participantIds: joinedCallUserIds.filter(id => id !== user?.id),
+    })
+    
+    // End call for each peer
     callTargets.forEach((targetUserId) => {
       socket.emit('call:end', {
         targetUserId,
         conversationId: selectedConversationId,
       })
     })
+    
     closeCallResources()
-    setCallStatus('Bạn đã kết thúc cuộc gọi')
+    setCallStatus('Báº¡n Ä‘Ă£ káº¿t thĂºc cuá»™c gá»i')
     setIncomingCall(null)
     setGlobalIncomingCall(null)
     setActiveCall(null)
@@ -1545,7 +1627,7 @@ export default function MessagesPage() {
 
   const selectedName = selectedConversation
     ? getConversationDisplayName(selectedConversation, user?.id)
-    : 'Chọn cuộc trò chuyện'
+    : 'Chá»n cuá»™c trĂ² chuyá»‡n'
   const initials = (user?.fullName?.[0] || 'U').toUpperCase()
   const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
 
@@ -1571,13 +1653,13 @@ export default function MessagesPage() {
         if (id === user?.id) {
           return {
             userId: id,
-            name: user.fullName || 'Bạn',
+            name: user.fullName || 'Báº¡n',
             avatarUrl: user.avatarUrl || null,
           }
         }
         return {
           userId: id,
-          name: `Người dùng #${id}`,
+          name: `NgÆ°á»i dĂ¹ng #${id}`,
           avatarUrl: null,
         }
       })
@@ -1588,13 +1670,13 @@ export default function MessagesPage() {
     const forwarded = Boolean(msg.meta && (msg.meta as Record<string, unknown>).forwarded)
 
     if (recalled) {
-      return <p className={styles.recalledText}>Tin nhắn đã được thu hồi</p>
+      return <p className={styles.recalledText}>Tin nháº¯n Ä‘Ă£ Ä‘Æ°á»£c thu há»“i</p>
     }
 
     if (msg.type === 'image' && msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
-          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          {forwarded ? <small className={styles.forwardTag}>ÄĂ£ chuyá»ƒn tiáº¿p</small> : null}
           <img
             src={msg.mediaUrl}
             alt={msg.fileName || 'image'}
@@ -1610,7 +1692,7 @@ export default function MessagesPage() {
     if (msg.type === 'video' && msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
-          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          {forwarded ? <small className={styles.forwardTag}>ÄĂ£ chuyá»ƒn tiáº¿p</small> : null}
           <video controls src={msg.mediaUrl} />
         </div>
       )
@@ -1619,29 +1701,29 @@ export default function MessagesPage() {
     if (msg.type === 'audio' && msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
-          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          {forwarded ? <small className={styles.forwardTag}>ÄĂ£ chuyá»ƒn tiáº¿p</small> : null}
           <audio controls src={msg.mediaUrl} />
         </div>
       )
     }
 
     if (msg.type === 'sticker') {
-      const sticker = (msg.meta?.sticker as string) || msg.text || '😀'
+      const sticker = (msg.meta?.sticker as string) || msg.text || 'đŸ˜€'
       return <p className={styles.stickerBubble}>{sticker}</p>
     }
 
     if (msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
-          {forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null}
+          {forwarded ? <small className={styles.forwardTag}>ÄĂ£ chuyá»ƒn tiáº¿p</small> : null}
           <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className={styles.fileLink}>
-            {msg.fileName || 'Mở tệp đính kèm'}
+            {msg.fileName || 'Má»Ÿ tá»‡p Ä‘Ă­nh kĂ¨m'}
           </a>
           {(msg.mimeType || msg.fileSize) ? (
             <small className={styles.fileMeta}>
               {[msg.mimeType, msg.fileSize ? `${Math.max(1, Math.round(msg.fileSize / 1024))} KB` : null]
                 .filter(Boolean)
-                .join(' • ')}
+                .join(' â€¢ ')}
             </small>
           ) : null}
         </div>
@@ -1650,7 +1732,7 @@ export default function MessagesPage() {
 
     return (
       <p className={styles.messageText}>
-        {forwarded ? <small className={styles.forwardTagInline}>[Đã chuyển tiếp] </small> : null}
+        {forwarded ? <small className={styles.forwardTagInline}>[ÄĂ£ chuyá»ƒn tiáº¿p] </small> : null}
         {msg.text || ''}
       </p>
     )
@@ -1662,10 +1744,10 @@ export default function MessagesPage() {
         <aside className={styles.rail}>
           <div className={styles.railLogo}>M</div>
           <nav className={styles.railNav}>
-            <button type="button" className={`${styles.railBtn} ${styles.railBtnActive}`} title="Tin nhắn" aria-label="Tin nhắn">
+            <button type="button" className={`${styles.railBtn} ${styles.railBtnActive}`} title="Tin nháº¯n" aria-label="Tin nháº¯n">
               <Send size={16} />
             </button>
-            <button type="button" className={styles.railBtn} onClick={() => setShowNewMessageModal(true)} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
+            <button type="button" className={styles.railBtn} onClick={() => setShowNewMessageModal(true)} title="Táº¡o há»™i thoáº¡i má»›i" aria-label="Táº¡o há»™i thoáº¡i má»›i">
               <UserPlus size={16} />
             </button>
             <button
@@ -1677,15 +1759,15 @@ export default function MessagesPage() {
                 setGroupSearchKeyword('')
                 setGroupMemberIds([])
               }}
-              title="Tạo nhóm"
-              aria-label="Tạo nhóm"
+              title="Táº¡o nhĂ³m"
+              aria-label="Táº¡o nhĂ³m"
             >
               <CirclePlus size={16} />
             </button>
-            <button type="button" className={styles.railBtn} onClick={() => setShowNotificationsDrawer(true)} title="Thông báo" aria-label="Thông báo">
+            <button type="button" className={styles.railBtn} onClick={() => setShowNotificationsDrawer(true)} title="ThĂ´ng bĂ¡o" aria-label="ThĂ´ng bĂ¡o">
               <Bell size={16} />
             </button>
-            <button type="button" className={`${styles.railBtn} ${styles.railBottomBtn}`} title="Thông tin" aria-label="Thông tin">
+            <button type="button" className={`${styles.railBtn} ${styles.railBottomBtn}`} title="ThĂ´ng tin" aria-label="ThĂ´ng tin">
               <Info size={16} />
             </button>
           </nav>
@@ -1695,13 +1777,13 @@ export default function MessagesPage() {
         <section className={styles.listPanel}>
           <div className={styles.listHeader}>
             <div className={styles.listHeaderTop}>
-              <h1>Tất cả cuộc trò chuyện</h1>
+              <h1>Táº¥t cáº£ cuá»™c trĂ² chuyá»‡n</h1>
               <button
                 type="button"
                 className={styles.headerNotifyBtn}
                 onClick={() => setShowNotificationsDrawer(true)}
-                title="Thông báo"
-                aria-label="Thông báo"
+                title="ThĂ´ng bĂ¡o"
+                aria-label="ThĂ´ng bĂ¡o"
               >
                 <Bell size={14} />
                 {notifications.some((item) => !item.is_read) ? <i /> : null}
@@ -1726,7 +1808,7 @@ export default function MessagesPage() {
                 <button
                   key={conv.id}
                   type="button"
-                  onClick={() => selectConversation(conv.id)}
+                  onClick={() => openConversation(conv.id)}
                   className={`${styles.convItem} ${isActive ? styles.convItemActive : ''}`}
                 >
                   <div className={styles.convAvatar}>{fallback}</div>
@@ -1735,7 +1817,7 @@ export default function MessagesPage() {
                       <strong>{name}</strong>
                       <span>Chat</span>
                     </div>
-                    <p>{conv.unreadCount > 0 ? `${conv.unreadCount} tin nhắn chưa đọc` : 'Nhấn để mở hội thoại'}</p>
+                    <p>{conv.unreadCount > 0 ? `${conv.unreadCount} tin nháº¯n chÆ°a Ä‘á»c` : 'Nháº¥n Ä‘á»ƒ má»Ÿ há»™i thoáº¡i'}</p>
                   </div>
                 </button>
               )
@@ -1754,23 +1836,23 @@ export default function MessagesPage() {
                 <p>
                   {directPeer
                     ? isDirectPeerFriend
-                      ? 'Bạn bè • Online'
-                      : 'Chưa kết bạn • Giới hạn 3 tin nhắn'
+                      ? 'Báº¡n bĂ¨ â€¢ Online'
+                      : 'ChÆ°a káº¿t báº¡n â€¢ Giá»›i háº¡n 3 tin nháº¯n'
                     : 'Online'}
                 </p>
               </div>
             </div>
             <div className={styles.chatActions}>
-              <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
+              <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gá»i video" aria-label="Gá»i video">
                 <Video size={16} />
               </button>
-              <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gọi thoại" aria-label="Gọi thoại">
+              <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gá»i thoáº¡i" aria-label="Gá»i thoáº¡i">
                 <Phone size={16} />
               </button>
               <button
                 type="button"
-                title="Thêm người vào cuộc trò chuyện"
-                aria-label="Thêm người vào cuộc trò chuyện"
+                title="ThĂªm ngÆ°á»i vĂ o cuá»™c trĂ² chuyá»‡n"
+                aria-label="ThĂªm ngÆ°á»i vĂ o cuá»™c trĂ² chuyá»‡n"
                 disabled={!selectedGroup || !canAddMembers}
                 onClick={() => setRightPanelSection('manage')}
               >
@@ -1778,8 +1860,8 @@ export default function MessagesPage() {
               </button>
               <button
                 type="button"
-                title="Xem chi tiết cuộc trò chuyện"
-                aria-label="Xem chi tiết cuộc trò chuyện"
+                title="Xem chi tiáº¿t cuá»™c trĂ² chuyá»‡n"
+                aria-label="Xem chi tiáº¿t cuá»™c trĂ² chuyá»‡n"
                 disabled={!selectedConversation}
                 onClick={() => setRightPanelSection('overview')}
               >
@@ -1790,13 +1872,13 @@ export default function MessagesPage() {
 
           {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
             <div className={styles.limitBadge}>
-              Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phí trước khi cần kết bạn.
+              CĂ²n {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nháº¯n miá»…n phĂ­ trÆ°á»›c khi cáº§n káº¿t báº¡n.
             </div>
           ) : null}
 
           {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
             <div className={styles.limitBadge}>
-              Đang ghim {selectedConversation.pinnedMessageIds.length} tin nhắn trong cuộc trò chuyện này.
+              Äang ghim {selectedConversation.pinnedMessageIds.length} tin nháº¯n trong cuá»™c trĂ² chuyá»‡n nĂ y.
             </div>
           ) : null}
 
@@ -1808,7 +1890,7 @@ export default function MessagesPage() {
                 onClick={() => handleOpenOrCreateDirectConversation(directPeer.id)}
                 disabled={creatingDirectConversation}
               >
-                {creatingDirectConversation ? 'Đang mở hội thoại...' : 'Nhắn tin'}
+                {creatingDirectConversation ? 'Äang má»Ÿ há»™i thoáº¡i...' : 'Nháº¯n tin'}
               </button>
               {!isDirectPeerFriend && !isDirectPeerPending ? (
                 <button
@@ -1817,7 +1899,7 @@ export default function MessagesPage() {
                   onClick={handleRequestFriend}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
-                  {pendingFriendRequestTo[directPeer.id] ? 'Đang gửi lời mời...' : 'Kết bạn để nhắn không giới hạn'}
+                  {pendingFriendRequestTo[directPeer.id] ? 'Äang gá»­i lá»i má»i...' : 'Káº¿t báº¡n Ä‘á»ƒ nháº¯n khĂ´ng giá»›i háº¡n'}
                 </button>
               ) : null}
               {!isDirectPeerFriend && isDirectPeerPending && isDirectPeerRequestedByMe ? (
@@ -1827,7 +1909,7 @@ export default function MessagesPage() {
                   onClick={handleCancelFriendRequest}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
-                  {pendingFriendRequestTo[directPeer.id] ? 'Đang hủy...' : 'Hủy lời mời kết bạn'}
+                  {pendingFriendRequestTo[directPeer.id] ? 'Äang há»§y...' : 'Há»§y lá»i má»i káº¿t báº¡n'}
                 </button>
               ) : null}
               {!isDirectPeerFriend && isDirectPeerPending && !isDirectPeerRequestedByMe ? (
@@ -1837,7 +1919,7 @@ export default function MessagesPage() {
                   onClick={handleAcceptFriendRequestDirect}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
-                  {pendingFriendRequestTo[directPeer.id] ? 'Đang xử lý...' : 'Đồng ý lời mời kết bạn'}
+                  {pendingFriendRequestTo[directPeer.id] ? 'Äang xá»­ lĂ½...' : 'Äá»“ng Ă½ lá»i má»i káº¿t báº¡n'}
                 </button>
               ) : null}
             </div>
@@ -1850,17 +1932,17 @@ export default function MessagesPage() {
               {callStatus ? <p>{callStatus}</p> : null}
               {incomingCall ? (
                 <div className={styles.callBannerActions}>
-                  <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
-                    Chấp nhận
+                  <button type="button" onClick={handleAcceptIncomingCall} title="Cháº¥p nháº­n cuá»™c gá»i" aria-label="Cháº¥p nháº­n cuá»™c gá»i">
+                    Cháº¥p nháº­n
                   </button>
-                  <button type="button" onClick={handleDeclineIncomingCall} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
-                    Từ chối
+                  <button type="button" onClick={handleDeclineIncomingCall} title="Tá»« chá»‘i cuá»™c gá»i" aria-label="Tá»« chá»‘i cuá»™c gá»i">
+                    Tá»« chá»‘i
                   </button>
                 </div>
               ) : null}
-              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Káº¿t thĂºc cuá»™c gá»i" aria-label="Káº¿t thĂºc cuá»™c gá»i">
                 <PhoneOff size={14} />
-                Kết thúc
+                Káº¿t thĂºc
               </button>
             </div>
           )}
@@ -1879,13 +1961,14 @@ export default function MessagesPage() {
               setShowJumpToLatest(fromBottom > 260)
             }}
           >
-            {loadingOlderMessages ? <p className={styles.historyLoading}>Đang tải tin nhắn cũ hơn...</p> : null}
+            {loadingOlderMessages ? <p className={styles.historyLoading}>Äang táº£i tin nháº¯n cÅ© hÆ¡n...</p> : null}
             {virtualSlice.startIndex > 0 ? (
-              <p className={styles.virtualHint}>Đang hiển thị {VIRTUAL_CHUNK} tin nhắn mới nhất. Cuộn lên để tải thêm lịch sử.</p>
+              <p className={styles.virtualHint}>Äang hiá»ƒn thá»‹ {VIRTUAL_CHUNK} tin nháº¯n má»›i nháº¥t. Cuá»™n lĂªn Ä‘á»ƒ táº£i thĂªm lá»‹ch sá»­.</p>
             ) : null}
             {virtualSlice.items.map((msg) => {
               const mine = msg.senderId === user?.id
-              const senderName = String(msg.senderName || msg.sender?.fullName || msg.sender?.name || 'Người dùng')
+              const reactionItems = getMessageReactionItems(msg)
+              const senderName = String(msg.senderName || msg.sender?.fullName || msg.sender?.name || 'NgÆ°á»i dĂ¹ng')
               return (
                 <div key={msg.id} className={`${styles.messageRow} ${mine ? styles.messageRowMine : ''}`}>
                   {!mine ? <div className={styles.messageAvatar}>{(senderName[0] || 'U').toUpperCase()}</div> : null}
@@ -1917,39 +2000,96 @@ export default function MessagesPage() {
                       <button
                         type="button"
                         className={styles.messageActionTrigger}
-                        title="Mở menu thao tác"
-                        aria-label="Mở menu thao tác"
+                        title="Má»Ÿ menu thao tĂ¡c"
+                        aria-label="Má»Ÿ menu thao tĂ¡c"
                         onClick={(event) => openMessageActions(event, msg.id)}
                       >
                         <MoreHorizontal size={14} />
                       </button>
                       {renderMessagePreview(msg)}
-                      {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
-                      {msg.reactionCount > 0 ? (
-                        <div className={styles.reactionSummary}>{reactionSummaryText(msg)}</div>
+                      {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>ÄĂ£ ghim</small> : null}
+                      {reactionItems.length > 0 ? (
+                        <div className={styles.reactionsPill}>
+                          {reactionItems.slice(0, 5).map((r, idx) => (
+                            <span key={`${r.userId}-${idx}`} className={styles.reactionEmoji} title={r.meta.label}>
+                              {r.meta.emoji}
+                            </span>
+                          ))}
+                          {reactionItems.length > 5 ? <span className={styles.reactionMore}>+{reactionItems.length - 5}</span> : null}
+                        </div>
                       ) : null}
                     </div>
-                    <span className={styles.messageTime}>
-                      {formatVietnamTime(msg.createdAt)}
-                    </span>
+                    <div className={styles.messageFooter}>
+                      <button
+                        type="button"
+                        className={`${styles.reactionTrigger} ${msg.viewerReaction ? styles.reactionTriggerActive : ''}`}
+                        title="Thả cảm xúc"
+                        aria-label="Thả cảm xúc"
+                        onClick={() => setReactionPickerMessageId((current) => (current === msg.id ? null : msg.id))}
+                      >
+                        {msg.viewerReaction ? getMessageReactionMeta(msg.viewerReaction).emoji : <Smile size={14} />}
+                      </button>
+                      <span className={styles.messageTime}>
+                        {formatVietnamTime(msg.createdAt)}
+                      </span>
+                    </div>
+                    {reactionPickerMessageId === msg.id ? (
+                      <div className={styles.reactionPicker}>
+                        {MESSAGE_REACTIONS.map((reaction) => (
+                          <button
+                            key={reaction.type}
+                            type="button"
+                            className={msg.viewerReaction === reaction.type ? styles.reactionPickerActive : ''}
+                            title={reaction.label}
+                            aria-label={reaction.label}
+                            disabled={busyActionId === msg.id}
+                            onClick={() => {
+                              handleReaction(msg, reaction.type)
+                              setReactionPickerMessageId(null)
+                            }}
+                          >
+                            {reaction.emoji}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               )
             })}
 
-            {messages.length === 0 ? <p className={styles.empty}>Chưa có tin nhắn trong cuộc trò chuyện này.</p> : null}
+            {typingUserIds.size > 0 ? (
+              <div className={`${styles.messageRow}`}>
+                <div className={styles.messageAvatar}>...</div>
+                <div className={styles.messageBlock}>
+                  <div className={`${styles.bubble}`}>
+                    <p style={{ fontSize: '0.9em', fontStyle: 'italic' }}>
+                      {Array.from(typingUserIds)
+                        .map((userId) => {
+                          const member = selectedConversation?.members.find((m) => m.userId === userId)
+                          return member?.fullName || `NgÆ°á»i dĂ¹ng #${userId}`
+                        })
+                        .join(', ')}{' '}
+                      Ä‘ang soáº¡n tin nháº¯n...
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {messages.length === 0 ? <p className={styles.empty}>ChÆ°a cĂ³ tin nháº¯n trong cuá»™c trĂ² chuyá»‡n nĂ y.</p> : null}
           </div>
 
           <footer className={styles.inputBar}>
-            <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Đính kèm tệp" title="Đính kèm tệp" />
+            <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="ÄĂ­nh kĂ¨m tá»‡p" title="ÄĂ­nh kĂ¨m tá»‡p" />
             <input
               ref={imageInputRef}
               type="file"
               accept="image/*"
               className={styles.hiddenFileInput}
               onChange={handleFileSelected}
-              aria-label="Gửi hình ảnh"
-              title="Gửi hình ảnh"
+              aria-label="Gá»­i hĂ¬nh áº£nh"
+              title="Gá»­i hĂ¬nh áº£nh"
             />
             <input
               ref={videoInputRef}
@@ -1957,25 +2097,25 @@ export default function MessagesPage() {
               accept="video/*"
               className={styles.hiddenFileInput}
               onChange={handleFileSelected}
-              aria-label="Gửi video"
-              title="Gửi video"
+              aria-label="Gá»­i video"
+              title="Gá»­i video"
             />
-            <button type="button" className={styles.inputIcon} onClick={handlePickAttachment} disabled={busyUploading} title="Chọn tệp đính kèm" aria-label="Chọn tệp đính kèm">
+            <button type="button" className={styles.inputIcon} onClick={handlePickAttachment} disabled={busyUploading} title="Chá»n tá»‡p Ä‘Ă­nh kĂ¨m" aria-label="Chá»n tá»‡p Ä‘Ă­nh kĂ¨m">
               <CirclePlus size={18} />
             </button>
             {composerMenuOpen ? (
               <div className={styles.composerPlusMenu}>
-                <button type="button" onClick={() => handlePickAttachmentType('image')} title="Gửi ảnh" aria-label="Gửi ảnh">
-                  <span>🖼️</span>
-                  <span>Gửi ảnh</span>
+                <button type="button" onClick={() => handlePickAttachmentType('image')} title="Gá»­i áº£nh" aria-label="Gá»­i áº£nh">
+                  <span>đŸ–¼ï¸</span>
+                  <span>Gá»­i áº£nh</span>
                 </button>
-                <button type="button" onClick={() => handlePickAttachmentType('video')} title="Gửi video" aria-label="Gửi video">
-                  <span>🎬</span>
-                  <span>Gửi video</span>
+                <button type="button" onClick={() => handlePickAttachmentType('video')} title="Gá»­i video" aria-label="Gá»­i video">
+                  <span>đŸ¬</span>
+                  <span>Gá»­i video</span>
                 </button>
-                <button type="button" onClick={() => handlePickAttachmentType('file')} title="Gửi tệp" aria-label="Gửi tệp">
-                  <span>📎</span>
-                  <span>Gửi tệp</span>
+                <button type="button" onClick={() => handlePickAttachmentType('file')} title="Gá»­i tá»‡p" aria-label="Gá»­i tá»‡p">
+                  <span>đŸ“</span>
+                  <span>Gá»­i tá»‡p</span>
                 </button>
                 <button
                   type="button"
@@ -1984,11 +2124,11 @@ export default function MessagesPage() {
                     setShowStickerPanel(false)
                     setComposerMenuOpen(false)
                   }}
-                  title="Chèn emoji"
-                  aria-label="Chèn emoji"
+                  title="ChĂ¨n emoji"
+                  aria-label="ChĂ¨n emoji"
                 >
-                  <span>😊</span>
-                  <span>Chèn emoji</span>
+                  <span>đŸ˜</span>
+                  <span>ChĂ¨n emoji</span>
                 </button>
                 <button
                   type="button"
@@ -1999,7 +2139,7 @@ export default function MessagesPage() {
                   }}
                 >
                   <Sticker size={16} />
-                  <span>Gửi sticker</span>
+                  <span>Gá»­i sticker</span>
                 </button>
               </div>
             ) : null}
@@ -2007,7 +2147,32 @@ export default function MessagesPage() {
               placeholder="Type a message..."
               value={message}
               rows={1}
-              onChange={(event) => setMessage(event.target.value)}
+              onChange={(event) => {
+                setMessage(event.target.value)
+                // Emit typing indicator
+                const socket = getSocket()
+                if (socket && selectedConversationId) {
+                  socket.emit('message:typing', {
+                    conversationId: selectedConversationId,
+                    isTyping: event.target.value.length > 0,
+                  })
+                  // Clear existing timeout
+                  if (typingTimeoutRef.current) {
+                    clearTimeout(typingTimeoutRef.current)
+                  }
+                  // Set timeout to stop showing typing after 3 seconds of inactivity
+                  if (event.target.value.length > 0) {
+                    typingTimeoutRef.current = window.setTimeout(() => {
+                      if (socket && selectedConversationId) {
+                        socket.emit('message:typing', {
+                          conversationId: selectedConversationId,
+                          isTyping: false,
+                        })
+                      }
+                    }, 3000)
+                  }
+                }
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
@@ -2015,7 +2180,7 @@ export default function MessagesPage() {
                 }
               }}
             />
-            <button type="button" className={styles.inputIcon} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chọn tệp" aria-label="Chọn tệp">
+            <button type="button" className={styles.inputIcon} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chá»n tá»‡p" aria-label="Chá»n tá»‡p">
               <Paperclip size={16} />
             </button>
             <button
@@ -2027,8 +2192,8 @@ export default function MessagesPage() {
                 setComposerMenuOpen(false)
               }}
               disabled={busyUploading}
-              title="Mở bảng emoji"
-              aria-label="Mở bảng emoji"
+              title="Má»Ÿ báº£ng emoji"
+              aria-label="Má»Ÿ báº£ng emoji"
             >
               <Smile size={16} />
             </button>
@@ -2037,8 +2202,8 @@ export default function MessagesPage() {
               className={styles.sendBtn}
               onClick={handleSend}
               disabled={!message.trim() || isSendingMessage}
-              title="Gửi tin nhắn"
-              aria-label="Gửi tin nhắn"
+              title="Gá»­i tin nháº¯n"
+              aria-label="Gá»­i tin nháº¯n"
             >
               <Send size={17} />
             </button>
@@ -2049,7 +2214,6 @@ export default function MessagesPage() {
                   <button
                     key={emoji}
                     type="button"
-                    onClick={() => setMessage((prev) => `${prev}${emoji}`)}
                   >
                     {emoji}
                   </button>
@@ -2082,8 +2246,8 @@ export default function MessagesPage() {
                   <button
                     key={sticker}
                     type="button"
-                    title="Gửi sticker"
-                    aria-label="Gửi sticker"
+                    title="Gá»­i sticker"
+                    aria-label="Gá»­i sticker"
                     onClick={async () => {
                       if (!token || !selectedConversationId) return
                       try {
@@ -2108,7 +2272,7 @@ export default function MessagesPage() {
                         })
                       } catch (error) {
                         if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
-                          setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+                          setChatNotice('Báº¡n chá»‰ gá»­i Ä‘Æ°á»£c tá»‘i Ä‘a 3 tin nháº¯n khi chÆ°a káº¿t báº¡n. HĂ£y káº¿t báº¡n Ä‘á»ƒ tiáº¿p tá»¥c.')
                         } else if (error instanceof Error) {
                           setChatNotice(error.message)
                         }
@@ -2117,7 +2281,7 @@ export default function MessagesPage() {
                   >
                     {sticker}
                   </button>
-                )) : <p className={styles.stickerLoading}>Đang tải pack {activeStickerPack}...</p>}
+                )) : <p className={styles.stickerLoading}>Äang táº£i pack {activeStickerPack}...</p>}
               </div>
             ) : null}
           </footer>
@@ -2132,22 +2296,22 @@ export default function MessagesPage() {
                 setShowJumpToLatest(false)
               }}
             >
-              Về tin nhắn mới nhất
+              Vá» tin nháº¯n má»›i nháº¥t
             </button>
           ) : null}
 
           {showNewMessageModal ? (
             <div className={styles.overlayBackdrop}>
               <div className={styles.overlayCard}>
-                <h3>Tin nhắn mới</h3>
+                <h3>Tin nháº¯n má»›i</h3>
                 <input
                   value={newMessageKeyword}
                   onChange={(event) => setNewMessageKeyword(event.target.value)}
-                  placeholder="Nhập tên bạn bè hoặc email đăng ký"
+                  placeholder="Nháº­p tĂªn báº¡n bĂ¨ hoáº·c email Ä‘Äƒng kĂ½"
                 />
                 <div className={styles.overlayList}>
                   {searchUsersResult.map((item) => (
-                    <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)} title={`Tạo hội thoại với ${item.name}`} aria-label={`Tạo hội thoại với ${item.name}`}>
+                    <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)} title={`Táº¡o há»™i thoáº¡i vá»›i ${item.name}`} aria-label={`Táº¡o há»™i thoáº¡i vá»›i ${item.name}`}>
                       <span className={styles.listEntryIdentity}>
                         <span className={styles.listEntryAvatar}>{getAvatarInitial(item.name)}</span>
                         <span className={styles.listEntryMeta}>
@@ -2157,10 +2321,10 @@ export default function MessagesPage() {
                       </span>
                     </button>
                   ))}
-                  {searchUsersResult.length === 0 ? <p>Không có kết quả phù hợp.</p> : null}
+                  {searchUsersResult.length === 0 ? <p>KhĂ´ng cĂ³ káº¿t quáº£ phĂ¹ há»£p.</p> : null}
                 </div>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)} title="Đóng" aria-label="Đóng">
-                  Đóng
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)} title="ÄĂ³ng" aria-label="ÄĂ³ng">
+                  ÄĂ³ng
                 </button>
               </div>
             </div>
@@ -2169,7 +2333,7 @@ export default function MessagesPage() {
           {showNotificationsDrawer ? (
             <div className={styles.overlayBackdrop}>
               <div className={styles.overlayCard}>
-                <h3>Thông báo nâng cao</h3>
+                <h3>ThĂ´ng bĂ¡o nĂ¢ng cao</h3>
                 <div className={styles.overlayList}>
                   {notifications.map((item) => {
                     const meta = parseNotificationMeta(item)
@@ -2186,7 +2350,7 @@ export default function MessagesPage() {
                             <span className={styles.listEntryAvatar}>{getAvatarInitial(item.title)}</span>
                             <span className={styles.listEntryMeta}>
                               <strong className={styles.listEntryTitle}>{item.title}</strong>
-                              <span className={styles.listEntrySubtitle}>{item.body || 'Thông báo hệ thống'}</span>
+                              <span className={styles.listEntrySubtitle}>{item.body || 'ThĂ´ng bĂ¡o há»‡ thá»‘ng'}</span>
                               <small className={styles.listEntrySubtitle}>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
                             </span>
                           </span>
@@ -2197,7 +2361,7 @@ export default function MessagesPage() {
                               type="button"
                               onClick={() => handleOpenNotificationConversation(conversationId)}
                             >
-                              Mở đoạn chat
+                              Má»Ÿ Ä‘oáº¡n chat
                             </button>
                           ) : null}
                           {canAccept ? (
@@ -2209,17 +2373,17 @@ export default function MessagesPage() {
                                 void handleAcceptFromNotification(item)
                               }}
                             >
-                              {busyActionId === `notif-${item.id}` ? 'Đang đồng ý...' : 'Đồng ý'}
+                              {busyActionId === `notif-${item.id}` ? 'Äang Ä‘á»“ng Ă½...' : 'Äá»“ng Ă½'}
                             </button>
                           ) : null}
                         </div>
                       </div>
                     )
                   })}
-                  {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
+                  {notifications.length === 0 ? <p>Hiá»‡n chÆ°a cĂ³ thĂ´ng bĂ¡o quan trá»ng.</p> : null}
                 </div>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
-                  Đóng
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="ÄĂ³ng" aria-label="ÄĂ³ng">
+                  ÄĂ³ng
                 </button>
               </div>
             </div>
@@ -2228,13 +2392,13 @@ export default function MessagesPage() {
           {forwardingMessageId ? (
             <div className={styles.forwardDialogBackdrop}>
               <div className={styles.forwardDialog}>
-                <h3>Chuyển tiếp tin nhắn</h3>
-                <p>Chọn cuộc trò chuyện để chuyển tiếp:</p>
+                <h3>Chuyá»ƒn tiáº¿p tin nháº¯n</h3>
+                <p>Chá»n cuá»™c trĂ² chuyá»‡n Ä‘á»ƒ chuyá»ƒn tiáº¿p:</p>
                 <div className={styles.forwardList}>
                   {conversations
                     .filter((conv) => conv.id !== selectedConversationId)
                     .map((conv) => (
-                      <button key={conv.id} type="button" onClick={() => handleForward(conv.id)} title={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`} aria-label={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`}>
+                      <button key={conv.id} type="button" onClick={() => handleForward(conv.id)} title={`Chuyá»ƒn tiáº¿p Ä‘áº¿n ${getConversationDisplayName(conv, user?.id)}`} aria-label={`Chuyá»ƒn tiáº¿p Ä‘áº¿n ${getConversationDisplayName(conv, user?.id)}`}>
                         <span className={styles.listEntryIdentity}>
                           <span className={styles.listEntryAvatar}>{getAvatarInitial(getConversationDisplayName(conv, user?.id))}</span>
                           <span className={styles.listEntryMeta}>
@@ -2245,8 +2409,8 @@ export default function MessagesPage() {
                       </button>
                     ))}
                 </div>
-                <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)} title="Hủy chuyển tiếp" aria-label="Hủy chuyển tiếp">
-                  Hủy
+                <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)} title="Há»§y chuyá»ƒn tiáº¿p" aria-label="Há»§y chuyá»ƒn tiáº¿p">
+                  Há»§y
                 </button>
               </div>
             </div>
@@ -2255,34 +2419,34 @@ export default function MessagesPage() {
           {showCreateGroupModal ? (
             <div className={styles.overlayBackdrop}>
               <div className={styles.overlayCard}>
-                <h3>Tạo nhóm chat</h3>
+                <h3>Táº¡o nhĂ³m chat</h3>
                 <input
                   value={groupName}
                   onChange={(event) => setGroupName(event.target.value)}
-                  placeholder="Nhập tên nhóm"
+                  placeholder="Nháº­p tĂªn nhĂ³m"
                 />
                 <input
                   value={groupSearchKeyword}
                   onChange={(event) => setGroupSearchKeyword(event.target.value)}
-                  placeholder="Tìm bạn bè để thêm vào nhóm"
+                  placeholder="TĂ¬m báº¡n bĂ¨ Ä‘á»ƒ thĂªm vĂ o nhĂ³m"
                 />
                 <div className={styles.overlayList}>
                   {filteredCreateGroupInviteCandidates.map((friend) => {
                     const checked = groupMemberIds.includes(friend.id)
                     return (
-                      <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chọn ${friend.fullName}`} aria-label={`Chọn ${friend.fullName}`}>
+                      <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chá»n ${friend.fullName}`} aria-label={`Chá»n ${friend.fullName}`}>
                         <span className={styles.listEntryIdentity}>
                           <span className={styles.listEntryAvatar}>{getAvatarInitial(friend.fullName)}</span>
                           <span className={styles.listEntryMeta}>
-                            <strong className={styles.listEntryTitle}>{checked ? '✓ ' : ''}{friend.fullName}</strong>
+                            <strong className={styles.listEntryTitle}>{checked ? 'âœ“ ' : ''}{friend.fullName}</strong>
                             <span className={styles.listEntrySubtitle}>{friend.email || friend.phone || `ID ${friend.id}`}</span>
                           </span>
                         </span>
                       </button>
                     )
                   })}
-                  {acceptedFriends.length === 0 ? <p>Bạn chưa có bạn bè để tạo nhóm.</p> : null}
-                  {acceptedFriends.length > 0 && filteredCreateGroupInviteCandidates.length === 0 ? <p>Không tìm thấy bạn bè phù hợp.</p> : null}
+                  {acceptedFriends.length === 0 ? <p>Báº¡n chÆ°a cĂ³ báº¡n bĂ¨ Ä‘á»ƒ táº¡o nhĂ³m.</p> : null}
+                  {acceptedFriends.length > 0 && filteredCreateGroupInviteCandidates.length === 0 ? <p>KhĂ´ng tĂ¬m tháº¥y báº¡n bĂ¨ phĂ¹ há»£p.</p> : null}
                 </div>
                 <button
                   type="button"
@@ -2290,10 +2454,10 @@ export default function MessagesPage() {
                   disabled={!groupName.trim() || groupMemberIds.length === 0 || creatingGroup}
                   onClick={handleCreateGroupConversation}
                 >
-                  {creatingGroup ? 'Đang tạo nhóm...' : 'Tạo nhóm'}
+                  {creatingGroup ? 'Äang táº¡o nhĂ³m...' : 'Táº¡o nhĂ³m'}
                 </button>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)} title="Đóng" aria-label="Đóng">
-                  Đóng
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)} title="ÄĂ³ng" aria-label="ÄĂ³ng">
+                  ÄĂ³ng
                 </button>
               </div>
             </div>
@@ -2307,10 +2471,10 @@ export default function MessagesPage() {
                   <small>Call in progress</small>
                   <h3>{activeCall.withName}</h3>
                   <p className={styles.callParticipantCount}>
-                    {callParticipantProfiles.length} người đang tham gia
+                    {callParticipantProfiles.length} ngÆ°á»i Ä‘ang tham gia
                   </p>
                 </div>
-                <div className={styles.callBadge}>{callAnswered ? formattedCallTime : 'Đổ chuông...'}</div>
+                <div className={styles.callBadge}>{callAnswered ? formattedCallTime : 'Äá»• chuĂ´ng...'}</div>
               </div>
               {callParticipantProfiles.length > 0 ? (
                 <div className={styles.callParticipantList}>
@@ -2340,7 +2504,7 @@ export default function MessagesPage() {
                           }}
                         />
                         <span className={styles.remoteVideoLabel}>
-                          {callParticipantProfiles.find((member) => member.userId === item.userId)?.name || `Người dùng #${item.userId}`}
+                          {callParticipantProfiles.find((member) => member.userId === item.userId)?.name || `NgÆ°á»i dĂ¹ng #${item.userId}`}
                         </span>
                       </div>
                     ))}
@@ -2351,7 +2515,7 @@ export default function MessagesPage() {
               </div>
               <div className={styles.callMiniVideo}>
                 <video ref={localVideoRef} autoPlay muted playsInline className={styles.localVideo} />
-                <span>Bạn</span>
+                <span>Báº¡n</span>
               </div>
               <div className={styles.callControls}>
                 <button
@@ -2365,8 +2529,8 @@ export default function MessagesPage() {
                     })
                     setMutedMic(next)
                   }}
-                  title="Bật tắt micro"
-                  aria-label="Bật tắt micro"
+                  title="Báº­t táº¯t micro"
+                  aria-label="Báº­t táº¯t micro"
                 >
                   <Phone size={16} />
                 </button>
@@ -2381,15 +2545,15 @@ export default function MessagesPage() {
                     })
                     setMutedCam(next)
                   }}
-                  title="Bật tắt camera"
-                  aria-label="Bật tắt camera"
+                  title="Báº­t táº¯t camera"
+                  aria-label="Báº­t táº¯t camera"
                 >
                   <Video size={16} />
                 </button>
-                <button type="button" title="Mời người khác" aria-label="Mời người khác">
+                <button type="button" title="Má»i ngÆ°á»i khĂ¡c" aria-label="Má»i ngÆ°á»i khĂ¡c">
                   <UserPlus size={16} />
                 </button>
-                <button type="button" className={styles.endCallOverlayBtn} onClick={handleEndCall} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+                <button type="button" className={styles.endCallOverlayBtn} onClick={handleEndCall} title="Káº¿t thĂºc cuá»™c gá»i" aria-label="Káº¿t thĂºc cuá»™c gá»i">
                   <PhoneOff size={16} />
                 </button>
               </div>
@@ -2397,32 +2561,14 @@ export default function MessagesPage() {
           ) : null}
 
           {actionMenu && activeActionMessage ? (
-            <div ref={actionMenuRef} className={styles.actionMenu}>
+            <div ref={actionMenuRef} className={styles.actionMenu} style={{ left: `${actionMenu.x}px`, top: `${actionMenu.y}px` }}>
               <div className={styles.actionMenuHeader}>
                 <span className={styles.listEntryAvatar}>{getAvatarInitial(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name)}</span>
                 <div className={styles.actionMenuMeta}>
-                  <strong>{String(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name || 'Người dùng')}</strong>
+                  <strong>{String(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name || 'NgÆ°á»i dĂ¹ng')}</strong>
                   <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
                 </div>
               </div>
-              <button type="button" onClick={() => {
-                handleReaction(activeActionMessage, 'like')
-                setActionMenu(null)
-              }} title="Thích" aria-label="Thích">
-                Thích
-              </button>
-              <button type="button" onClick={() => {
-                handleReaction(activeActionMessage, 'love')
-                setActionMenu(null)
-              }} title="Yêu thích" aria-label="Yêu thích">
-                Yêu thích
-              </button>
-              <button type="button" onClick={() => {
-                handleReaction(activeActionMessage, 'care')
-                setActionMenu(null)
-              }} title="Quan tâm" aria-label="Quan tâm">
-                Quan tâm
-              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -2430,7 +2576,7 @@ export default function MessagesPage() {
                   setActionMenu(null)
                 }}
               >
-                Chuyển tiếp
+                Chuyá»ƒn tiáº¿p
               </button>
               <button
                 type="button"
@@ -2439,7 +2585,7 @@ export default function MessagesPage() {
                   setActionMenu(null)
                 }}
               >
-                {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
+                {pinnedMessageIds.has(activeActionMessage.id) ? 'Bá» ghim' : 'Ghim'}
               </button>
               {activeActionMessage.senderId === user?.id ? (
                 <button
@@ -2449,7 +2595,7 @@ export default function MessagesPage() {
                     setActionMenu(null)
                   }}
                 >
-                  Thu hồi
+                  Thu há»“i
                 </button>
               ) : null}
               {activeActionMessage.senderId === user?.id ? (
@@ -2460,7 +2606,7 @@ export default function MessagesPage() {
                     setActionMenu(null)
                   }}
                 >
-                  Xóa
+                  XĂ³a
                 </button>
               ) : null}
             </div>
@@ -2471,15 +2617,15 @@ export default function MessagesPage() {
           {!selectedConversation ? (
             <div className={styles.detailsEmpty}>
               <Info size={16} />
-              <p>Chọn một cuộc trò chuyện để xem thông tin và thao tác nhanh.</p>
+              <p>Chá»n má»™t cuá»™c trĂ² chuyá»‡n Ä‘á»ƒ xem thĂ´ng tin vĂ  thao tĂ¡c nhanh.</p>
             </div>
           ) : null}
 
           {selectedConversation && selectedConversation.type === 'direct' ? (
             <div className={styles.detailsBody}>
               <div className={styles.detailsHeader}>
-                <h3>Thông tin đoạn chat</h3>
-                <span>Chat đơn</span>
+                <h3>ThĂ´ng tin Ä‘oáº¡n chat</h3>
+                <span>Chat Ä‘Æ¡n</span>
               </div>
 
               <div className={styles.detailsIdentity}>
@@ -2488,27 +2634,27 @@ export default function MessagesPage() {
                   <strong>{selectedName}</strong>
                   <small>
                     {isDirectPeerFriend
-                      ? 'Đã kết bạn'
+                      ? 'ÄĂ£ káº¿t báº¡n'
                       : isDirectPeerPending
-                        ? 'Đang chờ xác nhận kết bạn'
-                        : 'Chưa kết bạn'}
+                        ? 'Äang chá» xĂ¡c nháº­n káº¿t báº¡n'
+                        : 'ChÆ°a káº¿t báº¡n'}
                   </small>
                 </div>
               </div>
 
               <div className={styles.detailsSection}>
-                <strong>Tùy chọn nhanh</strong>
+                <strong>TĂ¹y chá»n nhanh</strong>
                 <div className={styles.detailActionsGrid}>
                   {directPeer ? (
                     <Link to={`/profile/${directPeer.id}`} className={styles.detailLinkAction}>
-                      Xem trang cá nhân
+                      Xem trang cĂ¡ nhĂ¢n
                     </Link>
                   ) : null}
                   <button type="button" onClick={() => void handleClearChatForMe()}>
-                    Xóa đoạn chat phía bạn
+                    XĂ³a Ä‘oáº¡n chat phĂ­a báº¡n
                   </button>
                   <button type="button" onClick={() => setShowNotificationsDrawer(true)}>
-                    Mở thông báo
+                    Má»Ÿ thĂ´ng bĂ¡o
                   </button>
                 </div>
               </div>
@@ -2518,15 +2664,15 @@ export default function MessagesPage() {
           {selectedGroup ? (
             <div className={styles.detailsBody}>
               <div className={styles.detailsHeader}>
-                <h3>Thông tin nhóm</h3>
-                <span>{selectedGroup.members.length} thành viên</span>
+                <h3>ThĂ´ng tin nhĂ³m</h3>
+                <span>{selectedGroup.members.length} thĂ nh viĂªn</span>
               </div>
 
               <div className={styles.detailsIdentity}>
                 <div className={styles.detailsAvatar}>{(selectedGroup.name?.[0] || 'G').toUpperCase()}</div>
                 <div>
-                  <strong>{selectedGroup.name || 'Nhóm chat'}</strong>
-                  <small>Bạn: {getGroupRoleLabel(myGroupRole)}</small>
+                  <strong>{selectedGroup.name || 'NhĂ³m chat'}</strong>
+                  <small>Báº¡n: {getGroupRoleLabel(myGroupRole)}</small>
                 </div>
               </div>
 
@@ -2536,40 +2682,40 @@ export default function MessagesPage() {
                   className={rightPanelSection === 'overview' ? styles.detailsTabActive : ''}
                   onClick={() => setRightPanelSection('overview')}
                 >
-                  Tổng quan
+                  Tá»•ng quan
                 </button>
                 <button
                   type="button"
                   className={rightPanelSection === 'members' ? styles.detailsTabActive : ''}
                   onClick={() => setRightPanelSection('members')}
                 >
-                  Thành viên
+                  ThĂ nh viĂªn
                 </button>
                 <button
                   type="button"
                   className={rightPanelSection === 'manage' ? styles.detailsTabActive : ''}
                   onClick={() => setRightPanelSection('manage')}
                 >
-                  Quản lý
+                  Quáº£n lĂ½
                 </button>
               </div>
 
               {rightPanelSection === 'overview' ? (
                 <>
                   <div className={styles.detailsSection}>
-                    <strong>Vai trò chính</strong>
+                    <strong>Vai trĂ² chĂ­nh</strong>
                     <div className={styles.groupMemberList}>
                       <div className={styles.groupMemberRow}>
                         <div className={styles.groupMemberInfo}>
-                          <b>{groupLeader?.fullName || 'Chưa xác định'}</b>
-                          <small>Trưởng nhóm · ID {groupLeader?.userId ?? selectedGroup.createdBy}</small>
+                          <b>{groupLeader?.fullName || 'ChÆ°a xĂ¡c Ä‘á»‹nh'}</b>
+                          <small>TrÆ°á»Ÿng nhĂ³m Â· ID {groupLeader?.userId ?? selectedGroup.createdBy}</small>
                         </div>
                         <Crown size={14} />
                       </div>
                       <div className={styles.groupMemberRow}>
                         <div className={styles.groupMemberInfo}>
-                          <b>{groupDeputy?.fullName || 'Chưa có phó nhóm'}</b>
-                          <small>{groupDeputy ? `Phó nhóm · ID ${groupDeputy.userId}` : 'Cần chỉ định để trưởng nhóm có thể rời nhóm'}</small>
+                          <b>{groupDeputy?.fullName || 'ChÆ°a cĂ³ phĂ³ nhĂ³m'}</b>
+                          <small>{groupDeputy ? `PhĂ³ nhĂ³m Â· ID ${groupDeputy.userId}` : 'Cáº§n chá»‰ Ä‘á»‹nh Ä‘á»ƒ trÆ°á»Ÿng nhĂ³m cĂ³ thá»ƒ rá»i nhĂ³m'}</small>
                         </div>
                         <UserCheck size={14} />
                       </div>
@@ -2577,13 +2723,13 @@ export default function MessagesPage() {
                   </div>
 
                   <div className={styles.detailsSection}>
-                    <strong>Thao tác nhanh</strong>
+                    <strong>Thao tĂ¡c nhanh</strong>
                     <div className={styles.detailActionsGrid}>
                       <button type="button" onClick={() => setRightPanelSection('manage')}>
-                        Quản lý quyền & thành viên
+                        Quáº£n lĂ½ quyá»n & thĂ nh viĂªn
                       </button>
                       <button type="button" onClick={() => void handleClearChatForMe()}>
-                        Xóa đoạn chat phía bạn
+                        XĂ³a Ä‘oáº¡n chat phĂ­a báº¡n
                       </button>
                     </div>
                   </div>
@@ -2592,13 +2738,13 @@ export default function MessagesPage() {
 
               {rightPanelSection === 'members' ? (
                 <div className={styles.detailsSection}>
-                  <strong>Danh sách thành viên ({selectedGroup.members.length})</strong>
+                  <strong>Danh sĂ¡ch thĂ nh viĂªn ({selectedGroup.members.length})</strong>
                   <div className={styles.groupMemberList}>
                     {selectedGroup.members.map((member) => (
                       <div key={member.userId} className={styles.groupMemberRow}>
                         <div className={styles.groupMemberInfo}>
-                          <b>{member.fullName}{Number(member.userId) === Number(user?.id) ? ' (Bạn)' : ''}</b>
-                          <small>{getGroupRoleLabel(member.role)} · ID {member.userId}</small>
+                          <b>{member.fullName}{Number(member.userId) === Number(user?.id) ? ' (Báº¡n)' : ''}</b>
+                          <small>{getGroupRoleLabel(member.role)} Â· ID {member.userId}</small>
                         </div>
                       </div>
                     ))}
@@ -2610,14 +2756,14 @@ export default function MessagesPage() {
                 <>
                   <p className={styles.groupManageHint}>
                     {canManageRoles
-                      ? 'Bạn là trưởng nhóm: có thể phân quyền, thêm/xóa thành viên, giải tán nhóm và rời nhóm.'
+                      ? 'Báº¡n lĂ  trÆ°á»Ÿng nhĂ³m: cĂ³ thá»ƒ phĂ¢n quyá»n, thĂªm/xĂ³a thĂ nh viĂªn, giáº£i tĂ¡n nhĂ³m vĂ  rá»i nhĂ³m.'
                       : canRemoveMembers
-                        ? 'Bạn là phó nhóm: có thể thêm/xóa thành viên.'
-                        : 'Bạn là thành viên: chỉ có thể rời nhóm.'}
+                        ? 'Báº¡n lĂ  phĂ³ nhĂ³m: cĂ³ thá»ƒ thĂªm/xĂ³a thĂ nh viĂªn.'
+                        : 'Báº¡n lĂ  thĂ nh viĂªn: chá»‰ cĂ³ thá»ƒ rá»i nhĂ³m.'}
                   </p>
 
                   <div className={styles.detailsSection}>
-                    <strong>Quản lý thành viên hiện tại</strong>
+                    <strong>Quáº£n lĂ½ thĂ nh viĂªn hiá»‡n táº¡i</strong>
                     <div className={styles.groupMemberList}>
                       {selectedGroup.members.map((member) => {
                         const isSelf = Number(member.userId) === Number(user?.id)
@@ -2626,8 +2772,8 @@ export default function MessagesPage() {
                         return (
                           <div key={member.userId} className={styles.groupMemberRow}>
                             <div className={styles.groupMemberInfo}>
-                              <b>{member.fullName}{isSelf ? ' (Bạn)' : ''}</b>
-                              <small>{getGroupRoleLabel(member.role)} · ID {member.userId}</small>
+                              <b>{member.fullName}{isSelf ? ' (Báº¡n)' : ''}</b>
+                              <small>{getGroupRoleLabel(member.role)} Â· ID {member.userId}</small>
                             </div>
                             {(canManageRoles || canRemoveMembers) && !isSelf ? (
                               <div className={styles.groupMemberActions}>
@@ -2639,7 +2785,7 @@ export default function MessagesPage() {
                                       void handleTransferLeader(member.userId)
                                     }}
                                   >
-                                    {groupActionBusyId === `role-${member.userId}` ? 'Đang chuyển...' : 'Làm trưởng nhóm'}
+                                    {groupActionBusyId === `role-${member.userId}` ? 'Äang chuyá»ƒn...' : 'LĂ m trÆ°á»Ÿng nhĂ³m'}
                                   </button>
                                 ) : null}
                                 {canManageRoles && !isLeader ? (
@@ -2651,10 +2797,10 @@ export default function MessagesPage() {
                                     }}
                                   >
                                     {groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`
-                                      ? 'Đang cập nhật...'
+                                      ? 'Äang cáº­p nháº­t...'
                                       : isDeputy
-                                        ? 'Gỡ phó nhóm'
-                                        : 'Gán phó nhóm'}
+                                        ? 'Gá»¡ phĂ³ nhĂ³m'
+                                        : 'GĂ¡n phĂ³ nhĂ³m'}
                                   </button>
                                 ) : null}
                                 <button
@@ -2665,7 +2811,7 @@ export default function MessagesPage() {
                                     void handleRemoveMemberFromGroup(member.userId)
                                   }}
                                 >
-                                  {groupActionBusyId === `remove-${member.userId}` ? 'Đang xóa...' : 'Xóa'}
+                                  {groupActionBusyId === `remove-${member.userId}` ? 'Äang xĂ³a...' : 'XĂ³a'}
                                 </button>
                               </div>
                             ) : null}
@@ -2677,12 +2823,12 @@ export default function MessagesPage() {
 
                   {canAddMembers ? (
                     <div className={styles.detailsSection}>
-                      <strong>Thêm thành viên</strong>
+                      <strong>ThĂªm thĂ nh viĂªn</strong>
                       <input
                         className={styles.detailsSearchInput}
                         value={groupSearchKeyword}
                         onChange={(event) => setGroupSearchKeyword(event.target.value)}
-                        placeholder="Tìm bạn bè theo tên, email hoặc ID"
+                        placeholder="TĂ¬m báº¡n bĂ¨ theo tĂªn, email hoáº·c ID"
                       />
                       <div className={styles.groupMemberList}>
                         {filteredGroupInviteCandidates.map((friend) => (
@@ -2699,18 +2845,18 @@ export default function MessagesPage() {
                                   void handleAddMemberToGroup(friend.id)
                                 }}
                               >
-                                {groupActionBusyId === `add-${friend.id}` ? 'Đang thêm...' : 'Thêm'}
+                                {groupActionBusyId === `add-${friend.id}` ? 'Äang thĂªm...' : 'ThĂªm'}
                               </button>
                             </div>
                           </div>
                         ))}
-                        {filteredGroupInviteCandidates.length === 0 ? <p>Không còn bạn bè phù hợp để thêm.</p> : null}
+                        {filteredGroupInviteCandidates.length === 0 ? <p>KhĂ´ng cĂ²n báº¡n bĂ¨ phĂ¹ há»£p Ä‘á»ƒ thĂªm.</p> : null}
                       </div>
                     </div>
                   ) : null}
 
                   <div className={styles.detailsSection}>
-                    <strong>Hành động nhóm</strong>
+                    <strong>HĂ nh Ä‘á»™ng nhĂ³m</strong>
                     <div className={styles.detailActionsGrid}>
                       <button
                         type="button"
@@ -2721,7 +2867,7 @@ export default function MessagesPage() {
                         }}
                       >
                         <LogOut size={14} />
-                        {groupActionBusyId === 'leave-group' ? 'Đang rời nhóm...' : 'Rời nhóm'}
+                        {groupActionBusyId === 'leave-group' ? 'Äang rá»i nhĂ³m...' : 'Rá»i nhĂ³m'}
                       </button>
                       {canDissolveSelectedGroup ? (
                         <button
@@ -2733,12 +2879,12 @@ export default function MessagesPage() {
                           }}
                         >
                           <Trash2 size={14} />
-                          {groupActionBusyId === 'dissolve-group' ? 'Đang giải tán...' : 'Giải tán nhóm'}
+                          {groupActionBusyId === 'dissolve-group' ? 'Äang giáº£i tĂ¡n...' : 'Giáº£i tĂ¡n nhĂ³m'}
                         </button>
                       ) : null}
                     </div>
                     {myGroupRole === 'leader' && !canLeaderLeaveGroup ? (
-                      <small className={styles.groupManageHint}>Trưởng nhóm chỉ có thể rời nhóm sau khi đã có phó nhóm.</small>
+                      <small className={styles.groupManageHint}>TrÆ°á»Ÿng nhĂ³m chá»‰ cĂ³ thá»ƒ rá»i nhĂ³m sau khi Ä‘Ă£ cĂ³ phĂ³ nhĂ³m.</small>
                     ) : null}
                   </div>
                 </>

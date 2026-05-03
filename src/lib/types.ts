@@ -74,7 +74,8 @@ export interface ChatMessage {
   meta?: Record<string, unknown> | null
   isDeleted?: boolean
   reactionCount: number
-  viewerReaction: 'like' | 'love' | 'care' | null
+  viewerReaction: string | null
+  reactions?: Array<{ userId: number; reaction: string; createdAt?: string | null }>
   createdAt: string
   updatedAt?: string
 }
