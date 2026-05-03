@@ -47,7 +47,7 @@ import {
 } from '@/services/messages/formatters'
 import { normalizeIncomingMessageForViewer } from '@/services/messages/message-normalizer'
 import { parseNotificationMeta, type MessageNotificationItem } from '@/services/messages/notification-meta'
-import type { ChatMessage, FriendConnection } from '@/types'
+import type { ChatMessage, Conversation, FriendConnection } from '@/types'
 import styles from './page.module.css'
 
 type ActiveCall = {
@@ -128,6 +128,12 @@ export default function MessagesPage() {
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
 
+  useEffect(() => {
+    if (!actionMenuRef.current || !actionMenu) return
+    actionMenuRef.current.style.left = `${actionMenu.x}px`
+    actionMenuRef.current.style.top = `${actionMenu.y}px`
+  }, [actionMenu])
+
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
     if (!selectedConversationId) return { items: [], startIndex: 0, endIndex: 0 }
@@ -171,6 +177,11 @@ export default function MessagesPage() {
       console.error('Không thể tải danh sách bạn bè', error)
     }
   }, [token, user?.id])
+
+  const refreshConversations = useCallback(async () => {
+    if (!token) return
+    setConversations(await loadChatConversations(token))
+  }, [token, setConversations])
 
   useEffect(() => {
     if (!token || !selectedConversationId) return
@@ -224,15 +235,18 @@ export default function MessagesPage() {
     socket.on('message:new', (payload: ChatMessage) => {
       const normalized = normalizeIncomingMessageForViewer(payload, user?.id)
       upsertMessage(normalized.conversationId, normalized)
+      refreshConversations().catch(() => undefined)
     })
 
     socket.on('message:reaction', (payload: { conversationId: string; message: ChatMessage }) => {
       upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
+      refreshConversations().catch(() => undefined)
     })
 
     socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage | null }) => {
       if (!payload?.message) return
       upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
+      refreshConversations().catch(() => undefined)
     })
 
     socket.on('message:typing', (payload: { conversationId: string; fromUserId: number; isTyping: boolean }) => {
@@ -252,10 +266,7 @@ export default function MessagesPage() {
       if (!payload) return
       reloadNotifications().catch(() => undefined)
       if (payload.type === 'message') {
-        api
-          .listConversations(token)
-          .then((response) => setConversations(response.conversations))
-          .catch(() => undefined)
+        refreshConversations().catch(() => undefined)
       }
 
       if (payload.type === 'friend-request' || payload.type === 'friend-accepted') {
@@ -387,7 +398,7 @@ export default function MessagesPage() {
       socket.off('call:end')
       socket.off('call:participants')
     }
-  }, [activeCall, joinedCallUserIds, reloadFriendMap, reloadNotifications, setConversations, setGlobalIncomingCall, token, upsertMessage, user?.id])
+  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
@@ -452,16 +463,55 @@ export default function MessagesPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
 
+  const selectedConversationMembers = useMemo(
+    () => new Map((selectedConversation?.members || []).map((member) => [member.userId, member])),
+    [selectedConversation]
+  )
+
+  const resolveConversationActor = useCallback(
+    (userId: number, fallbackName?: string | null, fallbackAvatar?: string | null) => {
+      const member = selectedConversationMembers.get(userId)
+      if (member) {
+        return {
+          name: member.fullName || fallbackName || `Người dùng #${userId}`,
+          avatarUrl: member.avatarUrl || fallbackAvatar || null,
+        }
+      }
+
+      if (user?.id === userId) {
+        return {
+          name: user.fullName || 'Bạn',
+          avatarUrl: user.avatarUrl || null,
+        }
+      }
+
+      return {
+        name: fallbackName || `Người dùng #${userId}`,
+        avatarUrl: fallbackAvatar || null,
+      }
+    },
+    [selectedConversationMembers, user?.avatarUrl, user?.fullName, user?.id]
+  )
+
+  const getConversationActivityTime = (conversation: Conversation) => {
+    const raw = conversation.lastMessage?.createdAt || conversation.lastMessage?.updatedAt || conversation.updatedAt || null
+    const value = raw ? new Date(raw).getTime() : 0
+    return Number.isNaN(value) ? 0 : value
+  }
+
   useEffect(() => {
     reloadFriendMap().catch(() => undefined)
   }, [reloadFriendMap])
 
   const filteredConversations = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
-    if (!q) return conversations
-    return conversations.filter((conversation) =>
-      getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
-    )
+    const items = !q
+      ? conversations
+      : conversations.filter((conversation) =>
+          getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
+        )
+
+    return [...items].sort((a, b) => getConversationActivityTime(b) - getConversationActivityTime(a))
   }, [conversations, searchTerm, user?.id])
 
   const callTargetId = useMemo(() => {
@@ -721,7 +771,7 @@ export default function MessagesPage() {
     setCreatingDirectConversation(true)
     try {
       const result = await api.createDirectConversation(token, targetUserId)
-      setConversations(await loadChatConversations(token))
+      await refreshConversations()
       openConversation(result.conversation.id)
       setChatNotice('Đã mở cuộc trò chuyện trực tiếp.')
     } catch (error) {
@@ -758,7 +808,7 @@ export default function MessagesPage() {
     if (!token) return
     try {
       const created = await api.createDirectConversation(token, targetUserId)
-      setConversations(await loadChatConversations(token))
+      await refreshConversations()
       openConversation(created.conversation.id)
       setShowNewMessageModal(false)
       setNewMessageKeyword('')
@@ -811,11 +861,6 @@ export default function MessagesPage() {
       prev.includes(friendId) ? prev.filter((id) => id !== friendId) : [...prev, friendId]
     )
   }
-
-  const refreshConversations = useCallback(async () => {
-    if (!token) return
-    setConversations(await loadChatConversations(token))
-  }, [token, setConversations])
 
   const handleCreateGroupConversation = async () => {
     if (!token || !groupName.trim() || groupMemberIds.length === 0 || creatingGroup) return
@@ -965,7 +1010,8 @@ export default function MessagesPage() {
       if (fallback) {
         openConversation(fallback.id)
       } else {
-        const refreshed = await loadChatConversations(token)
+        await refreshConversations()
+        const refreshed = useChatStore.getState().conversations
         if (refreshed.length > 0) {
           openConversation(refreshed[0].id)
         }
@@ -1173,7 +1219,7 @@ export default function MessagesPage() {
       }
       setForwardingMessageId(null)
       setChatNotice('Đã chuyển tiếp tin nhắn thành công.')
-      loadChatConversations(token).then(setConversations).catch(() => undefined)
+      await refreshConversations()
     } catch (error) {
       console.error('Không thể chuyển tiếp tin nhắn:', error)
       if (error instanceof Error) {
@@ -1220,7 +1266,7 @@ export default function MessagesPage() {
       } else {
         await api.pinMessage(token, chatMessage.id)
       }
-      setConversations(await loadChatConversations(token))
+      await refreshConversations()
       setChatNotice(wasPinned ? 'Đã bỏ ghim tin nhắn.' : 'Đã ghim tin nhắn.')
     } catch (error) {
       console.error('Không thể ghim/bỏ ghim tin nhắn:', error)
@@ -1626,20 +1672,55 @@ export default function MessagesPage() {
               const isActive = conv.id === selectedConversationId
               const name = getConversationDisplayName(conv, user?.id)
               const fallback = (name[0] || 'C').toUpperCase()
+              const lastMessage = conv.lastMessage || null
+              const sender = lastMessage
+                ? conv.members.find((member) => member.userId === lastMessage.senderId) || null
+                : null
+              const senderName = lastMessage
+                ? lastMessage.senderId === user?.id
+                  ? 'Bạn'
+                  : lastMessage.senderName || sender?.fullName || `Người dùng #${lastMessage.senderId}`
+                : ''
+              const previewText = !lastMessage
+                ? 'Chưa có tin nhắn'
+                : lastMessage.isDeleted || (lastMessage.meta && (lastMessage.meta as Record<string, unknown>).recalled)
+                  ? 'Tin nhắn đã được thu hồi'
+                  : lastMessage.type === 'sticker'
+                    ? String(lastMessage.meta && (lastMessage.meta as Record<string, unknown>).sticker || lastMessage.text || 'Sticker')
+                    : lastMessage.type === 'image'
+                      ? 'Đã gửi một hình ảnh'
+                      : lastMessage.type === 'video'
+                        ? 'Đã gửi một video'
+                        : lastMessage.type === 'audio'
+                          ? 'Đã gửi một tin nhắn âm thanh'
+                          : lastMessage.mediaUrl
+                            ? lastMessage.fileName || 'Đã gửi tệp đính kèm'
+                            : lastMessage.text || ''
+              const previewLine = lastMessage ? `${senderName}: ${previewText}` : previewText
+              const avatarUrl = conv.avatarUrl || (conv.type === 'direct' ? sender?.avatarUrl || null : null)
               return (
                 <button
                   key={conv.id}
                   type="button"
                   onClick={() => openConversation(conv.id)}
-                  className={`${styles.convItem} ${isActive ? styles.convItemActive : ''}`}
+                  className={`${styles.convItem} ${isActive ? styles.convItemActive : ''} ${conv.unreadCount > 0 ? styles.convItemUnread : ''}`}
                 >
-                  <div className={styles.convAvatar}>{fallback}</div>
-                  <div className={styles.convText}>
+                  <div className={styles.convAvatar}>
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" />
+                    ) : (
+                      fallback
+                    )}
+                  </div>
+                  <div className={styles.convMeta}>
                     <div className={styles.convLineTop}>
                       <strong>{name}</strong>
-                      <span>Chat</span>
+                      <span>{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
                     </div>
-                    <p>{conv.unreadCount > 0 ? `${conv.unreadCount} tin nhắn chưa đọc` : 'Nhấn để mở hội thoại'}</p>
+                    <p className={styles.convPreview}>{previewLine}</p>
+                    <div className={styles.convFooter}>
+                      {conv.unreadCount > 0 ? <span className={styles.convUnreadBadge}>{conv.unreadCount} chưa đọc</span> : null}
+                    </div>
                   </div>
                 </button>
               )
@@ -1790,16 +1871,32 @@ export default function MessagesPage() {
             {virtualSlice.items.map((msg) => {
               const mine = msg.senderId === user?.id
               const reactionItems = getMessageReactionItems(msg)
-              const senderName = String(msg.senderName || msg.sender?.fullName || msg.sender?.name || 'Người dùng')
+              const sender = resolveConversationActor(msg.senderId, msg.senderName, msg.senderAvatar)
+              const senderName = sender.name
+
               return (
                 <div key={msg.id} className={`${styles.messageRow} ${mine ? styles.messageRowMine : ''}`}>
-                  {!mine ? <div className={styles.messageAvatar}>{(senderName[0] || 'U').toUpperCase()}</div> : null}
+                  {!mine ? (
+                    <div className={styles.messageAvatar}>
+                      {sender.avatarUrl ? (
+                        <img src={sender.avatarUrl} alt={senderName} className={styles.messageAvatarImage} loading="lazy" />
+                      ) : (
+                        (senderName[0] || 'U').toUpperCase()
+                      )}
+                    </div>
+                  ) : null}
+
                   <div className={styles.messageBlock}>
-                    {!mine ? (
-                      <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
-                        {senderName}
-                      </Link>
-                    ) : null}
+                    <div className={styles.senderRow}>
+                      {mine ? (
+                        <span className={styles.senderSelf}>{senderName}</span>
+                      ) : (
+                        <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
+                          {senderName}
+                        </Link>
+                      )}
+                    </div>
+
                     <div
                       className={`${styles.bubble} ${mine ? styles.bubbleMine : ''}`}
                       onContextMenu={(event) => {
@@ -1830,17 +1927,36 @@ export default function MessagesPage() {
                       </button>
                       {renderMessagePreview(msg)}
                       {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
+
                       {reactionItems.length > 0 ? (
                         <div className={styles.reactionsPill}>
-                          {reactionItems.slice(0, 5).map((r, idx) => (
-                            <span key={`${r.userId}-${idx}`} className={styles.reactionEmoji} title={r.meta.label}>
-                              {r.meta.emoji}
-                            </span>
-                          ))}
-                          {reactionItems.length > 5 ? <span className={styles.reactionMore}>+{reactionItems.length - 5}</span> : null}
+                          {reactionItems.slice(0, 4).map((reaction, index) => {
+                            const reactor = resolveConversationActor(reaction.userId)
+                            return (
+                              <span
+                                key={`${reaction.userId}-${index}`}
+                                className={styles.reactionChip}
+                                title={`${reactor.name} đã thả ${reaction.meta.label}`}
+                              >
+                                {reactor.avatarUrl ? (
+                                  <img
+                                    src={reactor.avatarUrl}
+                                    alt={reactor.name}
+                                    className={styles.reactionAvatar}
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <span className={styles.reactionAvatar}>{(reactor.name[0] || 'U').toUpperCase()}</span>
+                                )}
+                                <span className={styles.reactionEmoji}>{reaction.meta.emoji}</span>
+                              </span>
+                            )
+                          })}
+                          {reactionItems.length > 4 ? <span className={styles.reactionMore}>+{reactionItems.length - 4}</span> : null}
                         </div>
                       ) : null}
                     </div>
+
                     <div className={styles.messageFooter}>
                       <button
                         type="button"
@@ -1851,10 +1967,9 @@ export default function MessagesPage() {
                       >
                         {msg.viewerReaction ? getMessageReactionMeta(msg.viewerReaction).emoji : <Smile size={14} />}
                       </button>
-                      <span className={styles.messageTime}>
-                        {formatVietnamTime(msg.createdAt)}
-                      </span>
+                      <span className={styles.messageTime}>{formatVietnamTime(msg.createdAt)}</span>
                     </div>
+
                     {reactionPickerMessageId === msg.id ? (
                       <div className={styles.reactionPicker}>
                         {MESSAGE_REACTIONS.map((reaction) => (
@@ -1876,6 +1991,16 @@ export default function MessagesPage() {
                       </div>
                     ) : null}
                   </div>
+
+                  {mine ? (
+                    <div className={styles.messageAvatar}>
+                      {user?.avatarUrl ? (
+                        <img src={user.avatarUrl} alt={senderName} className={styles.messageAvatarImage} loading="lazy" />
+                      ) : (
+                        (senderName[0] || 'U').toUpperCase()
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )
             })}
@@ -1885,7 +2010,7 @@ export default function MessagesPage() {
                 <div className={styles.messageAvatar}>...</div>
                 <div className={styles.messageBlock}>
                   <div className={`${styles.bubble}`}>
-                    <p style={{ fontSize: '0.9em', fontStyle: 'italic' }}>
+                      <p className={styles.typingNotice}>
                       {Array.from(typingUserIds)
                         .map((userId) => {
                           const member = selectedConversation?.members.find((m) => m.userId === userId)
@@ -1952,56 +2077,9 @@ export default function MessagesPage() {
                   <span>😊</span>
                   <span>Chèn emoji</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowStickerPanel((prev) => !prev)
-                    setShowEmojiPanel(false)
-                    setComposerMenuOpen(false)
-                  }}
-                >
-                  <Sticker size={16} />
-                  <span>Gửi sticker</span>
-                </button>
               </div>
             ) : null}
-            <textarea
-              placeholder="Type a message..."
-              value={message}
-              rows={1}
-              onChange={(event) => {
-                setMessage(event.target.value)
-                // Emit typing indicator
-                const socket = getSocket()
-                if (socket && selectedConversationId) {
-                  socket.emit('message:typing', {
-                    conversationId: selectedConversationId,
-                    isTyping: event.target.value.length > 0,
-                  })
-                  // Clear existing timeout
-                  if (typingTimeoutRef.current) {
-                    clearTimeout(typingTimeoutRef.current)
-                  }
-                  // Set timeout to stop showing typing after 3 seconds of inactivity
-                  if (event.target.value.length > 0) {
-                    typingTimeoutRef.current = window.setTimeout(() => {
-                      if (socket && selectedConversationId) {
-                        socket.emit('message:typing', {
-                          conversationId: selectedConversationId,
-                          isTyping: false,
-                        })
-                      }
-                    }, 3000)
-                  }
-                }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  handleSend()
-                }
-              }}
-            />
+
             <button type="button" className={styles.inputIcon} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chọn tệp" aria-label="Chọn tệp">
               <Paperclip size={16} />
             </button>
@@ -2383,11 +2461,15 @@ export default function MessagesPage() {
           ) : null}
 
           {actionMenu && activeActionMessage ? (
-            <div ref={actionMenuRef} className={styles.actionMenu} style={{ left: `${actionMenu.x}px`, top: `${actionMenu.y}px` }}>
+            <div ref={actionMenuRef} className={styles.actionMenu}>
               <div className={styles.actionMenuHeader}>
-                <span className={styles.listEntryAvatar}>{getAvatarInitial(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name)}</span>
+                <span className={styles.listEntryAvatar}>
+                  {getAvatarInitial(
+                    resolveConversationActor(activeActionMessage.senderId, activeActionMessage.senderName, activeActionMessage.senderAvatar).name
+                  )}
+                </span>
                 <div className={styles.actionMenuMeta}>
-                  <strong>{String(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name || 'Người dùng')}</strong>
+                  <strong>{String(activeActionMessage.senderName || `Người dùng #${activeActionMessage.senderId}`)}</strong>
                   <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
                 </div>
               </div>

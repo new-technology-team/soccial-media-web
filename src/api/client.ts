@@ -42,6 +42,20 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
   ...conversation,
   id: String(conversation.id),
   pinnedMessageIds: (conversation.pinnedMessageIds || []).map((item) => String(item)),
+  avatarUrl: resolveApiAssetUrl(conversation.avatarUrl),
+  lastMessage: conversation.lastMessage
+    ? {
+        ...conversation.lastMessage,
+        id: String(conversation.lastMessage.id),
+        senderId: Number(conversation.lastMessage.senderId || 0),
+        senderAvatar: resolveApiAssetUrl(conversation.lastMessage.senderAvatar),
+        mediaUrl: resolveApiAssetUrl(conversation.lastMessage.mediaUrl),
+      }
+    : conversation.lastMessage,
+  members: (conversation.members || []).map((member) => ({
+    ...member,
+    avatarUrl: resolveApiAssetUrl(member.avatarUrl),
+  })),
 })
 
 const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({

@@ -809,9 +809,6 @@ export default function FeedPage() {
             <Link to={`/profile/${me?.id || 1}`} className={styles.railItem}>
               Hồ sơ
             </Link>
-            <Link to="/groups" className={styles.railItem}>
-              Nhóm
-            </Link>
             <Link to="/messages" className={styles.railItem}>
               Trò chuyện
             </Link>
