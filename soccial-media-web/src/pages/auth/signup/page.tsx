@@ -7,17 +7,19 @@ import { AlertCircle, CalendarDays, Lock, Phone, ShieldCheck, User } from 'lucid
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/lib/store/auth-store'
 import styles from '../auth.module.css'
 
 export default function SignupPage() {
   const navigate = useNavigate()
+  const setAuth = useAuthStore((state) => state.setAuth)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [formData, setFormData] = useState({
     displayName: '',
     emailOrPhone: '',
     dateOfBirth: '',
-    gender: '',
+    gender: '' as '' | 'male' | 'female' | 'other',
     password: '',
     confirmPassword: '',
   })
@@ -46,14 +48,17 @@ export default function SignupPage() {
         fullName: formData.displayName,
         emailOrPhone: formData.emailOrPhone,
         dateOfBirth: formData.dateOfBirth || undefined,
-        gender: formData.gender || undefined,
+        gender: (formData.gender || undefined) as "male" | "female" | "other" | undefined,
         password: formData.password,
       })
 
-      if (response.requiresVerification) {
-        const identifier = encodeURIComponent(response.emailOrPhone || formData.emailOrPhone)
-        const codeQuery = response.verificationCode ? `&code=${encodeURIComponent(response.verificationCode)}` : ''
-        navigate(`/auth/verify-otp?identifier=${identifier}${codeQuery}`)
+      if (response.access_token && response.user) {
+        setAuth({
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token!,
+          user: { ...response.user, role: 'USER', accountStatus: 'ACTIVE' },
+        })
+        navigate('/feed')
       } else {
         navigate('/auth/login')
       }

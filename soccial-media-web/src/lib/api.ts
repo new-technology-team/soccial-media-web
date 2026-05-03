@@ -17,6 +17,17 @@ export function isAuthExpiredError(err: unknown): boolean {
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
+export class ApiError extends Error {
+  constructor(
+    public readonly message: string,
+    public readonly code?: string,
+    public readonly statusCode?: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
   const accessToken = authStorage.getAccessToken();
@@ -42,7 +53,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       data?.issues?.[0]?.message ||
       data?.issues?.[0]?.path?.join?.(".") ||
       "Request failed";
-    throw new Error(detailedMessage);
+    const code = data?.code as string | undefined;
+    throw new ApiError(detailedMessage, code, response.status);
   }
 
   return data as T;

@@ -1,11 +1,14 @@
 export type AuthUser = {
   id: number;
+  username?: string;
   email?: string | null;
   phone?: string | null;
   fullName: string;
   dateOfBirth?: string | null;
   gender?: "male" | "female" | "other" | null;
   avatarUrl?: string | null;
+  role: string;
+  accountStatus: string;
   isVerified?: boolean;
   createdAt?: string;
 };
@@ -18,14 +21,11 @@ export type AuthResponse = {
 
 export type RegisterResponse = {
   message: string;
-  requiresVerification: boolean;
-  emailOrPhone: string;
-  otpSent?: boolean;
-  otpChannel?: "email" | "sms" | "debug";
-  otpDestination?: string;
-  otpReason?: string;
-  otpError?: string;
-  verificationCode?: string;
+  access_token?: string;
+  refresh_token?: string;
+  user?: AuthUser;
+  requiresVerification?: never; // Backend registers and returns tokens directly
+  verificationCode?: never;
 };
 
 export type ConversationMember = {

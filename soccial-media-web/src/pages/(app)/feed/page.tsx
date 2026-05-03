@@ -31,8 +31,12 @@ const VN_UTC_OFFSET_MS = 7 * 60 * 60 * 1000
 /** Transform backend post response shape to FeedPost. */
 function toFeedPost(raw: Record<string, unknown>): import('@/lib/types').FeedPost {
   const owner = raw.owner as Record<string, unknown> | undefined;
+  const rawId = raw.id;
+  const id: string | number = typeof rawId === 'string' && /^[0-9a-fA-F]{24}$/.test(rawId)
+    ? rawId
+    : Number(rawId ?? 0);
   return {
-    id: Number(raw.id ?? 0),
+    id,
     authorId: Number(owner?.userId ?? 0),
     authorName: String(owner?.displayName ?? raw.title ?? 'Người dùng'),
     authorAvatar: (owner?.avatarUrl as string | undefined) ?? null,
@@ -81,7 +85,7 @@ const VN_LOCATIONS = [
 ]
 
 const dedupePostsById = (items: FeedPost[]) => {
-  const seen = new Set<number>()
+  const seen = new Set<string | number>()
   const result: FeedPost[] = []
   items.forEach((item) => {
     if (seen.has(item.id)) return
@@ -111,8 +115,8 @@ export default function FeedPage() {
   const [isPosting, setIsPosting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [errorText, setErrorText] = useState('')
-  const [commentInputs, setCommentInputs] = useState<Record<number, string>>({})
-  const [isCommenting, setIsCommenting] = useState<Record<number, boolean>>({})
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({})
+  const [isCommenting, setIsCommenting] = useState<Record<string, boolean>>({})
   const [modalMediaUrl, setModalMediaUrl] = useState('')
   const [modalVisibility, setModalVisibility] = useState<'public' | 'private'>('public')
   const [modalLocation, setModalLocation] = useState('')
@@ -120,16 +124,16 @@ export default function FeedPage() {
   const [tagKeyword, setTagKeyword] = useState('')
   const [locationKeyword, setLocationKeyword] = useState('')
   const [tagSuggestions, setTagSuggestions] = useState<Array<{ id: number; name: string }>>([])
-  const [commentLists, setCommentLists] = useState<Record<number, FeedComment[]>>({})
-  const [expandedComments, setExpandedComments] = useState<Record<number, boolean>>({})
-  const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({})
-  const [loadingMoreComments, setLoadingMoreComments] = useState<Record<number, boolean>>({})
-  const [commentPaging, setCommentPaging] = useState<Record<number, CommentPaging>>({})
-  const [shareTargetPostId, setShareTargetPostId] = useState<number | null>(null)
-  const [shareConversations, setShareConversations] = useState<Array<{ id: number; name: string | null }>>([])
-  const [activePostMenuId, setActivePostMenuId] = useState<number | null>(null)
-  const [hiddenPostIds, setHiddenPostIds] = useState<Record<number, boolean>>({})
-  const [editingPostId, setEditingPostId] = useState<number | null>(null)
+  const [commentLists, setCommentLists] = useState<Record<string, FeedComment[]>>({})
+  const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({})
+  const [loadingComments, setLoadingComments] = useState<Record<string, boolean>>({})
+  const [loadingMoreComments, setLoadingMoreComments] = useState<Record<string, boolean>>({})
+  const [commentPaging, setCommentPaging] = useState<Record<string, CommentPaging>>({})
+  const [shareTargetPostId, setShareTargetPostId] = useState<string | number | null>(null)
+  const [shareConversations, setShareConversations] = useState<Array<{ id: string | number; name: string | null }>>([])
+  const [activePostMenuId, setActivePostMenuId] = useState<string | number | null>(null)
+  const [hiddenPostIds, setHiddenPostIds] = useState<Record<string, boolean>>({})
+  const [editingPostId, setEditingPostId] = useState<string | number | null>(null)
   const [isSavingPostEdit, setIsSavingPostEdit] = useState(false)
   const [composerMoreMenuOpen, setComposerMoreMenuOpen] = useState(false)
   const [postEditDraft, setPostEditDraft] = useState<{
@@ -217,7 +221,7 @@ export default function FeedPage() {
           (result.users || [])
             .map((item) => ({
               id: Number(item.id || 0),
-              name: String(item.full_name || item.fullName || 'Người dùng'),
+              name: String(item.full_name || 'Người dùng'),
             }))
             .filter((item) => item.id > 0)
             .slice(0, 8)
@@ -238,7 +242,7 @@ export default function FeedPage() {
 
     api
       .listConversations()
-      .then((result) => setShareConversations(result.conversations.map((item) => ({ id: item.id, name: item.name }))))
+      .then((result) => setShareConversations(result.conversations.map((item) => ({ id: item.id, name: item.name ?? null }))))
       .catch((error) => {
         if (handleAuthExpired(error)) return
         console.error('Failed to load conversations for sharing', error)
@@ -476,7 +480,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleAddComment = async (postId: number) => {
+  const handleAddComment = async (postId: string | number) => {
     const value = (commentInputs[postId] || '').trim()
     if (!value) return
     if (!token) {
@@ -548,7 +552,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleShareToConversation = async (post: FeedPost, conversationId: number) => {
+  const handleShareToConversation = async (post: FeedPost, conversationId: string | number) => {
     if (!token) {
       navigate('/auth/login')
       return
@@ -565,7 +569,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleCopyLink = async (postId: number) => {
+  const handleCopyLink = async (postId: string | number) => {
     const url = `${window.location.origin}/posts/${postId}`
     try {
       await navigator.clipboard.writeText(url)
@@ -576,7 +580,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleCopyPostId = async (postId: number) => {
+  const handleCopyPostId = async (postId: string | number) => {
     try {
       await navigator.clipboard.writeText(String(postId))
       setErrorText(`Đã sao chép ID bài viết: #${postId}`)
@@ -664,7 +668,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleHidePost = (postId: number) => {
+  const handleHidePost = (postId: string | number) => {
     setHiddenPostIds((prev) => ({ ...prev, [postId]: true }))
     setActivePostMenuId(null)
     setErrorText('Đã ẩn bài viết khỏi bảng tin của bạn.')
@@ -729,7 +733,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleToggleComments = async (postId: number) => {
+  const handleToggleComments = async (postId: string | number) => {
     const opened = expandedComments[postId]
     setExpandedComments((prev) => ({ ...prev, [postId]: !opened }))
     if (opened) return
@@ -747,7 +751,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleLoadMoreComments = async (postId: number) => {
+  const handleLoadMoreComments = async (postId: string | number) => {
     if (loadingMoreComments[postId]) return
     const paging = commentPaging[postId]
     if (!paging?.hasMore) return

@@ -65,13 +65,25 @@ export default function Navbar() {
       try {
         const [notifResult, moderationResult] = await Promise.all([
           api.listNotifications(),
-          isStaff ? api.moderationReports() : Promise.resolve({ reports: [] }),
+          isStaff ? api.moderationReports() : Promise.resolve({ reports: [] as Array<Record<string, unknown>> }),
         ])
         if (canceled) return
-        setNotificationPreviews((notifResult.notifications || []).slice(0, 5))
+        setNotificationPreviews(
+          (notifResult.notifications || []).map((n) => ({
+            id: n.id,
+            user_id: n.user_id,
+            type: n.type,
+            title: n.title,
+            body: n.body ?? null,
+            meta_json: n.meta_json ?? null,
+            is_read: n.is_read,
+            created_at: n.created_at,
+          }))
+        )
         if (isStaff) {
-          const pending = (moderationResult.reports || []).filter(
-            (item) => String(item.status || 'pending') === 'pending'
+          const reports = moderationResult.reports as Array<Record<string, unknown>> || [];
+          const pending = reports.filter(
+            (item: Record<string, unknown>) => String(item.status || 'pending') === 'pending'
           ).length
           setPendingReportsCount(pending)
         } else {
@@ -125,21 +137,21 @@ export default function Navbar() {
         if (canceled) return
 
         const users = (usersRes.users || [])
-          .map((item) => ({
+          .map((item: Record<string, unknown>) => ({
             id: Number(item.id || 0),
-            name: String(item.full_name || item.fullName || item.email || item.phone || 'Người dùng'),
+            name: String(item.full_name || item.email || item.phone || 'Người dùng'),
           }))
           .filter((item) => item.id > 0)
           .slice(0, 5)
 
-        const posts = (feedRes.posts || [])
+        const posts = (feedRes.posts as Array<Record<string, unknown>> || [])
           .filter(
             (item) =>
-              item.authorName.toLowerCase().includes(q) ||
-              item.content.toLowerCase().includes(q)
+              String(item.authorName || '').toLowerCase().includes(q) ||
+              String(item.content || '').toLowerCase().includes(q)
           )
           .slice(0, 4)
-          .map((item) => ({ id: item.id, authorName: item.authorName, content: item.content }))
+          .map((item: Record<string, unknown>) => ({ id: Number(item.id), authorName: String(item.authorName || ''), content: String(item.content || '') }))
 
         setSearchUsers(users)
         setSearchPosts(posts)

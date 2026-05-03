@@ -21,6 +21,8 @@ import { Comment } from './module/comment/comment.entity';
 import { Notification } from './module/notification/notification.entity';
 import { Post } from './module/post/post.entity';
 import { ChatGateway } from './common/socket/chat.gateway';
+import { OptionalJwtAuthGuard } from './common/guard/optional-jwt-auth.guard';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -54,6 +56,10 @@ import { ChatGateway } from './common/socket/chat.gateway';
     UserModule,
   ],
   controllers: [AppController],
-  providers: [AppService, ChatGateway],
+  providers: [
+    AppService,
+    ChatGateway,
+    { provide: APP_GUARD, useClass: OptionalJwtAuthGuard },
+  ],
 })
 export class AppModule {}

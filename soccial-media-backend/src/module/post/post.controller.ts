@@ -2,6 +2,7 @@
 import { PostService } from './post.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { JwtAuthGuard } from '../../common/guard/jwt-auth.guard';
+import { Public } from '../../common/decorator/public.decorator';
 
 @Controller('api/social')
 export class PostController {
@@ -14,6 +15,7 @@ export class PostController {
   }
 
   @Get('feed')
+  @Public()
   async getFeed(@Req() req: any, @Query('limit') limit?: string) {
     const posts = await this.postService.findAll(
       req.user?.sub,
@@ -23,6 +25,7 @@ export class PostController {
   }
 
   @Get('posts/:id')
+  @Public()
   async getPost(@Param('id') id: string, @Req() req: any) {
     const post = await this.postService.findById(id, req.user?.sub);
     return { post };

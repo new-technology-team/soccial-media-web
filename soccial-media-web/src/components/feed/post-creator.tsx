@@ -23,11 +23,12 @@ export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost
     try {
       const response = await api.createPost({ content })
       const raw = response.post as Record<string, unknown>
+      const owner = raw.owner as Record<string, unknown> | undefined
       const created: FeedPost = {
         id: Number(raw.id ?? 0),
-        authorId: Number(raw.owner?.userId ?? 0),
-        authorName: String(raw.owner?.displayName ?? 'Người dùng'),
-        authorAvatar: (raw.owner?.avatarUrl as string | undefined) ?? null,
+        authorId: Number(owner?.userId ?? 0),
+        authorName: String(owner?.displayName ?? 'Người dùng'),
+        authorAvatar: (owner?.avatarUrl as string | undefined) ?? null,
         content: String(raw.content ?? ''),
         mediaUrl: (raw.mediaUrl as string) || null,
         visibility: (raw.visibility as 'public' | 'private') || 'public',

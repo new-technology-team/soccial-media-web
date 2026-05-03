@@ -20,7 +20,7 @@ export interface AuthPayload {
 }
 
 export interface FeedPost {
-  id: number
+  id: string | number
   authorId: number
   authorName: string
   authorAvatar: string | null
