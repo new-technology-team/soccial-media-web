@@ -4,6 +4,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from '
 import { Link } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import { Bell, CirclePlus, Info, MoreHorizontal, Phone, PhoneOff, Search, Send, Smile, UserPlus, Video } from 'lucide-react'
+import styles from './page.module.css'
 import { ApiError, api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import { useChatStore } from '@/contexts/chat-store'
@@ -41,6 +42,12 @@ type ActiveCall = {
   startedAt: number
 }
 
+type AttachmentDraft = {
+  file: File
+  type: 'image' | 'video' | 'audio' | 'file'
+  previewUrl: string | null
+}
+
 
 export default function MessagesPage() {
   const [searchParams] = useSearchParams()
@@ -52,6 +59,7 @@ export default function MessagesPage() {
     messagesByConversation,
     setConversations,
     selectConversation,
+    markConversationRead,
     setMessages,
     appendMessage,
     upsertMessage,
@@ -100,6 +108,7 @@ export default function MessagesPage() {
   const [callAnswered, setCallAnswered] = useState(false)
   const [ringingStartedAt, setRingingStartedAt] = useState<number | null>(null)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
+  const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [typingUserIds, setTypingUserIds] = useState<Set<number>>(new Set())
   const typingTimeoutRef = useRef<number | null>(null)
   const sendingMessageRef = useRef(false)
@@ -137,6 +146,14 @@ export default function MessagesPage() {
     setConversations,
     selectConversation,
   })
+
+  const handleOpenConversation = useCallback(
+    (conversationId: string) => {
+      openConversation(conversationId)
+      markConversationRead(conversationId)
+    },
+    [markConversationRead, openConversation]
+  )
 
   const reloadNotifications = useCallback(async () => {
     if (!token) return
@@ -204,7 +221,8 @@ export default function MessagesPage() {
     setShowStickerPanel(false)
     setShowJumpToLatest(false)
     setReactionPickerMessageId(null)
-  }, [selectedConversationId])
+    markConversationRead(selectedConversationId)
+  }, [markConversationRead, selectedConversationId])
 
   useEffect(() => {
     if (!token) return
@@ -402,6 +420,14 @@ export default function MessagesPage() {
     }, 3000)
     return () => window.clearTimeout(timer)
   }, [chatNotice])
+
+  useEffect(() => {
+    return () => {
+      if (attachmentDraft?.previewUrl) {
+        URL.revokeObjectURL(attachmentDraft.previewUrl)
+      }
+    }
+  }, [attachmentDraft])
 
   useEffect(() => {
     if (!callStatus || incomingCall || activeCall) return
@@ -1060,31 +1086,70 @@ export default function MessagesPage() {
     }
   }
 
+  const decrementMessageAllowance = useCallback(() => {
+    if (!selectedConversationId) return
+
+    setMessageLimitByConversation((prev) => {
+      const current = prev[selectedConversationId]
+      if (!current) return prev
+      return {
+        ...prev,
+        [selectedConversationId]: {
+          ...current,
+          sent: current.sent + 1,
+          remaining: Math.max(0, current.remaining - 1),
+        },
+      }
+    })
+  }, [selectedConversationId])
+
+  const clearAttachmentDraft = useCallback(() => {
+    setAttachmentDraft((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl)
+      }
+      return null
+    })
+  }, [])
+
   const handleSend = async () => {
-    if (!message.trim() || !token || !selectedConversationId || sendingMessageRef.current) return
+    if ((!message.trim() && !attachmentDraft) || !token || !selectedConversationId || sendingMessageRef.current) return
 
     sendingMessageRef.current = true
     setIsSendingMessage(true)
+    setBusyUploading(Boolean(attachmentDraft))
     try {
-      const response = await api.sendMessage(token, selectedConversationId, message)
+      const trimmedMessage = message.trim()
+      const response = attachmentDraft
+        ? await (async () => {
+            const base64Data = await fileToBase64(attachmentDraft.file)
+            const upload = await api.uploadMessageBase64(token, selectedConversationId, {
+              fileName: attachmentDraft.file.name,
+              contentType: attachmentDraft.file.type || 'application/octet-stream',
+              base64Data,
+            })
+
+            if (!upload.mediaUrl) {
+              throw new Error('Tai tep len that bai, khong nhan duoc duong dan file.')
+            }
+
+            return api.sendMessagePayload(token, selectedConversationId, {
+              type: attachmentDraft.type,
+              text: trimmedMessage || undefined,
+              mediaUrl: upload.mediaUrl,
+              fileName: attachmentDraft.file.name,
+              mimeType: attachmentDraft.file.type || 'application/octet-stream',
+              fileSize: attachmentDraft.file.size,
+            })
+          })()
+        : await api.sendMessage(token, selectedConversationId, trimmedMessage)
       upsertMessage(selectedConversationId, response.message)
       setMessage('')
+      clearAttachmentDraft()
       setChatNotice(null)
       setShowEmojiPanel(false)
       setShowStickerPanel(false)
-
-      setMessageLimitByConversation((prev) => {
-        const current = prev[selectedConversationId]
-        if (!current) return prev
-        return {
-          ...prev,
-          [selectedConversationId]: {
-            ...current,
-            sent: current.sent + 1,
-            remaining: Math.max(0, current.remaining - 1),
-          },
-        }
-      })
+      decrementMessageAllowance()
     } catch (error) {
       if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
         setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
@@ -1097,6 +1162,7 @@ export default function MessagesPage() {
     } finally {
       sendingMessageRef.current = false
       setIsSendingMessage(false)
+      setBusyUploading(false)
     }
   }
 
@@ -1114,61 +1180,28 @@ export default function MessagesPage() {
 
     const maxBytes = 12 * 1024 * 1024
     if (file.size > maxBytes) {
-      setChatNotice('Tệp quá lớn. Vui lòng chọn tệp nhỏ hơn 12MB.')
+      setChatNotice('Tep qua lon. Vui long chon tep nho hon 12MB.')
       event.target.value = ''
       return
     }
 
-    setBusyUploading(true)
+    const fileType = mapTypeFromFile(file)
+    const previewUrl = fileType === 'image' || fileType === 'video' ? URL.createObjectURL(file) : null
+
+    setAttachmentDraft((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl)
+      }
+      return {
+        file,
+        type: fileType,
+        previewUrl,
+      }
+    })
     setChatNotice(null)
-    try {
-      const base64Data = await fileToBase64(file)
-      const upload = await api.uploadMessageBase64(token, selectedConversationId, {
-        fileName: file.name,
-        contentType: file.type || 'application/octet-stream',
-        base64Data,
-      })
-
-      if (!upload.mediaUrl) {
-        throw new Error('Tải tệp lên thất bại, không nhận được đường dẫn file.')
-      }
-
-      const response = await api.sendMessagePayload(token, selectedConversationId, {
-        type: mapTypeFromFile(file),
-        mediaUrl: upload.mediaUrl,
-        fileName: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        fileSize: file.size,
-      })
-      upsertMessage(selectedConversationId, response.message)
-      setChatNotice('Đã gửi tệp thành công.')
-      setMessageLimitByConversation((prev) => {
-        const current = prev[selectedConversationId]
-        if (!current) return prev
-        return {
-          ...prev,
-          [selectedConversationId]: {
-            ...current,
-            sent: current.sent + 1,
-            remaining: Math.max(0, current.remaining - 1),
-          },
-        }
-      })
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
-        setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
-      } else if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể gửi file đính kèm.')
-      }
-      console.error('Không thể gửi file đính kèm:', error)
-    } finally {
-      setBusyUploading(false)
-      event.target.value = ''
-    }
+    setComposerMenuOpen(false)
+    event.target.value = ''
   }
-
   const handleSendSticker = useCallback(
     async (sticker: string) => {
       if (!token || !selectedConversationId) return
@@ -1564,80 +1597,83 @@ export default function MessagesPage() {
   const renderMessagePreview = (msg: ChatMessage) => {
     const recalled = Boolean(msg.meta && (msg.meta as Record<string, unknown>).recalled)
     const forwarded = Boolean(msg.meta && (msg.meta as Record<string, unknown>).forwarded)
-    const forwardedTag = forwarded ? <small className="text-[0.65rem] opacity-75">Da chuyen tiep</small> : null
+    const forwardedTag = forwarded ? <small className={styles.forwardTag}>Da chuyen tiep</small> : null
 
     if (recalled) {
-      return <p className="m-0 italic opacity-80">Tin nhan da duoc thu hoi</p>
+      return <p className={styles.recalledText}>Tin nhan da duoc thu hoi</p>
     }
 
     if (msg.type === 'image' && msg.mediaUrl) {
       return (
-        <div className="grid gap-1.5">
+        <div className={styles.mediaWrap}>
           {forwardedTag}
           <img
             src={msg.mediaUrl}
             alt={msg.fileName || 'image'}
-            className="max-h-[260px] w-[min(260px,62vw)] rounded-[10px] object-cover"
             loading="lazy"
             onError={(event) => {
               event.currentTarget.style.display = 'none'
             }}
           />
+          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
         </div>
       )
     }
 
     if (msg.type === 'video' && msg.mediaUrl) {
       return (
-        <div className="grid gap-1.5">
+        <div className={styles.mediaWrap}>
           {forwardedTag}
-          <video controls src={msg.mediaUrl} className="max-h-[260px] w-[min(260px,62vw)] rounded-[10px] object-cover" />
+          <video controls src={msg.mediaUrl} />
+          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
         </div>
       )
     }
 
     if (msg.type === 'audio' && msg.mediaUrl) {
       return (
-        <div className="grid gap-1.5">
+        <div className={styles.mediaWrap}>
           {forwardedTag}
-          <audio controls src={msg.mediaUrl} className="w-[min(260px,62vw)]" />
+          <audio controls src={msg.mediaUrl} />
+          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
         </div>
       )
     }
 
     if (msg.type === 'sticker') {
       const sticker = (msg.meta?.sticker as string) || msg.text || ':)'
-      return <p className="m-0 text-[2rem] leading-none">{sticker}</p>
+      return <p className={styles.stickerBubble}>{sticker}</p>
     }
 
     if (msg.mediaUrl) {
       return (
-        <div className="grid gap-1.5">
+        <div className={styles.mediaWrap}>
           {forwardedTag}
-          <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className="text-sm underline">
+          <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className={styles.fileLink}>
             {msg.fileName || 'Mo tep dinh kem'}
           </a>
           {(msg.mimeType || msg.fileSize) ? (
-            <small className="text-[0.67rem] opacity-75">
+            <small className={styles.fileMeta}>
               {[msg.mimeType, msg.fileSize ? `${Math.max(1, Math.round(msg.fileSize / 1024))} KB` : null]
                 .filter(Boolean)
                 .join(' - ')}
             </small>
           ) : null}
+          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
         </div>
       )
     }
 
     return (
-      <p className="m-0 whitespace-pre-wrap break-words text-sm leading-6 [overflow-wrap:anywhere]">
-        {forwarded ? <small className="text-[0.65rem] opacity-75">[Da chuyen tiep] </small> : null}
+      <p className={styles.messageText}>
+        {forwarded ? <small className={styles.forwardTagInline}>[Da chuyen tiep] </small> : null}
         {msg.text || ''}
       </p>
     )
   }
   return (
-    <div className="box-border h-full min-h-0 overflow-hidden py-3">
-      <div className="mx-auto grid h-full min-h-0 w-[min(1320px,calc(100%-1.2rem))] grid-cols-[74px_300px_minmax(0,1fr)_320px] overflow-hidden rounded-[18px] border border-slate-300/50 bg-slate-100/80 shadow-[0_12px_28px_rgba(14,18,22,0.08)] max-[1100px]:grid-cols-[74px_minmax(0,1fr)_320px] max-[920px]:grid-cols-[74px_minmax(0,1fr)] max-[720px]:w-full max-[720px]:grid-cols-1 max-[720px]:rounded-none">
+    <div className={styles.page}>
+      <div className={styles.layout}>
         <MessagesSidebar
           initials={initials}
           userId={user?.id}
@@ -1646,7 +1682,7 @@ export default function MessagesPage() {
           notifications={notifications}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
-          onOpenConversation={openConversation}
+          onOpenConversation={handleOpenConversation}
           onShowNotifications={() => setShowNotificationsDrawer(true)}
           onShowNewMessage={() => setShowNewMessageModal(true)}
           onShowCreateGroup={() => {
@@ -1657,15 +1693,15 @@ export default function MessagesPage() {
           }}
         />
 
-        <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-100">
-          <header className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] bg-primary text-sm font-extrabold text-white">{(selectedName[0] || 'C').toUpperCase()}</div>
+        <section className={styles.chatPanel}>
+          <header className={styles.chatHeader}>
+            <div className={styles.chatIdentity}>
+              <div className={styles.chatHeaderAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
               <div>
-                <h2 className="m-0 text-base font-extrabold text-slate-900 [&_a]:text-inherit [&_a]:no-underline hover:[&_a]:underline">
+                <h2>
                   {directPeer ? <Link to={`/profile/${directPeer.id}`}>{selectedName}</Link> : selectedName}
                 </h2>
-                <p className="m-0 mt-0.5 text-xs text-slate-500">
+                <p>
                   {directPeer
                     ? isDirectPeerFriend
                       ? 'Bạn bè • Online'
@@ -1674,7 +1710,7 @@ export default function MessagesPage() {
                 </p>
               </div>
             </div>
-            <div className="inline-flex shrink-0 gap-1 [&_button]:grid [&_button]:h-8 [&_button]:w-8 [&_button]:place-items-center [&_button]:rounded-full [&_button]:text-slate-500 [&_button]:transition hover:[&_button]:bg-slate-200 [&_button:disabled]:cursor-not-allowed [&_button:disabled]:opacity-40">
+            <div className={styles.chatActions}>
               <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
                 <Video size={16} />
               </button>
@@ -1703,22 +1739,22 @@ export default function MessagesPage() {
           </header>
 
           {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
-            <div className="mx-4 mb-1 rounded-[10px] border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <div className={styles.limitBadge}>
               Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phitrước khi cần kết bạn.
             </div>
           ) : null}
 
           {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
-            <div className="mx-4 mb-1 rounded-[10px] border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <div className={styles.pinnedBanner}>
               Đang ghim {selectedConversation.pinnedMessageIds.length} tin nhắn trong cuộc trò chuyện này.
             </div>
           ) : null}
 
           {directPeer ? (
-            <div className="mx-4 mb-1 flex flex-wrap gap-2">
+            <div className={styles.chatSocialBar}>
               <button
                 type="button"
-                className="min-h-9 rounded-[10px] bg-slate-200 px-3 text-xs font-bold text-slate-700 disabled:opacity-50"
+                className={styles.socialActionBtn}
                 onClick={() => handleOpenOrCreateDirectConversation(directPeer.id)}
                 disabled={creatingDirectConversation}
               >
@@ -1727,7 +1763,7 @@ export default function MessagesPage() {
               {!isDirectPeerFriend && !isDirectPeerPending ? (
                 <button
                   type="button"
-                  className="min-h-9 rounded-[10px] bg-primary px-3 text-xs font-bold text-white disabled:opacity-50"
+                  className={styles.socialActionBtnPrimary}
                   onClick={handleRequestFriend}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
@@ -1737,7 +1773,7 @@ export default function MessagesPage() {
               {!isDirectPeerFriend && isDirectPeerPending && isDirectPeerRequestedByMe ? (
                 <button
                   type="button"
-                  className="min-h-9 rounded-[10px] bg-slate-200 px-3 text-xs font-bold text-slate-700 disabled:opacity-50"
+                  className={styles.socialActionBtn}
                   onClick={handleCancelFriendRequest}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
@@ -1747,7 +1783,7 @@ export default function MessagesPage() {
               {!isDirectPeerFriend && isDirectPeerPending && !isDirectPeerRequestedByMe ? (
                 <button
                   type="button"
-                  className="min-h-9 rounded-[10px] bg-primary px-3 text-xs font-bold text-white disabled:opacity-50"
+                  className={styles.socialActionBtnPrimary}
                   onClick={handleAcceptFriendRequestDirect}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
@@ -1757,13 +1793,13 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
-          {chatNotice ? <p className="absolute right-4 top-16 z-20 grid min-h-12 w-[min(340px,calc(100%-2rem))] content-center rounded-[10px] border border-primary/20 bg-blue-50 px-3 py-2 text-xs text-slate-700 shadow-lg">{chatNotice}</p> : null}
+          {chatNotice ? <p className={styles.chatNotice}>{chatNotice}</p> : null}
 
           {(callStatus || incomingCall) && (
-            <div className="absolute right-4 top-32 z-20 flex min-h-14 w-[min(360px,calc(100%-2rem))] flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-blue-50 px-3 py-2">
+            <div className={styles.callBanner}>
               {callStatus ? <p>{callStatus}</p> : null}
               {incomingCall ? (
-                <div className="inline-flex gap-1 [&_button]:h-8 [&_button]:rounded-lg [&_button]:px-3 [&_button]:text-xs [&_button]:font-bold first:[&_button]:bg-primary first:[&_button]:text-white last:[&_button]:bg-slate-200 last:[&_button]:text-slate-700">
+                <div className={styles.callBannerActions}>
                   <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
                     Chấp nhận
                   </button>
@@ -1772,14 +1808,14 @@ export default function MessagesPage() {
                   </button>
                 </div>
               ) : null}
-              <button type="button" className="ml-auto inline-flex h-8 items-center gap-1 rounded-lg bg-red-500 px-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50" onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
                 <PhoneOff size={14} />
                 Kết thúc
               </button>
             </div>
           )}
 
-          <div className="mt-2 justify-self-center self-center rounded-full bg-slate-200 px-3 py-1 text-[0.67rem] font-bold text-slate-500">TODAY</div>
+          <div className={styles.timeline}>TODAY</div>
 
           <MessageThread
             userId={user?.id}
@@ -1824,6 +1860,8 @@ export default function MessagesPage() {
             loadedStickerPacks={loadedStickerPacks}
             setLoadedStickerPacks={setLoadedStickerPacks}
             onSendSticker={handleSendSticker}
+            attachmentDraft={attachmentDraft}
+            onRemoveAttachment={clearAttachmentDraft}
             fileInputRef={fileInputRef as any}
             imageInputRef={imageInputRef as any}
             videoInputRef={videoInputRef as any}
@@ -1832,7 +1870,7 @@ export default function MessagesPage() {
           {showJumpToLatest ? (
             <button
               type="button"
-              className="absolute bottom-20 right-5 z-20 min-h-9 rounded-full bg-primary px-3 text-sm font-bold text-white shadow-[0_10px_20px_rgba(0,82,206,0.25)]"
+              className={styles.jumpToLatestBtn}
               onClick={() => {
                 if (!messagesWrapRef.current) return
                 messagesWrapRef.current.scrollTop = messagesWrapRef.current.scrollHeight
@@ -1884,8 +1922,8 @@ export default function MessagesPage() {
           />
         </section>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-slate-300/60 bg-slate-100 p-3 max-[920px]:hidden">
-          <div className="grid gap-3">
+        <aside className={styles.detailsPanel}>
+          <div className={styles.detailsBody}>
           <ConversationDetailsPanel
             selectedGroup={selectedGroup}
             rightPanelSection={rightPanelSection}

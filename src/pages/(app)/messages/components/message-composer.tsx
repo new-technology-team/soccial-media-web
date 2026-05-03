@@ -3,8 +3,15 @@ import type { ChangeEvent, Dispatch, RefObject, SetStateAction } from 'react'
 
 import { EMOJI_SET, STICKER_PACKS } from '@/services/messages/constants'
 import { cn } from '@/utils'
+import styles from '../page.module.css'
 
 type StickerPackName = keyof typeof STICKER_PACKS
+
+type AttachmentDraft = {
+  file: File
+  type: 'image' | 'video' | 'audio' | 'file'
+  previewUrl: string | null
+}
 
 type MessageComposerProps = {
   message: string
@@ -26,13 +33,14 @@ type MessageComposerProps = {
   loadedStickerPacks: Record<StickerPackName, boolean>
   setLoadedStickerPacks: Dispatch<SetStateAction<Record<StickerPackName, boolean>>>
   onSendSticker: (sticker: string) => Promise<void> | void
+  attachmentDraft: AttachmentDraft | null
+  onRemoveAttachment: () => void
   fileInputRef: RefObject<HTMLInputElement | null>
   imageInputRef: RefObject<HTMLInputElement | null>
   videoInputRef: RefObject<HTMLInputElement | null>
 }
 
-const iconButton =
-  'grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border-0 bg-transparent text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45'
+const formatFileSize = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024))} KB`
 
 export function MessageComposer({
   message,
@@ -54,38 +62,60 @@ export function MessageComposer({
   loadedStickerPacks,
   setLoadedStickerPacks,
   onSendSticker,
+  attachmentDraft,
+  onRemoveAttachment,
   fileInputRef,
   imageInputRef,
   videoInputRef,
 }: MessageComposerProps) {
   return (
-    <footer className="relative mx-4 mb-4 mt-3 rounded-[14px] border border-slate-300/60 bg-white p-2 shadow-[0_8px_22px_rgba(18,24,30,0.07)]">
-      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} aria-label="Dinh kem tep" title="Dinh kem tep" />
-      <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelected} aria-label="Dinh kem anh" title="Dinh kem anh" />
-      <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileSelected} aria-label="Dinh kem video" title="Dinh kem video" />
+    <footer className={styles.composer}>
+      <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Dinh kem tep" title="Dinh kem tep" />
+      <input ref={imageInputRef} type="file" accept="image/*" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Dinh kem anh" title="Dinh kem anh" />
+      <input ref={videoInputRef} type="file" accept="video/*" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Dinh kem video" title="Dinh kem video" />
 
-      <div className="relative flex min-h-10 min-w-0 items-end gap-1">
-        <button type="button" className={iconButton} onClick={handlePickAttachment} disabled={busyUploading} title="Chon tep dinh kem" aria-label="Chon tep dinh kem">
+      {attachmentDraft ? (
+        <div className={styles.attachmentDraft}>
+          <div className={styles.attachmentPreview}>
+            {attachmentDraft.type === 'image' && attachmentDraft.previewUrl ? (
+              <img src={attachmentDraft.previewUrl} alt={attachmentDraft.file.name} />
+            ) : attachmentDraft.type === 'video' && attachmentDraft.previewUrl ? (
+              <video src={attachmentDraft.previewUrl} muted />
+            ) : (
+              <File size={18} />
+            )}
+          </div>
+          <div className={styles.attachmentMeta}>
+            <strong>{attachmentDraft.file.name}</strong>
+            <span>{attachmentDraft.file.type || 'application/octet-stream'} - {formatFileSize(attachmentDraft.file.size)}</span>
+          </div>
+          <button type="button" className={styles.attachmentRemoveBtn} onClick={onRemoveAttachment} disabled={busyUploading || isSendingMessage} title="Bo tep dinh kem" aria-label="Bo tep dinh kem">
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+
+      <div className={styles.composerRow}>
+        <button type="button" className={styles.composerIconBtn} onClick={handlePickAttachment} disabled={busyUploading} title="Chon tep dinh kem" aria-label="Chon tep dinh kem">
           <CirclePlus size={18} />
         </button>
 
         {composerMenuOpen ? (
-          <div className="absolute bottom-[calc(100%+0.45rem)] left-0 z-30 grid w-[min(250px,calc(100vw-2rem))] gap-1 rounded-xl border border-slate-300/70 bg-white p-1.5 shadow-[0_12px_28px_rgba(12,20,30,0.2)]">
-            <button type="button" className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => handlePickAttachmentType('image')}>
+          <div className={styles.composerPlusMenu}>
+            <button type="button" onClick={() => handlePickAttachmentType('image')}>
               <Image size={16} />
               Gui anh
             </button>
-            <button type="button" className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => handlePickAttachmentType('video')}>
+            <button type="button" onClick={() => handlePickAttachmentType('video')}>
               <Video size={16} />
               Gui video
             </button>
-            <button type="button" className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => handlePickAttachmentType('file')}>
+            <button type="button" onClick={() => handlePickAttachmentType('file')}>
               <File size={16} />
               Gui tep
             </button>
             <button
               type="button"
-              className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
               onClick={() => {
                 setShowEmojiPanel(true)
                 setShowStickerPanel(false)
@@ -99,10 +129,10 @@ export function MessageComposer({
         ) : null}
 
         <textarea
-          className="h-10 min-h-10 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1.5 py-2 text-[0.95rem] leading-6 text-slate-900 outline-none placeholder:text-slate-500"
+          className={styles.composerTextarea}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          placeholder="Nhap tin nhan..."
+          placeholder={attachmentDraft ? 'Nhap chu thich...' : 'Nhap tin nhan...'}
           rows={1}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -114,7 +144,7 @@ export function MessageComposer({
 
         <button
           type="button"
-          className={iconButton}
+          className={styles.composerIconBtn}
           onClick={() => {
             setShowEmojiPanel((prev) => !prev)
             setShowStickerPanel(false)
@@ -126,12 +156,12 @@ export function MessageComposer({
         >
           <Smile size={16} />
         </button>
-        <button type="button" className={iconButton} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chon tep" aria-label="Chon tep">
+        <button type="button" className={styles.composerIconBtn} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chon tep" aria-label="Chon tep">
           <Paperclip size={16} />
         </button>
         <button
           type="button"
-          className={iconButton}
+          className={styles.composerIconBtn}
           onClick={() => {
             setShowEmojiPanel(false)
             setShowStickerPanel((prev) => !prev)
@@ -141,18 +171,18 @@ export function MessageComposer({
           title="Mo sticker"
           aria-label="Mo sticker"
         >
-          <span className="text-base leading-none">+</span>
+          <span className={styles.composerStickerIcon}>+</span>
         </button>
         {showStickerPanel ? (
-          <button type="button" className={iconButton} onClick={() => setShowStickerPanel(false)} title="Dong sticker" aria-label="Dong sticker">
+          <button type="button" className={styles.composerIconBtn} onClick={() => setShowStickerPanel(false)} title="Dong sticker" aria-label="Dong sticker">
             <X size={14} />
           </button>
         ) : null}
         <button
           type="button"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border-0 bg-primary text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
+          className={styles.composerSendBtn}
           onClick={handleSend}
-          disabled={!message.trim() || isSendingMessage}
+          disabled={(!message.trim() && !attachmentDraft) || isSendingMessage || busyUploading}
           title="Gui tin nhan"
           aria-label="Gui tin nhan"
         >
@@ -160,9 +190,9 @@ export function MessageComposer({
         </button>
 
         {showEmojiPanel ? (
-          <div className="absolute bottom-[calc(100%+0.45rem)] right-0 z-30 grid w-[min(260px,calc(100vw-2rem))] grid-cols-6 gap-1.5 rounded-xl border border-slate-300/70 bg-white p-2 shadow-[0_12px_28px_rgba(12,20,30,0.2)]">
+          <div className={styles.emojiPanel}>
             {EMOJI_SET.map((emoji) => (
-              <button key={emoji} type="button" className="grid min-h-9 place-items-center rounded-lg bg-slate-100 text-lg hover:bg-slate-200" onClick={() => setMessage(`${message}${emoji}`)}>
+              <button key={emoji} type="button" onClick={() => setMessage(`${message}${emoji}`)}>
                 {emoji}
               </button>
             ))}
@@ -170,16 +200,13 @@ export function MessageComposer({
         ) : null}
 
         {showStickerPanel ? (
-          <div className="absolute bottom-[calc(100%+0.45rem)] right-0 z-30 grid w-[min(280px,calc(100vw-2rem))] grid-cols-6 gap-1.5 rounded-xl border border-slate-300/70 bg-white p-2 shadow-[0_12px_28px_rgba(12,20,30,0.2)]">
-            <div className="col-span-full flex gap-1">
+          <div className={styles.stickerPanel}>
+            <div className={styles.stickerTabs}>
               {(Object.keys(STICKER_PACKS) as Array<StickerPackName>).map((packName) => (
                 <button
                   key={packName}
                   type="button"
-                  className={cn(
-                    'min-h-7 rounded-lg px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100',
-                    packName === activeStickerPack && 'bg-primary text-primary-foreground hover:bg-primary'
-                  )}
+                  className={cn(packName === activeStickerPack && styles.stickerTabActive)}
                   onClick={() => {
                     setActiveStickerPack(packName)
                     if (!loadedStickerPacks[packName]) {
@@ -195,12 +222,12 @@ export function MessageComposer({
             </div>
             {loadedStickerPacks[activeStickerPack] ? (
               STICKER_PACKS[activeStickerPack].map((sticker) => (
-                <button key={sticker} type="button" className="grid min-h-9 place-items-center rounded-lg bg-slate-100 text-lg hover:bg-slate-200" title="Gui sticker" aria-label="Gui sticker" onClick={() => void onSendSticker(sticker)}>
+                <button key={sticker} type="button" title="Gui sticker" aria-label="Gui sticker" onClick={() => void onSendSticker(sticker)}>
                   {sticker}
                 </button>
               ))
             ) : (
-              <p className="col-span-full py-2 text-center text-xs text-slate-500">Dang tai pack {activeStickerPack}...</p>
+              <p className={styles.stickerLoading}>Dang tai pack {activeStickerPack}...</p>
             )}
           </div>
         ) : null}

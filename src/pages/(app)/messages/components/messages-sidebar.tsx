@@ -3,6 +3,7 @@ import { Bell, CirclePlus, Info, Search, Send, UserPlus } from 'lucide-react'
 import { formatVietnamTime, getConversationDisplayName } from '@/services/messages/formatters'
 import type { Conversation, NotificationItem } from '@/types'
 import { cn } from '@/utils'
+import styles from '../page.module.css'
 
 type MessagesSidebarProps = {
   initials: string
@@ -17,8 +18,6 @@ type MessagesSidebarProps = {
   onShowNewMessage: () => void
   onShowCreateGroup: () => void
 }
-
-const railButton = 'grid h-[38px] w-[38px] place-items-center rounded-[11px] text-slate-500 transition hover:bg-white/70'
 
 export function MessagesSidebar({
   initials,
@@ -35,50 +34,50 @@ export function MessagesSidebar({
 }: MessagesSidebarProps) {
   return (
     <>
-      <aside className="flex flex-col items-center bg-slate-100 px-2 py-3 max-[720px]:hidden">
-        <div className="mt-1 text-[1.7rem] font-black text-primary">M</div>
-        <nav className="mt-4 flex flex-1 flex-col gap-2">
-          <button type="button" className={cn(railButton, 'bg-white text-primary shadow-[0_6px_14px_rgba(0,82,206,0.12)]')} title="Tin nhan" aria-label="Tin nhan">
+      <aside className={styles.rail}>
+        <div className={styles.railLogo}>M</div>
+        <nav className={styles.railNav}>
+          <button type="button" className={cn(styles.railBtn, styles.railBtnActive)} title="Tin nhan" aria-label="Tin nhan">
             <Send size={16} />
           </button>
-          <button type="button" className={railButton} onClick={onShowNewMessage} title="Tao hoi thoai moi" aria-label="Tao hoi thoai moi">
+          <button type="button" className={styles.railBtn} onClick={onShowNewMessage} title="Tao hoi thoai moi" aria-label="Tao hoi thoai moi">
             <UserPlus size={16} />
           </button>
-          <button type="button" className={railButton} onClick={onShowCreateGroup} title="Tao nhom" aria-label="Tao nhom">
+          <button type="button" className={styles.railBtn} onClick={onShowCreateGroup} title="Tao nhom" aria-label="Tao nhom">
             <CirclePlus size={16} />
           </button>
-          <button type="button" className={railButton} onClick={onShowNotifications} title="Thong bao" aria-label="Thong bao">
+          <button type="button" className={styles.railBtn} onClick={onShowNotifications} title="Thong bao" aria-label="Thong bao">
             <Bell size={16} />
           </button>
-          <button type="button" className={cn(railButton, 'mt-auto')} title="Thong tin" aria-label="Thong tin">
+          <button type="button" className={cn(styles.railBtn, styles.railBottomBtn)} title="Thong tin" aria-label="Thong tin">
             <Info size={16} />
           </button>
         </nav>
-        <div className="grid h-[38px] w-[38px] place-items-center rounded-[11px] bg-primary text-sm font-extrabold text-white">{initials}</div>
+        <div className={styles.railAvatar}>{initials}</div>
       </aside>
 
-      <section className="flex min-h-0 flex-col overflow-hidden border-r border-slate-300/60 bg-slate-100 max-[1100px]:hidden">
-        <div className="p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h1 className="m-0 text-xl font-extrabold text-slate-900">Tat ca cuoc tro chuyen</h1>
+      <section className={styles.listPanel}>
+        <div className={styles.listHeader}>
+          <div className={styles.listHeaderTop}>
+            <h1>Tat ca cuoc tro chuyen</h1>
             <button
               type="button"
-              className="relative grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-slate-300/70 bg-white text-slate-500"
+              className={styles.headerNotifyBtn}
               onClick={onShowNotifications}
               title="Thong bao"
               aria-label="Thong bao"
             >
               <Bell size={14} />
-              {notifications.some((item) => !item.is_read) ? <i className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary" /> : null}
+              {notifications.some((item) => !item.is_read) ? <i /> : null}
             </button>
           </div>
-          <div className="mt-3 grid h-10 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-full border border-slate-300/60 bg-white px-3 text-slate-500">
+          <div className={styles.searchWrap}>
             <Search size={14} />
-            <input className="min-w-0 border-0 bg-transparent text-sm text-slate-900 outline-none" placeholder="Tim cuoc tro chuyen" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+            <input placeholder="Tim cuoc tro chuyen" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        <div className={styles.convList}>
           {conversations.map((conv) => {
             const isActive = conv.id === selectedConversationId
             const name = getConversationDisplayName(conv, userId)
@@ -110,22 +109,23 @@ export function MessagesSidebar({
                 type="button"
                 onClick={() => onOpenConversation(conv.id)}
                 className={cn(
-                  'grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-xl p-2 text-left transition hover:bg-white/70',
-                  isActive && 'bg-white shadow-[0_7px_14px_rgba(11,19,29,0.08)]'
+                  styles.convItem,
+                  isActive && styles.convItemActive,
+                  conv.unreadCount > 0 && styles.convItemUnread
                 )}
               >
-                <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-[11px] bg-primary text-sm font-extrabold text-white">
-                  {avatarUrl ? <img src={avatarUrl} alt={name} className="h-full w-full object-cover" loading="lazy" /> : fallback}
+                <div className={styles.convAvatar}>
+                  {avatarUrl ? <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" /> : fallback}
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <strong className={cn('truncate text-sm text-slate-800', conv.unreadCount > 0 && 'text-blue-800')}>{name}</strong>
-                    <span className="shrink-0 text-[0.69rem] text-slate-500">{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
+                <div className={styles.convText}>
+                  <div className={styles.convLineTop}>
+                    <strong>{name}</strong>
+                    <span>{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-500">{previewLine}</p>
+                  <p>{previewLine}</p>
                   {conv.unreadCount > 0 ? (
-                    <div className="mt-1 flex justify-end">
-                      <span className="inline-flex min-h-[22px] items-center rounded-full bg-primary px-2 text-[0.67rem] font-bold text-white">{conv.unreadCount} chua doc</span>
+                    <div className={styles.convFooter}>
+                      <span className={styles.convUnreadBadge}>{conv.unreadCount} chua doc</span>
                     </div>
                   ) : null}
                 </div>
