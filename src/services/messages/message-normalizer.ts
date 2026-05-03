@@ -1,4 +1,5 @@
 import type { ChatMessage } from '@/types'
+import { API_BASE } from '@/config/api'
 
 export const resolveChatMediaUrl = (value: string | null | undefined) => {
   if (!value) return null
@@ -6,7 +7,21 @@ export const resolveChatMediaUrl = (value: string | null | undefined) => {
     return value
   }
   if (value.startsWith('/uploads/')) {
-    return `/backend${value}`
+    if (API_BASE.startsWith('/backend')) {
+      return `/backend${value}`
+    }
+
+    if (API_BASE.startsWith('/api')) {
+      return value
+    }
+
+    try {
+      const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost'
+      const base = new URL(API_BASE, origin)
+      return new URL(value, `${base.origin}/`).toString()
+    } catch {
+      return value
+    }
   }
   return value
 }

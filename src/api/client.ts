@@ -334,7 +334,7 @@ export const api = {
 
   updatePost: (
     token: string,
-    postId: number,
+    postId: number | string,
     payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private' }
   ) =>
     request<{ message: string; post: FeedPost }>(
@@ -349,10 +349,10 @@ export const api = {
       post: normalizeFeedPost(res.post),
     })),
 
-  deletePost: (token: string, postId: number) =>
+  deletePost: (token: string, postId: number | string) =>
     request<{ message: string }>(`/social/posts/${postId}`, { method: 'DELETE' }, token),
 
-  getPost: (postId: number, token?: string) =>
+  getPost: (postId: number | string, token?: string) =>
     request<{ post: FeedPost }>(`/social/posts/${postId}`, { method: 'GET' }, token).then((res) => ({
       post: normalizeFeedPost(res.post),
     })),
@@ -361,13 +361,16 @@ export const api = {
     token: string,
     payload: { fileName: string; contentType: string; base64Data: string }
   ) =>
-    request<{ message: string; mediaUrl: string }>(
+    request<{ message?: string; mediaUrl?: string; fileUrl?: string }>(
       '/social/posts/upload-base64',
       { method: 'POST', body: JSON.stringify(payload) },
       token
-    ),
+    ).then((data) => ({
+      message: data.message || 'Uploaded',
+      mediaUrl: resolveApiAssetUrl(data.mediaUrl || data.fileUrl || '') || '',
+    })),
 
-  reactPost: (token: string, postId: number, type = 'like') =>
+  reactPost: (token: string, postId: number | string, type = 'like') =>
     request<{ post: FeedPost }>(
       `/social/posts/${postId}/reaction`,
       {
@@ -379,13 +382,13 @@ export const api = {
       post: normalizeFeedPost(res.post),
     })),
 
-  unreactPost: (token: string, postId: number) =>
+  unreactPost: (token: string, postId: number | string) =>
     request<{ post: FeedPost }>(`/social/posts/${postId}/reaction`, { method: 'DELETE' }, token).then((res) => ({
       post: normalizeFeedPost(res.post),
     })),
 
   listComments: (
-    postId: number,
+    postId: number | string,
     token?: string,
     params?: {
       limit?: number
@@ -406,7 +409,7 @@ export const api = {
     }>(`/social/posts/${postId}/comments${suffix}`, { method: 'GET' }, token)
   },
 
-  addComment: (token: string, postId: number, content: string) =>
+  addComment: (token: string, postId: number | string, content: string) =>
     request<{ comment: FeedComment }>(
       `/social/posts/${postId}/comments`,
       { method: 'POST', body: JSON.stringify({ content }) },

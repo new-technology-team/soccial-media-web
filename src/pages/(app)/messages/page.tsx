@@ -1595,6 +1595,32 @@ export default function MessagesPage() {
   }, [activeCall, joinedCallUserIds, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
 
   const renderMessagePreview = (msg: ChatMessage) => {
+    const renderRichMessageText = (text: string) => {
+      const urlRegex = /(https?:\/\/[^\s]+)/g
+      const parts = text.split(urlRegex)
+      if (parts.length === 1) return text
+
+      return parts.map((part, index) => {
+        if (!/^https?:\/\//i.test(part)) {
+          return <span key={`text-${index}`}>{part}</span>
+        }
+
+        const isSharedPostLink = /\/posts\/\d+(?:\?.*)?$/i.test(part)
+        return (
+          <a
+            key={`link-${index}`}
+            href={part}
+            target="_blank"
+            rel="noreferrer"
+            className={styles.fileLink}
+            title={isSharedPostLink ? 'Mo bai viet duoc chia se' : 'Mo lien ket'}
+          >
+            {isSharedPostLink ? 'Xem bai viet duoc chia se' : part}
+          </a>
+        )
+      })
+    }
+
     const recalled = Boolean(msg.meta && (msg.meta as Record<string, unknown>).recalled)
     const forwarded = Boolean(msg.meta && (msg.meta as Record<string, unknown>).forwarded)
     const forwardedTag = forwarded ? <small className={styles.forwardTag}>Da chuyen tiep</small> : null
@@ -1615,7 +1641,7 @@ export default function MessagesPage() {
               event.currentTarget.style.display = 'none'
             }}
           />
-          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
@@ -1625,7 +1651,7 @@ export default function MessagesPage() {
         <div className={styles.mediaWrap}>
           {forwardedTag}
           <video controls src={msg.mediaUrl} />
-          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
@@ -1635,7 +1661,7 @@ export default function MessagesPage() {
         <div className={styles.mediaWrap}>
           {forwardedTag}
           <audio controls src={msg.mediaUrl} />
-          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
@@ -1659,7 +1685,7 @@ export default function MessagesPage() {
                 .join(' - ')}
             </small>
           ) : null}
-          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
@@ -1667,7 +1693,7 @@ export default function MessagesPage() {
     return (
       <p className={styles.messageText}>
         {forwarded ? <small className={styles.forwardTagInline}>[Da chuyen tiep] </small> : null}
-        {msg.text || ''}
+        {msg.text ? renderRichMessageText(msg.text) : ''}
       </p>
     )
   }

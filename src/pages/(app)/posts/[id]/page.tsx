@@ -11,7 +11,7 @@ import styles from './page.module.css'
 
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>()
-  const postId = Number(params.id)
+  const postId = String(params.id || '').trim()
   const token = useAuthStore((state) => state.accessToken)
 
   const [post, setPost] = useState<FeedPost | null>(null)
@@ -20,7 +20,12 @@ export default function PostDetailPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!postId || Number.isNaN(postId)) return
+    if (!postId) {
+      setLoading(false)
+      setPost(null)
+      setComments([])
+      return
+    }
 
     const loadData = async () => {
       setLoading(true)
