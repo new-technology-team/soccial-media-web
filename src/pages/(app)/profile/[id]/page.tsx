@@ -1,12 +1,12 @@
-"use client"
+﻿"use client"
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Rss, Settings } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { FeedPost, FriendConnection } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { FeedPost, FriendConnection } from '@/types'
 import styles from './page.module.css'
 
 export default function ProfilePage() {
@@ -357,3 +357,4 @@ export default function ProfilePage() {
     </div>
   )
 }
+

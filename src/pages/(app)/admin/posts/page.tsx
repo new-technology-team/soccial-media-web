@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { EyeOff, FileText, Globe, Heart, Lock, PencilLine, RefreshCcw, Save, Search, Trash2 } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { FeedPost } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { FeedPost } from '@/types'
 import styles from './page.module.css'
 
 type PostStatus = 'published' | 'hidden' | 'deleted'
@@ -457,3 +457,4 @@ export default function AdminPostManagementPage() {
     </div>
   )
 }
+

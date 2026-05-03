@@ -1,11 +1,11 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { CirclePlus, Search, Send, Smile, Video } from 'lucide-react'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
-import type { ChatMessage, Conversation } from '@/lib/types'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
+import type { ChatMessage, Conversation } from '@/types'
 import styles from './page.module.css'
 
 const parseGroupMessageDate = (value: string) => {
@@ -182,3 +182,4 @@ export default function GroupsPage() {
     </div>
   )
 }
+

@@ -1,11 +1,11 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Users, UserPlus } from 'lucide-react'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
-import type { FriendConnection } from '@/lib/types'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
+import type { FriendConnection } from '@/types'
 import styles from './page.module.css'
 
 type FriendsTab = 'received' | 'sent' | 'accepted'
@@ -223,3 +223,4 @@ export default function FriendsPage() {
     </div>
   )
 }
+

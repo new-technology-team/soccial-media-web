@@ -1,11 +1,11 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, MessageCircle, UserPlus, Heart, Share2, CheckCheck } from 'lucide-react'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
-import type { NotificationItem } from '@/lib/types'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
+import type { NotificationItem } from '@/types'
 import styles from './page.module.css'
 
 type NotifFilter = 'all' | 'social' | 'messages'
@@ -319,3 +319,4 @@ export default function NotificationsPage() {
     </div>
   )
 }
+

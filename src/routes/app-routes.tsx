@@ -1,6 +1,6 @@
-import { Outlet, Route } from 'react-router-dom'
+﻿import { Outlet, Route } from 'react-router-dom'
 
-import AppLayout from '@/layouts/AppLayout'
+import AppLayout from '@/components/layouts/AppLayout'
 import AIChatPage from '@/pages/(app)/ai-chat/page'
 import ExplorePage from '@/pages/(app)/explore/page'
 import FeedPage from '@/pages/(app)/feed/page'
@@ -56,3 +56,4 @@ export function renderAppRoutes() {
     </Route>
   )
 }
+

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Image, Smile, MapPin } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { FeedPost } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { FeedPost } from '@/types'
 
 export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost) => void }) {
   const [content, setContent] = useState('')
@@ -78,3 +78,4 @@ export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost
     </Card>
   )
 }
+

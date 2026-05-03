@@ -1,11 +1,11 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { Search, Upload, FileText, PlayCircle } from 'lucide-react'
-import { api, isAuthExpiredError } from '@/lib/api'
-import type { FeedPost } from '@/lib/types'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api, isAuthExpiredError } from '@/api/client'
+import type { FeedPost } from '@/types'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from './page.module.css'
 
 type MediaType = 'image' | 'video' | 'doc' | 'file'
@@ -125,3 +125,4 @@ export default function MediaPage() {
     </div>
   )
 }
+

@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { UserCheck2, UserX2, Users, ShieldCheck, UserRoundCog } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { User } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { User } from '@/types'
 import styles from './page.module.css'
 
 export default function AdminUserStatsPage() {
@@ -152,3 +152,4 @@ export default function AdminUserStatsPage() {
     </div>
   )
 }
+

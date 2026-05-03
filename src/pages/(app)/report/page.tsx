@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -11,8 +11,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertCircle, CheckCircle } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
 
 export default function ReportPage() {
   const navigate = useNavigate()
@@ -226,3 +226,4 @@ export default function ReportPage() {
     </div>
   )
 }
+

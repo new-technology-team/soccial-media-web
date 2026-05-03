@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -19,9 +19,9 @@ import {
   X,
   MapPin,
 } from 'lucide-react'
-import { api, isAuthExpiredError } from '@/lib/api'
-import type { FeedComment, FeedPost } from '@/lib/types'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api, isAuthExpiredError } from '@/api/client'
+import type { FeedComment, FeedPost } from '@/types'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from './page.module.css'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
@@ -1466,3 +1466,4 @@ export default function FeedPage() {
     </div>
   )
 }
+

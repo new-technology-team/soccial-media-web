@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import {
@@ -25,9 +25,9 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { NotificationItem } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { NotificationItem } from '@/types'
 import styles from './navbar.module.css'
 
 export default function Navbar() {
@@ -508,3 +508,4 @@ export default function Navbar() {
     </nav>
   )
 }
+

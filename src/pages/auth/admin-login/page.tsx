@@ -1,12 +1,12 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertCircle, Eye, EyeOff, Lock, Shield } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from '../auth.module.css'
 
 export default function AdminLoginPage() {
@@ -133,3 +133,4 @@ export default function AdminLoginPage() {
     </div>
   )
 }
+

@@ -1,12 +1,12 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useParams } from 'react-router-dom'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
-import type { FeedComment, FeedPost } from '@/lib/types'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
+import type { FeedComment, FeedPost } from '@/types'
 import styles from './page.module.css'
 
 export default function PostDetailPage() {
@@ -141,3 +141,4 @@ export default function PostDetailPage() {
     </div>
   )
 }
+

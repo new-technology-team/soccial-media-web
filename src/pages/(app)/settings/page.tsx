@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Lock, Shield, Users } from 'lucide-react'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from './page.module.css'
 
 type Settings = {
@@ -287,3 +287,4 @@ export default function SettingsPage() {
     </div>
   )
 }
+

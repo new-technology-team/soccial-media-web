@@ -1,9 +1,9 @@
-import { useEffect } from 'react'
+﻿import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { useAuthStore } from '@/lib/store/auth-store'
-import { useCallStore } from '@/lib/store/call-store'
-import { connectSocket, getSocket } from '@/lib/socket'
+import { useAuthStore } from '@/contexts/auth-store'
+import { useCallStore } from '@/contexts/call-store'
+import { connectSocket, getSocket } from '@/services/socket'
 import styles from './app-layout.module.css'
 
 export default function AppLayout({
@@ -86,3 +86,4 @@ export default function AppLayout({
     </div>
   )
 }
+

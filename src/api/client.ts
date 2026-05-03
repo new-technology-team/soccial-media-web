@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AuthPayload,
   ChatMessage,
   Conversation,
@@ -7,7 +7,7 @@ import type {
   FeedPost,
   NotificationItem,
   User,
-} from '@/lib/types'
+} from '@/types'
 import { API_BASE } from '@/config/api'
 
 const resolveApiAssetUrl = (value: string | null | undefined) => {
@@ -698,3 +698,4 @@ export const api = {
       token
     ),
 }
+

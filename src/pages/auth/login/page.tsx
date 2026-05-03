@@ -6,8 +6,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertCircle, Eye, EyeOff, Lock, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from '../auth.module.css'
 
 export default function LoginPage() {
