@@ -536,6 +536,30 @@ export const api = {
   getAiHistory: (token: string) =>
     request<Array<{ role: 'user' | 'model'; text: string }>>('/social/ai/history', { method: 'GET' }, token),
 
+  summarizeChat: (token: string, messages: any[]) =>
+    request<{ summary: string }>('/social/ai/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, token),
+
+  suggestReplies: (token: string, messages: any[], currentUserName: string) =>
+    request<{ suggestions: string[] }>('/social/ai/suggest-replies', {
+      method: 'POST',
+      body: JSON.stringify({ messages, currentUserName }),
+    }, token),
+
+  analyzeSentiment: (token: string, messages: any[]) =>
+    request<{ sentiment: 'positive' | 'neutral' | 'negative'; score: number; detail: string; emotions: string[] }>('/social/ai/analyze-sentiment', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, token),
+
+  translateMessage: (token: string, text: string, targetLanguage: string = 'vi') =>
+    request<{ translatedText: string; detectedLanguage: string }>('/social/ai/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text, targetLanguage }),
+    }, token),
+
   notifications: (token: string) =>
     request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token),
 

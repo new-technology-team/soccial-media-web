@@ -21,6 +21,10 @@ import {
   UserCheck,
   UserPlus,
   Video,
+  Wand2,
+  BrainCircuit,
+  Languages,
+  Sparkles
 } from 'lucide-react'
 import { ApiError, api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store/auth-store'
@@ -129,12 +133,12 @@ const RTC_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun1.l.google.com:19302' },
     ...(import.meta.env.VITE_TURN_URL
       ? [
-          {
-            urls: import.meta.env.VITE_TURN_URL,
-            username: import.meta.env.VITE_TURN_USERNAME,
-            credential: import.meta.env.VITE_TURN_CREDENTIAL,
-          },
-        ]
+        {
+          urls: import.meta.env.VITE_TURN_URL,
+          username: import.meta.env.VITE_TURN_USERNAME,
+          credential: import.meta.env.VITE_TURN_CREDENTIAL,
+        },
+      ]
       : []),
   ],
 }
@@ -198,6 +202,20 @@ export default function MessagesPage() {
   const [ringingStartedAt, setRingingStartedAt] = useState<number | null>(null)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
   const sendingMessageRef = useRef(false)
+
+  // AI States
+  const [isSummarizing, setIsSummarizing] = useState(false)
+  const [chatSummary, setChatSummary] = useState<string | null>(null)
+
+  const [isSuggesting, setIsSuggesting] = useState(false)
+  const [replySuggestions, setReplySuggestions] = useState<string[]>([])
+
+  const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false)
+  const [sentimentResult, setSentimentResult] = useState<{ sentiment: 'positive' | 'neutral' | 'negative'; score: number; detail: string; emotions: string[] } | null>(null)
+
+  const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({})
+  const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({})
+
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const videoInputRef = useRef<HTMLInputElement | null>(null)
@@ -207,6 +225,109 @@ export default function MessagesPage() {
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const getSenderName = (senderId: number, msg?: ChatMessage) => {
+    if (senderId === user?.id) return user?.fullName || 'Tôi'
+    if (msg?.senderName) return msg.senderName
+    if ((msg as any)?.sender?.fullName) return (msg as any).sender.fullName
+    if ((msg as any)?.sender?.name) return (msg as any).sender.name
+
+    if (selectedConversation) {
+      const member = selectedConversation.members?.find(m => m.userId === senderId)
+      if (member) return member.fullName
+    }
+    return `Người dùng ${senderId}`
+  }
+
+  const handleSummarizeChat = async () => {
+    if (!token || !selectedConversationId) return
+    setIsSummarizing(true)
+    setChatSummary(null)
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-50).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || '',
+        timestamp: m.createdAt
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        setChatNotice('Chưa có tin nhắn văn bản nào để tóm tắt.')
+        return
+      }
+
+      const res = await api.summarizeChat(token, recentMsgs)
+      setChatSummary(res.summary)
+    } catch (error) {
+      setChatNotice('Không thể tóm tắt đoạn chat.')
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
+
+  const handleSuggestReplies = async () => {
+    if (!token || !selectedConversationId) return
+    setIsSuggesting(true)
+    setReplySuggestions([])
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-10).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || ''
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        return
+      }
+
+      const res = await api.suggestReplies(token, recentMsgs, user?.fullName || 'Tôi')
+      setReplySuggestions(res.suggestions || [])
+    } catch (error) {
+      setChatNotice('Không thể lấy gợi ý trả lời.')
+    } finally {
+      setIsSuggesting(false)
+    }
+  }
+
+  const handleAnalyzeSentiment = async () => {
+    if (!token || !selectedConversationId) return
+    setIsAnalyzingSentiment(true)
+    setSentimentResult(null)
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-50).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || '',
+        timestamp: m.createdAt
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        setChatNotice('Chưa có tin nhắn văn bản nào để phân tích.')
+        return
+      }
+
+      const res = await api.analyzeSentiment(token, recentMsgs)
+      setSentimentResult(res)
+    } catch (error) {
+      setChatNotice('Không thể phân tích cảm xúc.')
+    } finally {
+      setIsAnalyzingSentiment(false)
+    }
+  }
+
+  const handleTranslateMessage = async (msgId: string, text: string) => {
+    if (!token || !text) return
+    setTranslatingIds(prev => ({ ...prev, [msgId]: true }))
+    try {
+      const res = await api.translateMessage(token, text, 'vi')
+      setTranslatedMessages(prev => ({ ...prev, [msgId]: res.translatedText }))
+    } catch (error) {
+      setChatNotice('Không thể dịch tin nhắn.')
+    } finally {
+      setTranslatingIds(prev => ({ ...prev, [msgId]: false }))
+    }
+  }
+
 
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
@@ -1649,10 +1770,18 @@ export default function MessagesPage() {
     }
 
     return (
-      <p className={styles.messageText}>
+      <div className={styles.messageText}>
         {forwarded ? <small className={styles.forwardTagInline}>[Đã chuyển tiếp] </small> : null}
         {msg.text || ''}
-      </p>
+        {translatedMessages[msg.id] && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+            <strong style={{ fontSize: '0.8em', color: 'var(--color-primary-dark)', display: 'block', marginBottom: 4 }}>
+              <Languages size={12} style={{ display: 'inline', marginBottom: -2 }} /> Bản dịch AI:
+            </strong>
+            <p>{translatedMessages[msg.id]}</p>
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -1761,6 +1890,12 @@ export default function MessagesPage() {
               </div>
             </div>
             <div className={styles.chatActions}>
+              <button type="button" onClick={handleSummarizeChat} disabled={isSummarizing || !selectedConversationId} title="Tóm tắt đoạn chat (AI)" aria-label="Tóm tắt">
+                <Wand2 size={16} />
+              </button>
+              <button type="button" onClick={handleAnalyzeSentiment} disabled={isAnalyzingSentiment || !selectedConversationId} title="Phân tích cảm xúc (AI)" aria-label="Phân tích cảm xúc">
+                <BrainCircuit size={16} />
+              </button>
               <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
                 <Video size={16} />
               </button>
@@ -1793,6 +1928,49 @@ export default function MessagesPage() {
               Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phí trước khi cần kết bạn.
             </div>
           ) : null}
+
+          {chatSummary && (
+            <div className={styles.limitBadge} style={{ backgroundColor: 'var(--color-primary-soft)', color: 'var(--color-primary-dark)', textAlign: 'left', padding: 12 }}>
+              <strong><Sparkles size={14} style={{ display: 'inline', marginBottom: -2 }} /> Tóm tắt AI:</strong> {chatSummary}
+              <button onClick={() => setChatSummary(null)} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
+            </div>
+          )}
+
+          {sentimentResult && (
+            <div className={styles.limitBadge} style={{
+              background: sentimentResult.sentiment === 'positive' ? 'linear-gradient(135deg, var(--color-surface) 0%, #ecfdf5 100%)' : sentimentResult.sentiment === 'negative' ? 'linear-gradient(135deg, var(--color-surface) 0%, #fef2f2 100%)' : 'linear-gradient(135deg, var(--color-surface) 0%, #fffbeb 100%)',
+              border: `1px solid ${sentimentResult.sentiment === 'positive' ? '#10b981' : sentimentResult.sentiment === 'negative' ? '#ef4444' : '#f59e0b'}`,
+              color: 'var(--color-text)', textAlign: 'left', padding: 16, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.08)', borderRadius: 12
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <strong style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, color: sentimentResult.sentiment === 'positive' ? '#047857' : sentimentResult.sentiment === 'negative' ? '#b91c1c' : '#b45309' }}>
+                  {sentimentResult.sentiment === 'positive' ? '✨ Tích cực' : sentimentResult.sentiment === 'negative' ? '🌧️ Tiêu cực' : '⚖️ Trung lập'}
+                </strong>
+                <button onClick={() => setSentimentResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>✕</button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1, height: 6, backgroundColor: 'var(--color-bg-secondary)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${sentimentResult.score * 100}%`,
+                    height: '100%',
+                    backgroundColor: sentimentResult.sentiment === 'positive' ? 'var(--color-success)' : sentimentResult.sentiment === 'negative' ? 'var(--color-danger)' : 'var(--color-warning)',
+                    transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)'
+                  }} />
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)' }}>{Math.round(sentimentResult.score * 100)}%</span>
+              </div>
+
+              {sentimentResult.emotions && sentimentResult.emotions.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {sentimentResult.emotions.map((emo, idx) => (
+                    <span key={idx} style={{ padding: '4px 10px', backgroundColor: sentimentResult.sentiment === 'positive' ? 'var(--color-success-soft)' : sentimentResult.sentiment === 'negative' ? 'var(--color-danger-soft)' : 'var(--color-warning-soft)', color: sentimentResult.sentiment === 'positive' ? 'var(--color-success-dark)' : sentimentResult.sentiment === 'negative' ? 'var(--color-danger-dark)' : 'var(--color-warning-dark)', borderRadius: 16, fontSize: 12, fontWeight: 500 }}>{emo}</span>
+                  ))}
+                </div>
+              )}
+              <p style={{ margin: 0, fontStyle: 'italic', fontSize: 13, color: 'var(--color-text-secondary)' }}>"{sentimentResult.detail}"</p>
+            </div>
+          )}
 
           {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
             <div className={styles.limitBadge}>
@@ -1885,7 +2063,7 @@ export default function MessagesPage() {
             ) : null}
             {virtualSlice.items.map((msg) => {
               const mine = msg.senderId === user?.id
-              const senderName = String(msg.senderName || msg.sender?.fullName || msg.sender?.name || 'Người dùng')
+              const senderName = getSenderName(msg.senderId, msg)
               return (
                 <div key={msg.id} className={`${styles.messageRow} ${mine ? styles.messageRowMine : ''}`}>
                   {!mine ? <div className={styles.messageAvatar}>{(senderName[0] || 'U').toUpperCase()}</div> : null}
@@ -1940,6 +2118,23 @@ export default function MessagesPage() {
             {messages.length === 0 ? <p className={styles.empty}>Chưa có tin nhắn trong cuộc trò chuyện này.</p> : null}
           </div>
 
+          {replySuggestions.length > 0 && (
+            <div style={{ padding: '8px 16px', display: 'flex', gap: 8, overflowX: 'auto', background: 'var(--bg-surface)' }}>
+              <span style={{ fontSize: 12, color: 'var(--color-text-muted)', alignSelf: 'center', whiteSpace: 'nowrap' }}><Sparkles size={12} style={{ display: 'inline', marginBottom: -2 }} /> Gợi ý:</span>
+              {replySuggestions.map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setMessage(suggestion)
+                    setReplySuggestions([])
+                  }}
+                  style={{ whiteSpace: 'nowrap', padding: '4px 12px', borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-panel)', fontSize: 13, cursor: 'pointer' }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
           <footer className={styles.inputBar}>
             <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Đính kèm tệp" title="Đính kèm tệp" />
             <input
@@ -1962,6 +2157,9 @@ export default function MessagesPage() {
             />
             <button type="button" className={styles.inputIcon} onClick={handlePickAttachment} disabled={busyUploading} title="Chọn tệp đính kèm" aria-label="Chọn tệp đính kèm">
               <CirclePlus size={18} />
+            </button>
+            <button type="button" className={styles.inputIcon} onClick={handleSuggestReplies} disabled={isSuggesting || !selectedConversationId} title="Gợi ý trả lời AI" aria-label="Gợi ý trả lời AI">
+              <Sparkles size={18} />
             </button>
             {composerMenuOpen ? (
               <div className={styles.composerPlusMenu}>
@@ -2399,9 +2597,9 @@ export default function MessagesPage() {
           {actionMenu && activeActionMessage ? (
             <div ref={actionMenuRef} className={styles.actionMenu}>
               <div className={styles.actionMenuHeader}>
-                <span className={styles.listEntryAvatar}>{getAvatarInitial(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name)}</span>
+                <span className={styles.listEntryAvatar}>{getAvatarInitial(getSenderName(activeActionMessage.senderId, activeActionMessage))}</span>
                 <div className={styles.actionMenuMeta}>
-                  <strong>{String(activeActionMessage.senderName || activeActionMessage.sender?.fullName || activeActionMessage.sender?.name || 'Người dùng')}</strong>
+                  <strong>{getSenderName(activeActionMessage.senderId, activeActionMessage)}</strong>
                   <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
                 </div>
               </div>
@@ -2441,6 +2639,19 @@ export default function MessagesPage() {
               >
                 {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
               </button>
+              {activeActionMessage.text && !translatedMessages[activeActionMessage.id] ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleTranslateMessage(activeActionMessage.id, activeActionMessage.text!)
+                    setActionMenu(null)
+                  }}
+                  disabled={translatingIds[activeActionMessage.id]}
+                >
+                  <Languages size={14} style={{ display: 'inline', marginRight: 4, marginBottom: -2 }} />
+                  {translatingIds[activeActionMessage.id] ? 'Đang dịch...' : 'Dịch (AI)'}
+                </button>
+              ) : null}
               {activeActionMessage.senderId === user?.id ? (
                 <button
                   type="button"
