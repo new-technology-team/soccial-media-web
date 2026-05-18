@@ -49,13 +49,40 @@ export interface Conversation {
   type: 'direct' | 'group'
   name: string | null
   avatarUrl: string | null
+<<<<<<< HEAD
   unreadCount: number
+=======
+  createdBy?: number
+  createdAt?: string
+  updatedAt?: string
+  unreadCount: number
+  lastMessage?: {
+    id: string
+    senderId: number
+    senderName?: string | null
+    senderAvatar?: string | null
+    type: string
+    text: string | null
+    mediaUrl: string | null
+    fileName?: string | null
+    mimeType?: string | null
+    fileSize?: number | null
+    meta?: Record<string, unknown> | null
+    createdAt: string
+    updatedAt?: string | null
+    isDeleted?: boolean
+  } | null
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   pinnedMessageIds?: string[]
   members: Array<{
     userId: number
     fullName: string
     avatarUrl: string | null
     role: string
+<<<<<<< HEAD
+=======
+    lastReadAt?: string | null
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   }>
 }
 

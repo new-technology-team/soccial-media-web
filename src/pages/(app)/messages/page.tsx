@@ -3,6 +3,7 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
+<<<<<<< HEAD
 import {
   Bell,
   CirclePlus,
@@ -49,6 +50,40 @@ import { normalizeIncomingMessageForViewer } from '@/services/messages/message-n
 import { parseNotificationMeta, type MessageNotificationItem } from '@/services/messages/notification-meta'
 import type { ChatMessage, FriendConnection } from '@/types'
 import styles from './page.module.css'
+=======
+import { Bell, CirclePlus, Info, MoreHorizontal, Phone, PhoneOff, Search, Send, Smile, UserPlus, Video } from 'lucide-react'
+import styles from './page.module.css'
+import { ApiError, api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
+import { useChatStore } from '@/contexts/chat-store'
+import { useCallStore, type IncomingCallState } from '@/contexts/call-store'
+import { connectSocket, getSocket } from '@/services/socket'
+import { useConversationRouting } from '@/hooks/use-conversation-routing'
+import { MESSAGE_REACTIONS, RTC_CONFIG, STICKER_PACKS } from '@/services/messages/constants'
+import { fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
+import {
+  loadChatConversations,
+  loadChatMessages,
+  loadChatNotifications,
+  loadFriendMap,
+  searchMessageUsers,
+} from '@/services/messages/chat-data-service'
+import {
+  formatVietnamTime,
+  getAvatarInitial,
+  getConversationDisplayName,
+  getMessageReactionItems,
+  getMessageReactionMeta,
+} from '@/services/messages/formatters'
+import { normalizeIncomingMessageForViewer } from '@/services/messages/message-normalizer'
+import { parseNotificationMeta, type MessageNotificationItem } from '@/services/messages/notification-meta'
+import type { ChatMessage, Conversation, FriendConnection } from '@/types'
+import { MessageComposer } from './components/message-composer'
+import { ConversationDetailsPanel } from './components/conversation-details-panel'
+import { MessagesSidebar } from './components/messages-sidebar'
+import { MessageThread } from './components/message-thread'
+import { MessagesOverlays } from './components/messages-overlays'
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
 
 type ActiveCall = {
   type: 'voice' | 'video'
@@ -56,6 +91,15 @@ type ActiveCall = {
   startedAt: number
 }
 
+<<<<<<< HEAD
+=======
+type AttachmentDraft = {
+  file: File
+  type: 'image' | 'video' | 'audio' | 'file'
+  previewUrl: string | null
+}
+
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
 
 export default function MessagesPage() {
   const [searchParams] = useSearchParams()
@@ -67,6 +111,7 @@ export default function MessagesPage() {
     messagesByConversation,
     setConversations,
     selectConversation,
+    markConversationRead,
     setMessages,
     appendMessage,
     upsertMessage,
@@ -101,7 +146,7 @@ export default function MessagesPage() {
   const [searchUsersResult, setSearchUsersResult] = useState<Array<{ id: number; name: string }>>([])
   const [notifications, setNotifications] = useState<Array<{ id: number; type: string; title: string; body: string | null; created_at: string; is_read: number; meta?: Record<string, unknown> | null }>>([])
   const [activeStickerPack, setActiveStickerPack] = useState<keyof typeof STICKER_PACKS>('Cute')
-  const [loadedStickerPacks, setLoadedStickerPacks] = useState<Record<string, boolean>>({ Cute: true })
+  const [loadedStickerPacks, setLoadedStickerPacks] = useState<Record<keyof typeof STICKER_PACKS, boolean>>({ Cute: true })
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [hasMoreHistory, setHasMoreHistory] = useState<Record<string, boolean>>({})
   const [messageLimitByConversation, setMessageLimitByConversation] = useState<
@@ -115,6 +160,7 @@ export default function MessagesPage() {
   const [callAnswered, setCallAnswered] = useState(false)
   const [ringingStartedAt, setRingingStartedAt] = useState<number | null>(null)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
+  const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [typingUserIds, setTypingUserIds] = useState<Set<number>>(new Set())
   const typingTimeoutRef = useRef<number | null>(null)
   const sendingMessageRef = useRef(false)
@@ -126,7 +172,6 @@ export default function MessagesPage() {
   const localStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
-  const actionMenuRef = useRef<HTMLDivElement | null>(null)
 
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
@@ -153,6 +198,17 @@ export default function MessagesPage() {
     setConversations,
     selectConversation,
   })
+<<<<<<< HEAD
+=======
+
+  const handleOpenConversation = useCallback(
+    (conversationId: string) => {
+      openConversation(conversationId)
+      markConversationRead(conversationId)
+    },
+    [markConversationRead, openConversation]
+  )
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
 
   const reloadNotifications = useCallback(async () => {
     if (!token) return
@@ -168,10 +224,22 @@ export default function MessagesPage() {
     try {
       setFriendMap(await loadFriendMap(token))
     } catch (error) {
+<<<<<<< HEAD
       console.error('Không thể tĂ¡º£i danh sách bạn bè', error)
     }
   }, [token, user?.id])
 
+=======
+      console.error('Không thể tải danh sách bạn bè', error)
+    }
+  }, [token, user?.id])
+
+  const refreshConversations = useCallback(async () => {
+    if (!token) return
+    setConversations(await loadChatConversations(token))
+  }, [token, setConversations])
+
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   useEffect(() => {
     if (!token || !selectedConversationId) return
 
@@ -215,7 +283,12 @@ export default function MessagesPage() {
     setShowStickerPanel(false)
     setShowJumpToLatest(false)
     setReactionPickerMessageId(null)
+<<<<<<< HEAD
   }, [selectedConversationId])
+=======
+    markConversationRead(selectedConversationId)
+  }, [markConversationRead, selectedConversationId])
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
 
   useEffect(() => {
     if (!token) return
@@ -224,15 +297,18 @@ export default function MessagesPage() {
     socket.on('message:new', (payload: ChatMessage) => {
       const normalized = normalizeIncomingMessageForViewer(payload, user?.id)
       upsertMessage(normalized.conversationId, normalized)
+      refreshConversations().catch(() => undefined)
     })
 
     socket.on('message:reaction', (payload: { conversationId: string; message: ChatMessage }) => {
       upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
+      refreshConversations().catch(() => undefined)
     })
 
     socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage | null }) => {
       if (!payload?.message) return
       upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
+      refreshConversations().catch(() => undefined)
     })
 
     socket.on('message:typing', (payload: { conversationId: string; fromUserId: number; isTyping: boolean }) => {
@@ -252,10 +328,7 @@ export default function MessagesPage() {
       if (!payload) return
       reloadNotifications().catch(() => undefined)
       if (payload.type === 'message') {
-        api
-          .listConversations(token)
-          .then((response) => setConversations(response.conversations))
-          .catch(() => undefined)
+        refreshConversations().catch(() => undefined)
       }
 
       if (payload.type === 'friend-request' || payload.type === 'friend-accepted') {
@@ -274,7 +347,11 @@ export default function MessagesPage() {
       }
       setIncomingCall(incomingPayload)
       setGlobalIncomingCall(incomingPayload)
+<<<<<<< HEAD
       setCallStatus(`CuĂ¡»™c gĂ¡»i ${payload.callType === 'video' ? 'video' : 'thoại'} đến`)
+=======
+      setCallStatus(`Cuộc gọi ${payload.callType === 'video' ? 'video' : 'thoại'} đến`)
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     })
 
     socket.on('call:answer', async (payload) => {
@@ -288,7 +365,11 @@ export default function MessagesPage() {
       setRingingStartedAt(null)
       setCallSeconds(0)
       setActiveCall((prev) => (prev ? { ...prev, startedAt: answeredAt } : prev))
+<<<<<<< HEAD
       setCallStatus('NgưĂ¡»i nhĂ¡º­n đã tham gia cuĂ¡»™c gĂ¡»i')
+=======
+      setCallStatus('Người nhận đã tham gia cuộc gọi')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     })
 
     socket.on('call:join', (payload) => {
@@ -343,14 +424,24 @@ export default function MessagesPage() {
           setCallSeconds(0)
           setCallAnswered(false)
           setRingingStartedAt(null)
+<<<<<<< HEAD
           setCallStatus('MĂ¡»i ngưĂ¡»i đã rĂ¡»i cuĂ¡»™c gĂ¡»i')
         } else {
           setCallStatus('MĂ¡»™t ngưĂ¡»i đã rĂ¡»i cuĂ¡»™c gĂ¡»i')
+=======
+          setCallStatus('Mọi người đã rời cuộc gọi')
+        } else {
+          setCallStatus('Một người đã rời cuộc gọi')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
         }
         return
       }
 
+<<<<<<< HEAD
       setCallStatus('CuĂ¡»™c gĂ¡»i đã kết thúc')
+=======
+      setCallStatus('Cuộc gọi đã kết thúc')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       setIncomingCall(null)
       setGlobalIncomingCall(null)
       peersRef.current.forEach((peer) => peer.close())
@@ -369,7 +460,11 @@ export default function MessagesPage() {
       // Update participant display for group calls
       if (payload?.participantIds) {
         setJoinedCallUserIds(payload.participantIds)
+<<<<<<< HEAD
         setCallStatus(`CuĂ¡»™c gĂ¡»i đang có ${payload.participantCount} ngưĂ¡»i tham gia`)
+=======
+        setCallStatus(`Cuộc gọi đang có ${payload.participantCount} người tham gia`)
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     })
 
@@ -387,12 +482,16 @@ export default function MessagesPage() {
       socket.off('call:end')
       socket.off('call:participants')
     }
-  }, [activeCall, joinedCallUserIds, reloadFriendMap, reloadNotifications, setConversations, setGlobalIncomingCall, token, upsertMessage, user?.id])
+  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
     setIncomingCall(globalIncomingCall)
+<<<<<<< HEAD
     setCallStatus(`CuĂ¡»™c gĂ¡»i ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
+=======
+    setCallStatus(`Cuộc gọi ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   }, [globalIncomingCall, incomingCall])
 
   useEffect(() => {
@@ -407,18 +506,20 @@ export default function MessagesPage() {
   }, [selectedConversationId])
 
   useEffect(() => {
-    if (!actionMenu || !actionMenuRef.current) return
-    actionMenuRef.current.style.left = `${actionMenu.x}px`
-    actionMenuRef.current.style.top = `${actionMenu.y}px`
-  }, [actionMenu])
-
-  useEffect(() => {
     if (!chatNotice) return
     const timer = window.setTimeout(() => {
       setChatNotice(null)
     }, 3000)
     return () => window.clearTimeout(timer)
   }, [chatNotice])
+
+  useEffect(() => {
+    return () => {
+      if (attachmentDraft?.previewUrl) {
+        URL.revokeObjectURL(attachmentDraft.previewUrl)
+      }
+    }
+  }, [attachmentDraft])
 
   useEffect(() => {
     if (!callStatus || incomingCall || activeCall) return
@@ -452,16 +553,76 @@ export default function MessagesPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
 
+  const selectedConversationMembers = useMemo(
+    () => new Map((selectedConversation?.members || []).map((member) => [member.userId, member])),
+    [selectedConversation]
+  )
+
+  const resolveConversationActor = useCallback(
+    (userId: number, fallbackName?: string | null, fallbackAvatar?: string | null) => {
+      const member = selectedConversationMembers.get(userId)
+      if (member) {
+        return {
+          name: member.fullName || fallbackName || `Người dùng #${userId}`,
+          avatarUrl: member.avatarUrl || fallbackAvatar || null,
+        }
+      }
+
+      if (user?.id === userId) {
+        return {
+          name: user.fullName || 'Bạn',
+          avatarUrl: user.avatarUrl || null,
+        }
+      }
+
+      return {
+        name: fallbackName || `Người dùng #${userId}`,
+        avatarUrl: fallbackAvatar || null,
+      }
+    },
+    [selectedConversationMembers, user?.avatarUrl, user?.fullName, user?.id]
+  )
+
+  const getConversationActivityTime = (conversation: Conversation) => {
+    const raw = conversation.lastMessage?.createdAt || conversation.lastMessage?.updatedAt || conversation.updatedAt || null
+    const value = raw ? new Date(raw).getTime() : 0
+    return Number.isNaN(value) ? 0 : value
+  }
+
+  const getMessageReadLabel = useCallback(
+    (message: ChatMessage) => {
+      if (!selectedConversation || message.senderId !== user?.id) return null
+
+      const sentAt = new Date(message.createdAt).getTime()
+      if (Number.isNaN(sentAt)) return 'Đã gửi'
+
+      const otherMembers = selectedConversation.members.filter((member) => member.userId !== user.id)
+      const seenCount = otherMembers.filter((member) => {
+        if (!member.lastReadAt) return false
+        const readAt = new Date(member.lastReadAt).getTime()
+        return !Number.isNaN(readAt) && readAt >= sentAt
+      }).length
+
+      if (seenCount === 0) return 'Đã gửi'
+      if (selectedConversation.type === 'direct' || seenCount >= otherMembers.length) return 'Đã xem'
+      return `Đã xem bởi ${seenCount}`
+    },
+    [selectedConversation, user?.id]
+  )
+
   useEffect(() => {
     reloadFriendMap().catch(() => undefined)
   }, [reloadFriendMap])
 
   const filteredConversations = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
-    if (!q) return conversations
-    return conversations.filter((conversation) =>
-      getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
-    )
+    const items = !q
+      ? conversations
+      : conversations.filter((conversation) =>
+          getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
+        )
+
+    return [...items].sort((a, b) => getConversationActivityTime(b) - getConversationActivityTime(a))
   }, [conversations, searchTerm, user?.id])
 
   const callTargetId = useMemo(() => {
@@ -493,7 +654,11 @@ export default function MessagesPage() {
         })
       }
       closeCallResources()
+<<<<<<< HEAD
       setCallStatus('Không có phĂ¡º£n hĂ¡»“i sau 1 phút. CuĂ¡»™c gĂ¡»i đã tĂ¡»± kết thúc.')
+=======
+      setCallStatus('Không có phản hồi sau 1 phút. Cuộc gọi đã tự kết thúc.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       setIncomingCall(null)
       setActiveCall(null)
       setCallSeconds(0)
@@ -658,13 +823,21 @@ export default function MessagesPage() {
     setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: true }))
     try {
       await api.requestFriend(token, directPeer.id)
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ gĂ¡» i lĂ¡»i mĂ¡»i kĂ¡º¿t bạn. Hãy chĂ¡» đối phương chĂ¡º¥p nhĂ¡º­n để nhĂ¡º¯n không giĂ¡»›i hạn.')
+=======
+      setChatNotice('Đã gửi lời mời kết bạn. Hãy chờ đối phương chấp nhận để nhắn không giới hạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       await reloadFriendMap()
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể gĂ¡» i lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.')
+=======
+        setChatNotice('Không thể gửi lời mời kết bạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
@@ -677,12 +850,20 @@ export default function MessagesPage() {
     try {
       await api.deleteFriend(token, directPeer.id)
       await reloadFriendMap()
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ hủy lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.')
+=======
+      setChatNotice('Đã hủy lời mời kết bạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể hủy lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.')
+=======
+        setChatNotice('Không thể hủy lời mời kết bạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
@@ -695,12 +876,20 @@ export default function MessagesPage() {
     try {
       await api.acceptFriend(token, directPeer.id)
       await reloadFriendMap()
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ chĂ¡º¥p nhĂ¡º­n lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.')
+=======
+      setChatNotice('Đã chấp nhận lời mời kết bạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể chĂ¡º¥p nhĂ¡º­n lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.')
+=======
+        setChatNotice('Không thể chấp nhận lời mời kết bạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
@@ -721,14 +910,24 @@ export default function MessagesPage() {
     setCreatingDirectConversation(true)
     try {
       const result = await api.createDirectConversation(token, targetUserId)
+<<<<<<< HEAD
       setConversations(await loadChatConversations(token))
       openConversation(result.conversation.id)
       setChatNotice('ĐĂ£ mĂ¡»Ÿ cuĂ¡»™c trò chuyĂ¡»‡n trĂ¡»±c tiĂ¡º¿p.')
+=======
+      await refreshConversations()
+      openConversation(result.conversation.id)
+      setChatNotice('Đã mở cuộc trò chuyện trực tiếp.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể mĂ¡»Ÿ cuĂ¡»™c trò chuyĂ¡»‡n.')
+=======
+        setChatNotice('Không thể mở cuộc trò chuyện.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setCreatingDirectConversation(false)
@@ -737,7 +936,11 @@ export default function MessagesPage() {
 
   const handlePickAttachmentType = (type: 'image' | 'video' | 'file') => {
     if (!selectedConversationId) {
+<<<<<<< HEAD
       setChatNotice('Vui lòng chĂ¡»n cuĂ¡»™c trò chuyĂ¡»‡n trưĂ¡»›c khi gĂ¡» i tĂ¡»‡p.')
+=======
+      setChatNotice('Vui lòng chọn cuộc trò chuyện trước khi gửi tệp.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       setComposerMenuOpen(false)
       return
     }
@@ -758,7 +961,11 @@ export default function MessagesPage() {
     if (!token) return
     try {
       const created = await api.createDirectConversation(token, targetUserId)
+<<<<<<< HEAD
       setConversations(await loadChatConversations(token))
+=======
+      await refreshConversations()
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       openConversation(created.conversation.id)
       setShowNewMessageModal(false)
       setNewMessageKeyword('')
@@ -786,7 +993,11 @@ export default function MessagesPage() {
       await api.acceptFriend(token, identifier)
       await reloadFriendMap()
       await reloadNotifications()
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ chĂ¡º¥p nhĂ¡º­n lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.')
+=======
+      setChatNotice('Đã chấp nhận lời mời kết bạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       if (meta?.conversationId) {
         handleOpenNotificationConversation(meta.conversationId)
       }
@@ -794,7 +1005,11 @@ export default function MessagesPage() {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể chĂ¡º¥p nhĂ¡º­n lĂ¡»i mĂ¡»i tĂ¡»« thông báo.')
+=======
+        setChatNotice('Không thể chấp nhận lời mời từ thông báo.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setBusyActionId(null)
@@ -812,11 +1027,14 @@ export default function MessagesPage() {
     )
   }
 
+<<<<<<< HEAD
   const refreshConversations = useCallback(async () => {
     if (!token) return
     setConversations(await loadChatConversations(token))
   }, [token, setConversations])
 
+=======
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   const handleCreateGroupConversation = async () => {
     if (!token || !groupName.trim() || groupMemberIds.length === 0 || creatingGroup) return
 
@@ -832,7 +1050,11 @@ export default function MessagesPage() {
       setGroupName('')
       setGroupSearchKeyword('')
       setGroupMemberIds([])
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ tạo nhóm chat thành công.')
+=======
+      setChatNotice('Đã tạo nhóm chat thành công.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
@@ -850,7 +1072,11 @@ export default function MessagesPage() {
     try {
       await api.addGroupMember(token, selectedGroup.id, targetUserId)
       await refreshConversations()
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ thêm thành viên vào nhóm.')
+=======
+      setChatNotice('Đã thêm thành viên vào nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
@@ -868,7 +1094,11 @@ export default function MessagesPage() {
     try {
       await api.removeGroupMember(token, selectedGroup.id, targetUserId)
       await refreshConversations()
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ xóa thành viên khĂ¡»i nhóm.')
+=======
+      setChatNotice('Đã xóa thành viên khỏi nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
@@ -886,12 +1116,20 @@ export default function MessagesPage() {
     try {
       await api.setGroupDeputy(token, selectedGroup.id, targetUserId)
       await refreshConversations()
+<<<<<<< HEAD
       setChatNotice(targetUserId ? 'ĐĂ£ cĂ¡º¥p quyĂ¡»n phó nhóm.' : 'ĐĂ£ thu hĂ¡»“i quyĂ¡»n phó nhóm.')
+=======
+      setChatNotice(targetUserId ? 'Đã cấp quyền phó nhóm.' : 'Đã thu hồi quyền phó nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể cĂ¡º­p nhĂ¡º­t phó nhóm.')
+=======
+        setChatNotice('Không thể cập nhật phó nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setGroupActionBusyId(null)
@@ -904,12 +1142,20 @@ export default function MessagesPage() {
     try {
       await api.transferGroupLeader(token, selectedGroup.id, targetUserId)
       await refreshConversations()
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ chuyĂ¡»ƒn quyĂ¡»n trưĂ¡»Ÿng nhóm.')
+=======
+      setChatNotice('Đã chuyển quyền trưởng nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể chuyĂ¡»ƒn quyĂ¡»n trưĂ¡»Ÿng nhóm.')
+=======
+        setChatNotice('Không thể chuyển quyền trưởng nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setGroupActionBusyId(null)
@@ -918,13 +1164,21 @@ export default function MessagesPage() {
 
   const handleDissolveGroup = async () => {
     if (!token || !selectedGroup || !canDissolveSelectedGroup) return
+<<<<<<< HEAD
     const confirmed = window.confirm('Bạn chĂ¡º¯c chĂ¡º¯n muĂ¡»‘n giĂ¡º£i tán nhóm này? Hành đĂ¡»™ng này không thĂ¡»ƒ hoàn tác.')
+=======
+    const confirmed = window.confirm('Bạn chắc chắn muốn giải tán nhóm này? Hành động này không thể hoàn tác.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     if (!confirmed) return
     setGroupActionBusyId('dissolve-group')
     try {
       await api.dissolveGroupConversation(token, selectedGroup.id)
       await refreshConversations()
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ giĂ¡º£i tán nhóm chat.')
+=======
+      setChatNotice('Đã giải tán nhóm chat.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       const fallback = conversations.find((item) => item.id !== selectedGroup.id)
       if (fallback) {
         openConversation(fallback.id)
@@ -933,7 +1187,11 @@ export default function MessagesPage() {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể giĂ¡º£i tán nhóm.')
+=======
+        setChatNotice('Không thể giải tán nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setGroupActionBusyId(null)
@@ -943,12 +1201,20 @@ export default function MessagesPage() {
   const handleLeaveGroup = async () => {
     if (!token || !selectedGroup || !canLeaveGroup) return
     if (myGroupRole === 'leader' && !canLeaderLeaveGroup) {
+<<<<<<< HEAD
       setChatNotice('Bạn đang là trưĂ¡»Ÿng nhóm. Hãy chĂ¡»‰ đĂ¡»‹nh phó nhóm trưĂ¡»›c khi rĂ¡»i nhóm.')
+=======
+      setChatNotice('Bạn đang là trưởng nhóm. Hãy chỉ định phó nhóm trước khi rời nhóm.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       setRightPanelSection('manage')
       return
     }
 
+<<<<<<< HEAD
     const confirmed = window.confirm('Bạn có chĂ¡º¯c muĂ¡»‘n rĂ¡»i nhóm này không?')
+=======
+    const confirmed = window.confirm('Bạn có chắc muốn rời nhóm này không?')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     if (!confirmed) return
 
     setGroupActionBusyId('leave-group')
@@ -957,15 +1223,25 @@ export default function MessagesPage() {
       await refreshConversations()
       setChatNotice(
         myGroupRole === 'leader'
+<<<<<<< HEAD
           ? 'Bạn đã rĂ¡»i nhóm. QuyĂ¡»n trưĂ¡»Ÿng nhóm đã tĂ¡»± đĂ¡»™ng chuyĂ¡»ƒn cho phó nhóm.'
           : 'Bạn đã rĂ¡»i nhóm chat.'
+=======
+          ? 'Bạn đã rời nhóm. Quyền trưởng nhóm đã tự động chuyển cho phó nhóm.'
+          : 'Bạn đã rời nhóm chat.'
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       )
 
       const fallback = conversations.find((item) => item.id !== selectedGroup.id)
       if (fallback) {
         openConversation(fallback.id)
       } else {
+<<<<<<< HEAD
         const refreshed = await loadChatConversations(token)
+=======
+        await refreshConversations()
+        const refreshed = useChatStore.getState().conversations
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
         if (refreshed.length > 0) {
           openConversation(refreshed[0].id)
         }
@@ -974,7 +1250,11 @@ export default function MessagesPage() {
       if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
+<<<<<<< HEAD
         setChatNotice('Không thể rĂ¡»i nhóm lúc này.')
+=======
+        setChatNotice('Không thể rời nhóm lúc này.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setGroupActionBusyId(null)
@@ -1015,55 +1295,111 @@ export default function MessagesPage() {
         messagesWrapRef.current.scrollTop = newScrollHeight - previousScrollHeight
       })
     } catch (error) {
+<<<<<<< HEAD
       console.error('Không thể tĂ¡º£i tin nhĂ¡º¯n cũ hơn', error)
+=======
+      console.error('Không thể tải tin nhắn cũ hơn', error)
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } finally {
       setLoadingOlderMessages(false)
     }
   }
 
+  const decrementMessageAllowance = useCallback(() => {
+    if (!selectedConversationId) return
+
+    setMessageLimitByConversation((prev) => {
+      const current = prev[selectedConversationId]
+      if (!current) return prev
+      return {
+        ...prev,
+        [selectedConversationId]: {
+          ...current,
+          sent: current.sent + 1,
+          remaining: Math.max(0, current.remaining - 1),
+        },
+      }
+    })
+  }, [selectedConversationId])
+
+  const clearAttachmentDraft = useCallback(() => {
+    setAttachmentDraft((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl)
+      }
+      return null
+    })
+  }, [])
+
   const handleSend = async () => {
-    if (!message.trim() || !token || !selectedConversationId || sendingMessageRef.current) return
+    if ((!message.trim() && !attachmentDraft) || !token || !selectedConversationId || sendingMessageRef.current) return
 
     sendingMessageRef.current = true
     setIsSendingMessage(true)
+    setBusyUploading(Boolean(attachmentDraft))
     try {
-      const response = await api.sendMessage(token, selectedConversationId, message)
+      const trimmedMessage = message.trim()
+      const response = attachmentDraft
+        ? await (async () => {
+            const base64Data = await fileToBase64(attachmentDraft.file)
+            const upload = await api.uploadMessageBase64(token, selectedConversationId, {
+              fileName: attachmentDraft.file.name,
+              contentType: attachmentDraft.file.type || 'application/octet-stream',
+              base64Data,
+            })
+
+            if (!upload.mediaUrl) {
+              throw new Error('Tai tep len that bai, khong nhan duoc duong dan file.')
+            }
+
+            return api.sendMessagePayload(token, selectedConversationId, {
+              type: attachmentDraft.type,
+              text: trimmedMessage || undefined,
+              mediaUrl: upload.mediaUrl,
+              fileName: attachmentDraft.file.name,
+              mimeType: attachmentDraft.file.type || 'application/octet-stream',
+              fileSize: attachmentDraft.file.size,
+            })
+          })()
+        : await api.sendMessage(token, selectedConversationId, trimmedMessage)
       upsertMessage(selectedConversationId, response.message)
       setMessage('')
+      clearAttachmentDraft()
       setChatNotice(null)
       setShowEmojiPanel(false)
       setShowStickerPanel(false)
-
-      setMessageLimitByConversation((prev) => {
-        const current = prev[selectedConversationId]
-        if (!current) return prev
-        return {
-          ...prev,
-          [selectedConversationId]: {
-            ...current,
-            sent: current.sent + 1,
-            remaining: Math.max(0, current.remaining - 1),
-          },
-        }
-      })
+      decrementMessageAllowance()
     } catch (error) {
       if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
+<<<<<<< HEAD
         setChatNotice('Bạn chĂ¡»‰ gĂ¡» i đưĂ¡»£c tĂ¡»‘i đa 3 tin nhĂ¡º¯n khi chưa kĂ¡º¿t bạn. Hãy kĂ¡º¿t bạn để tiếp tĂ¡»¥c.')
       } else if (error instanceof Error) {
         setChatNotice(error.message)
       } else {
         setChatNotice('Không thể gĂ¡» i tin nhĂ¡º¯n.')
+=======
+        setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+      } else if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể gửi tin nhắn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
       console.error('Failed to send message:', error)
     } finally {
       sendingMessageRef.current = false
       setIsSendingMessage(false)
+      setBusyUploading(false)
     }
   }
 
   const handlePickAttachment = () => {
     if (!selectedConversationId) {
+<<<<<<< HEAD
       setChatNotice('Vui lòng chĂ¡»n cuĂ¡»™c trò chuyĂ¡»‡n trưĂ¡»›c khi gĂ¡» i tĂ¡»‡p.')
+=======
+      setChatNotice('Vui lòng chọn cuộc trò chuyện trước khi gửi tệp.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       return
     }
     setComposerMenuOpen((prev) => !prev)
@@ -1075,13 +1411,30 @@ export default function MessagesPage() {
 
     const maxBytes = 12 * 1024 * 1024
     if (file.size > maxBytes) {
+<<<<<<< HEAD
       setChatNotice('TĂ¡»‡p quá lĂ¡»›n. Vui lòng chĂ¡»n tĂ¡»‡p nhĂ¡» hơn 12MB.')
+=======
+      setChatNotice('Tep qua lon. Vui long chon tep nho hon 12MB.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       event.target.value = ''
       return
     }
 
-    setBusyUploading(true)
+    const fileType = mapTypeFromFile(file)
+    const previewUrl = fileType === 'image' || fileType === 'video' ? URL.createObjectURL(file) : null
+
+    setAttachmentDraft((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl)
+      }
+      return {
+        file,
+        type: fileType,
+        previewUrl,
+      }
+    })
     setChatNotice(null)
+<<<<<<< HEAD
     try {
       const base64Data = await fileToBase64(file)
       const upload = await api.uploadMessageBase64(token, selectedConversationId, {
@@ -1128,7 +1481,45 @@ export default function MessagesPage() {
       setBusyUploading(false)
       event.target.value = ''
     }
+=======
+    setComposerMenuOpen(false)
+    event.target.value = ''
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   }
+  const handleSendSticker = useCallback(
+    async (sticker: string) => {
+      if (!token || !selectedConversationId) return
+
+      try {
+        const response = await api.sendMessagePayload(token, selectedConversationId, {
+          type: 'sticker',
+          text: sticker,
+          sticker,
+        })
+        upsertMessage(selectedConversationId, response.message)
+        setShowStickerPanel(false)
+        setMessageLimitByConversation((prev) => {
+          const current = prev[selectedConversationId]
+          if (!current) return prev
+          return {
+            ...prev,
+            [selectedConversationId]: {
+              ...current,
+              sent: current.sent + 1,
+              remaining: Math.max(0, current.remaining - 1),
+            },
+          }
+        })
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
+          setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
+        } else if (error instanceof Error) {
+          setChatNotice(error.message)
+        }
+      }
+    },
+    [selectedConversationId, setChatNotice, setMessageLimitByConversation, setShowStickerPanel, token, upsertMessage]
+  )
 
   const handleReaction = async (chatMessage: ChatMessage, reaction: string) => {
     if (!token) return
@@ -1142,8 +1533,13 @@ export default function MessagesPage() {
       }
       upsertMessage(chatMessage.conversationId, response.chatMessage)
     } catch (error) {
+<<<<<<< HEAD
       console.error('Không thể cĂ¡º­p nhĂ¡º­t cĂ¡º£m xúc:', error)
       setChatNotice('Không thể cĂ¡º­p nhĂ¡º­t cĂ¡º£m xúc cho tin nhĂ¡º¯n này.')
+=======
+      console.error('Không thể cập nhật cảm xúc:', error)
+      setChatNotice('Không thể cập nhật cảm xúc cho tin nhắn này.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } finally {
       setBusyActionId(null)
     }
@@ -1156,8 +1552,13 @@ export default function MessagesPage() {
       const response = await api.recallMessage(token, chatMessage.id)
       upsertMessage(chatMessage.conversationId, response.chatMessage)
     } catch (error) {
+<<<<<<< HEAD
       console.error('Không thể thu hĂ¡»“i tin nhĂ¡º¯n:', error)
       setChatNotice('Không thể thu hĂ¡»“i tin nhĂ¡º¯n này.')
+=======
+      console.error('Không thể thu hồi tin nhắn:', error)
+      setChatNotice('Không thể thu hồi tin nhắn này.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } finally {
       setBusyActionId(null)
     }
@@ -1172,6 +1573,7 @@ export default function MessagesPage() {
         upsertMessage(targetConversationId, response.chatMessage)
       }
       setForwardingMessageId(null)
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ chuyển tiếp tin nhĂ¡º¯n thành công.')
       loadChatConversations(token).then(setConversations).catch(() => undefined)
     } catch (error) {
@@ -1180,6 +1582,16 @@ export default function MessagesPage() {
         setChatNotice(error.message)
       } else {
         setChatNotice('Không thể chuyển tiếp tin nhĂ¡º¯n.')
+=======
+      setChatNotice('Đã chuyển tiếp tin nhắn thành công.')
+      await refreshConversations()
+    } catch (error) {
+      console.error('Không thể chuyển tiếp tin nhắn:', error)
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể chuyển tiếp tin nhắn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setBusyActionId(null)
@@ -1197,6 +1609,7 @@ export default function MessagesPage() {
         selectedConversationId,
         current.filter((item) => item.id !== chatMessage.id),
       )
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ xóa tin nhĂ¡º¯n.')
     } catch (error) {
       console.error('Không thể xóa tin nhĂ¡º¯n:', error)
@@ -1204,6 +1617,15 @@ export default function MessagesPage() {
         setChatNotice(error.message)
       } else {
         setChatNotice('Không thể xóa tin nhĂ¡º¯n này.')
+=======
+      setChatNotice('Đã xóa tin nhắn.')
+    } catch (error) {
+      console.error('Không thể xóa tin nhắn:', error)
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể xóa tin nhắn này.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setBusyActionId(null)
@@ -1220,6 +1642,7 @@ export default function MessagesPage() {
       } else {
         await api.pinMessage(token, chatMessage.id)
       }
+<<<<<<< HEAD
       setConversations(await loadChatConversations(token))
       setChatNotice(wasPinned ? 'ĐĂ£ bĂ¡» ghim tin nhĂ¡º¯n.' : 'ĐĂ£ ghim tin nhĂ¡º¯n.')
     } catch (error) {
@@ -1228,6 +1651,16 @@ export default function MessagesPage() {
         setChatNotice(error.message)
       } else {
         setChatNotice('Không thể ghim/bĂ¡» ghim tin nhĂ¡º¯n.')
+=======
+      await refreshConversations()
+      setChatNotice(wasPinned ? 'Đã bỏ ghim tin nhắn.' : 'Đã ghim tin nhắn.')
+    } catch (error) {
+      console.error('Không thể ghim/bỏ ghim tin nhắn:', error)
+      if (error instanceof Error) {
+        setChatNotice(error.message)
+      } else {
+        setChatNotice('Không thể ghim/bỏ ghim tin nhắn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       }
     } finally {
       setBusyActionId(null)
@@ -1236,14 +1669,22 @@ export default function MessagesPage() {
 
   const handleClearChatForMe = async () => {
     if (!token || !selectedConversationId) return
+<<<<<<< HEAD
     const confirmed = window.confirm('Xóa toàn bĂ¡»™ đoạn chat Ă¡»Ÿ phía bạn? Hành đĂ¡»™ng này không Ă¡º£nh hưĂ¡»Ÿng ngưĂ¡»i khác.')
+=======
+    const confirmed = window.confirm('Xóa toàn bộ đoạn chat ở phía bạn? Hành động này không ảnh hưởng người khác.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     if (!confirmed) return
     setBusyActionId(`clear-${selectedConversationId}`)
     try {
       await api.clearConversationMessages(token, selectedConversationId)
       const refreshed = await loadChatMessages(token, selectedConversationId, 25)
       setMessages(selectedConversationId, refreshed.messages)
+<<<<<<< HEAD
       setChatNotice('ĐĂ£ xóa đoạn chat Ă¡»Ÿ phía bạn.')
+=======
+      setChatNotice('Đã xóa đoạn chat ở phía bạn.')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     } catch (error) {
       console.error('Không thể xóa đoạn chat:', error)
       if (error instanceof Error) {
@@ -1290,11 +1731,19 @@ export default function MessagesPage() {
         })
       }
     } catch (error) {
+<<<<<<< HEAD
       console.error('Không thể bĂ¡º¯t đầu cuĂ¡»™c gĂ¡»i:', error)
       return
     }
 
     setCallStatus(`Ä ang gĂ¡»i ${callType === 'video' ? 'video' : 'thoại'} tĂ¡»›i ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'ngưĂ¡»i nhĂ¡º­n'}`)
+=======
+      console.error('Không thể bắt đầu cuộc gọi:', error)
+      return
+    }
+
+    setCallStatus(`Đang gọi ${callType === 'video' ? 'video' : 'thoại'} tới ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'người nhận'}`)
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     setCallAnswered(false)
     setRingingStartedAt(Date.now())
     setCallSeconds(0)
@@ -1303,7 +1752,11 @@ export default function MessagesPage() {
       type: callType,
       withName: selectedConversation
         ? getConversationDisplayName(selectedConversation, user?.id)
+<<<<<<< HEAD
         : `NgưĂ¡»i dùng #${callTargetId}`,
+=======
+        : `Người dùng #${callTargetId}`,
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       startedAt: Date.now(),
     })
     setJoinedCallUserIds(initialParticipants)
@@ -1343,11 +1796,19 @@ export default function MessagesPage() {
         answeredAt,
       })
     } catch (error) {
+<<<<<<< HEAD
       console.error('Không thể chĂ¡º¥p nhĂ¡º­n cuĂ¡»™c gĂ¡»i:', error)
       return
     }
 
     setCallStatus('ĐĂ£ chĂ¡º¥p nhĂ¡º­n cuĂ¡»™c gĂ¡»i')
+=======
+      console.error('Không thể chấp nhận cuộc gọi:', error)
+      return
+    }
+
+    setCallStatus('Đã chấp nhận cuộc gọi')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     setCallAnswered(true)
     setRingingStartedAt(null)
     setCallSeconds(0)
@@ -1355,7 +1816,11 @@ export default function MessagesPage() {
       type: incomingCall.callType,
       withName: selectedConversation
         ? getConversationDisplayName(selectedConversation, user?.id)
+<<<<<<< HEAD
         : `NgưĂ¡»i dùng #${incomingCall.fromUserId}`,
+=======
+        : `Người dùng #${incomingCall.fromUserId}`,
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       startedAt: answeredAt,
     })
     const newJoinedIds = user?.id ? [user.id, incomingCall.fromUserId] : [incomingCall.fromUserId]
@@ -1396,7 +1861,11 @@ export default function MessagesPage() {
 
     setIncomingCall(null)
     setGlobalIncomingCall(null)
+<<<<<<< HEAD
     setCallStatus('ĐĂ£ tĂ¡»« chĂ¡»‘i cuĂ¡»™c gĂ¡»i')
+=======
+    setCallStatus('Đã từ chối cuộc gọi')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   }
 
   const handleEndCall = () => {
@@ -1426,7 +1895,11 @@ export default function MessagesPage() {
     })
     
     closeCallResources()
+<<<<<<< HEAD
     setCallStatus('Bạn đã kết thúc cuĂ¡»™c gĂ¡»i')
+=======
+    setCallStatus('Bạn đã kết thúc cuộc gọi')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     setIncomingCall(null)
     setGlobalIncomingCall(null)
     setActiveCall(null)
@@ -1449,7 +1922,11 @@ export default function MessagesPage() {
 
   const selectedName = selectedConversation
     ? getConversationDisplayName(selectedConversation, user?.id)
+<<<<<<< HEAD
     : 'ChĂ¡»n cuĂ¡»™c trò chuyĂ¡»‡n'
+=======
+    : 'Chọn cuộc trò chuyện'
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   const initials = (user?.fullName?.[0] || 'U').toUpperCase()
   const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
 
@@ -1481,24 +1958,63 @@ export default function MessagesPage() {
         }
         return {
           userId: id,
+<<<<<<< HEAD
           name: `NgưĂ¡»i dùng #${id}`,
+=======
+          name: `Người dùng #${id}`,
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
           avatarUrl: null,
         }
       })
   }, [activeCall, joinedCallUserIds, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
 
   const renderMessagePreview = (msg: ChatMessage) => {
+    const renderRichMessageText = (text: string) => {
+      const urlRegex = /(https?:\/\/[^\s]+)/g
+      const parts = text.split(urlRegex)
+      if (parts.length === 1) return text
+
+      return parts.map((part, index) => {
+        if (!/^https?:\/\//i.test(part)) {
+          return <span key={`text-${index}`}>{part}</span>
+        }
+
+        const isSharedPostLink = /\/posts\/\d+(?:\?.*)?$/i.test(part)
+        return (
+          <a
+            key={`link-${index}`}
+            href={part}
+            target="_blank"
+            rel="noreferrer"
+            className={styles.fileLink}
+            title={isSharedPostLink ? 'Mo bai viet duoc chia se' : 'Mo lien ket'}
+          >
+            {isSharedPostLink ? 'Xem bai viet duoc chia se' : part}
+          </a>
+        )
+      })
+    }
+
     const recalled = Boolean(msg.meta && (msg.meta as Record<string, unknown>).recalled)
     const forwarded = Boolean(msg.meta && (msg.meta as Record<string, unknown>).forwarded)
+    const forwardedTag = forwarded ? <small className={styles.forwardTag}>Da chuyen tiep</small> : null
 
     if (recalled) {
+<<<<<<< HEAD
       return <p className={styles.recalledText}>Tin nhĂ¡º¯n đã đưĂ¡»£c thu hĂ¡»“i</p>
+=======
+      return <p className={styles.recalledText}>Tin nhan da duoc thu hoi</p>
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
     }
 
     if (msg.type === 'image' && msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
+<<<<<<< HEAD
           {forwarded ? <small className={styles.forwardTag}>ĐĂ£ chuyển tiếp</small> : null}
+=======
+          {forwardedTag}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
           <img
             src={msg.mediaUrl}
             alt={msg.fileName || 'image'}
@@ -1507,6 +2023,7 @@ export default function MessagesPage() {
               event.currentTarget.style.display = 'none'
             }}
           />
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
@@ -1514,8 +2031,13 @@ export default function MessagesPage() {
     if (msg.type === 'video' && msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
+<<<<<<< HEAD
           {forwarded ? <small className={styles.forwardTag}>ĐĂ£ chuyển tiếp</small> : null}
+=======
+          {forwardedTag}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
           <video controls src={msg.mediaUrl} />
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
@@ -1523,46 +2045,71 @@ export default function MessagesPage() {
     if (msg.type === 'audio' && msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
+<<<<<<< HEAD
           {forwarded ? <small className={styles.forwardTag}>ĐĂ£ chuyển tiếp</small> : null}
+=======
+          {forwardedTag}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
           <audio controls src={msg.mediaUrl} />
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
 
     if (msg.type === 'sticker') {
+<<<<<<< HEAD
       const sticker = (msg.meta?.sticker as string) || msg.text || 'Ä‘Ÿ˜€'
+=======
+      const sticker = (msg.meta?.sticker as string) || msg.text || ':)'
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       return <p className={styles.stickerBubble}>{sticker}</p>
     }
 
     if (msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
+<<<<<<< HEAD
           {forwarded ? <small className={styles.forwardTag}>ĐĂ£ chuyển tiếp</small> : null}
           <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className={styles.fileLink}>
             {msg.fileName || 'MĂ¡» tĂ¡»‡p đĂnh kèm'}
+=======
+          {forwardedTag}
+          <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className={styles.fileLink}>
+            {msg.fileName || 'Mo tep dinh kem'}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
           </a>
           {(msg.mimeType || msg.fileSize) ? (
             <small className={styles.fileMeta}>
               {[msg.mimeType, msg.fileSize ? `${Math.max(1, Math.round(msg.fileSize / 1024))} KB` : null]
                 .filter(Boolean)
+<<<<<<< HEAD
                 .join(' • ')}
+=======
+                .join(' - ')}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
             </small>
           ) : null}
+          {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
     }
 
     return (
       <p className={styles.messageText}>
+<<<<<<< HEAD
         {forwarded ? <small className={styles.forwardTagInline}>[ĐĂ£ chuyển tiếp] </small> : null}
         {msg.text || ''}
+=======
+        {forwarded ? <small className={styles.forwardTagInline}>[Da chuyen tiep] </small> : null}
+        {msg.text ? renderRichMessageText(msg.text) : ''}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       </p>
     )
   }
-
   return (
     <div className={styles.page}>
       <div className={styles.layout}>
+<<<<<<< HEAD
         <aside className={styles.rail}>
           <div className={styles.railLogo}>M</div>
           <nav className={styles.railNav}>
@@ -1646,11 +2193,31 @@ export default function MessagesPage() {
             })}
           </div>
         </section>
+=======
+        <MessagesSidebar
+          initials={initials}
+          userId={user?.id}
+          conversations={filteredConversations}
+          selectedConversationId={selectedConversationId}
+          notifications={notifications}
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          onOpenConversation={handleOpenConversation}
+          onShowNotifications={() => setShowNotificationsDrawer(true)}
+          onShowNewMessage={() => setShowNewMessageModal(true)}
+          onShowCreateGroup={() => {
+            setShowCreateGroupModal(true)
+            setGroupName('')
+            setGroupSearchKeyword('')
+            setGroupMemberIds([])
+          }}
+        />
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
 
         <section className={styles.chatPanel}>
           <header className={styles.chatHeader}>
             <div className={styles.chatIdentity}>
-              <div className={styles.convAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
+              <div className={styles.chatHeaderAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
               <div>
                 <h2>
                   {directPeer ? <Link to={`/profile/${directPeer.id}`}>{selectedName}</Link> : selectedName}
@@ -1659,22 +2226,38 @@ export default function MessagesPage() {
                   {directPeer
                     ? isDirectPeerFriend
                       ? 'Bạn bè • Online'
+<<<<<<< HEAD
                       : 'Chưa kĂ¡º¿t bạn • GiĂ¡»›i hạn 3 tin nhĂ¡º¯n'
+=======
+                      : 'Chưa kết bạn • Giới hạn 3 tin nhắn'
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                     : 'Online'}
                 </p>
               </div>
             </div>
             <div className={styles.chatActions}>
+<<<<<<< HEAD
               <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="GĂ¡»i video" aria-label="GĂ¡»i video">
                 <Video size={16} />
               </button>
               <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="GĂ¡»i thoại" aria-label="GĂ¡»i thoại">
+=======
+              <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
+                <Video size={16} />
+              </button>
+              <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gọi thoại" aria-label="Gọi thoại">
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 <Phone size={16} />
               </button>
               <button
                 type="button"
+<<<<<<< HEAD
                 title="Thêm ngưĂ¡»i vào cuĂ¡»™c trò chuyĂ¡»‡n"
                 aria-label="Thêm ngưĂ¡»i vào cuĂ¡»™c trò chuyĂ¡»‡n"
+=======
+                title="Thêm người vào cuộc trò chuyện"
+                aria-label="Thêm người vào cuộc trò chuyện"
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 disabled={!selectedGroup || !canAddMembers}
                 onClick={() => setRightPanelSection('manage')}
               >
@@ -1682,8 +2265,13 @@ export default function MessagesPage() {
               </button>
               <button
                 type="button"
+<<<<<<< HEAD
                 title="Xem chi tiết cuĂ¡»™c trò chuyĂ¡»‡n"
                 aria-label="Xem chi tiết cuĂ¡»™c trò chuyĂ¡»‡n"
+=======
+                title="Xem chi tiết cuộc trò chuyện"
+                aria-label="Xem chi tiết cuộc trò chuyện"
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 disabled={!selectedConversation}
                 onClick={() => setRightPanelSection('overview')}
               >
@@ -1694,13 +2282,22 @@ export default function MessagesPage() {
 
           {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
             <div className={styles.limitBadge}>
+<<<<<<< HEAD
               Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhĂ¡º¯n miễn phitrưĂ¡»›c khi cần kĂ¡º¿t bạn.
+=======
+              Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phitrước khi cần kết bạn.
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
             </div>
           ) : null}
 
           {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
+<<<<<<< HEAD
             <div className={styles.limitBadge}>
               Ä ang ghim {selectedConversation.pinnedMessageIds.length} tin nhĂ¡º¯n trong cuĂ¡»™c trò chuyĂ¡»‡n này.
+=======
+            <div className={styles.pinnedBanner}>
+              Đang ghim {selectedConversation.pinnedMessageIds.length} tin nhắn trong cuộc trò chuyện này.
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
             </div>
           ) : null}
 
@@ -1712,7 +2309,11 @@ export default function MessagesPage() {
                 onClick={() => handleOpenOrCreateDirectConversation(directPeer.id)}
                 disabled={creatingDirectConversation}
               >
+<<<<<<< HEAD
                 {creatingDirectConversation ? 'Ä ang mĂ¡»Ÿ hĂ¡»™i thoại...' : 'NhĂ¡º¯n tin'}
+=======
+                {creatingDirectConversation ? 'Đang mở hội thoại...' : 'Nhắn tin'}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
               </button>
               {!isDirectPeerFriend && !isDirectPeerPending ? (
                 <button
@@ -1721,7 +2322,11 @@ export default function MessagesPage() {
                   onClick={handleRequestFriend}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
+<<<<<<< HEAD
                   {pendingFriendRequestTo[directPeer.id] ? 'Ä ang gĂ¡» i lĂ¡»i mĂ¡»i...' : 'Kết bạn để nhĂ¡º¯n không giĂ¡»›i hạn'}
+=======
+                  {pendingFriendRequestTo[directPeer.id] ? 'Đang gửi lời mời...' : 'Kết bạn để nhắn không giới hạn'}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 </button>
               ) : null}
               {!isDirectPeerFriend && isDirectPeerPending && isDirectPeerRequestedByMe ? (
@@ -1731,7 +2336,11 @@ export default function MessagesPage() {
                   onClick={handleCancelFriendRequest}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
+<<<<<<< HEAD
                   {pendingFriendRequestTo[directPeer.id] ? 'Ä ang hủy...' : 'Hủy lĂ¡»i mĂ¡»i kĂ¡º¿t bạn'}
+=======
+                  {pendingFriendRequestTo[directPeer.id] ? 'Đang hủy...' : 'Hủy lời mời kết bạn'}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 </button>
               ) : null}
               {!isDirectPeerFriend && isDirectPeerPending && !isDirectPeerRequestedByMe ? (
@@ -1741,7 +2350,11 @@ export default function MessagesPage() {
                   onClick={handleAcceptFriendRequestDirect}
                   disabled={Boolean(pendingFriendRequestTo[directPeer.id])}
                 >
+<<<<<<< HEAD
                   {pendingFriendRequestTo[directPeer.id] ? 'Ä ang xĂ¡»  lý...' : 'ĐĂ¡»“ng ý lĂ¡»i mĂ¡»i kĂ¡º¿t bạn'}
+=======
+                  {pendingFriendRequestTo[directPeer.id] ? 'Đang xử lý...' : 'Đồng ý lời mời kết bạn'}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 </button>
               ) : null}
             </div>
@@ -1754,6 +2367,7 @@ export default function MessagesPage() {
               {callStatus ? <p>{callStatus}</p> : null}
               {incomingCall ? (
                 <div className={styles.callBannerActions}>
+<<<<<<< HEAD
                   <button type="button" onClick={handleAcceptIncomingCall} title="ChĂ¡º¥p nhĂ¡º­n cuĂ¡»™c gĂ¡»i" aria-label="ChĂ¡º¥p nhĂ¡º­n cuĂ¡»™c gĂ¡»i">
                     ChĂ¡º¥p nhĂ¡º­n
                   </button>
@@ -1763,6 +2377,17 @@ export default function MessagesPage() {
                 </div>
               ) : null}
               <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuĂ¡»™c gĂ¡»i" aria-label="Kết thúc cuĂ¡»™c gĂ¡»i">
+=======
+                  <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
+                    Chấp nhận
+                  </button>
+                  <button type="button" onClick={handleDeclineIncomingCall} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
+                    Từ chối
+                  </button>
+                </div>
+              ) : null}
+              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 <PhoneOff size={14} />
                 Kết thúc
               </button>
@@ -1771,17 +2396,28 @@ export default function MessagesPage() {
 
           <div className={styles.timeline}>TODAY</div>
 
-          <div
-            className={styles.messagesWrap}
-            ref={messagesWrapRef}
+          <MessageThread
+            userId={user?.id}
+            selectedConversation={selectedConversation}
+            virtualSlice={virtualSlice}
+            messagesWrapRef={messagesWrapRef}
+            loadingOlderMessages={loadingOlderMessages}
+            typingUserIds={typingUserIds}
+            busyActionId={busyActionId}
+            pinnedMessageIds={pinnedMessageIds}
+            reactionPickerMessageId={reactionPickerMessageId}
+            setReactionPickerMessageId={setReactionPickerMessageId}
+            openMessageActions={openMessageActions}
+            handleReaction={handleReaction}
+            renderMessagePreview={renderMessagePreview}
+            getMessageReadLabel={getMessageReadLabel}
+            onLoadOlderMessages={loadOlderMessages}
             onScroll={(event) => {
               const element = event.currentTarget
-              if (element.scrollTop <= 24) {
-                loadOlderMessages().catch(() => undefined)
-              }
               const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
               setShowJumpToLatest(fromBottom > 260)
             }}
+<<<<<<< HEAD
           >
             {loadingOlderMessages ? <p className={styles.historyLoading}>Ä ang tĂ¡º£i tin nhĂ¡º¯n cũ hơn...</p> : null}
             {virtualSlice.startIndex > 0 ? (
@@ -2107,6 +2743,36 @@ export default function MessagesPage() {
               </div>
             ) : null}
           </footer>
+=======
+          />
+
+          <MessageComposer
+            message={message}
+            setMessage={setMessage}
+            handleSend={handleSend}
+            handleFileSelected={handleFileSelected}
+            handlePickAttachment={handlePickAttachment}
+            handlePickAttachmentType={handlePickAttachmentType}
+            busyUploading={busyUploading}
+            isSendingMessage={isSendingMessage}
+            composerMenuOpen={composerMenuOpen}
+            setComposerMenuOpen={setComposerMenuOpen}
+            showEmojiPanel={showEmojiPanel}
+            setShowEmojiPanel={setShowEmojiPanel}
+            showStickerPanel={showStickerPanel}
+            setShowStickerPanel={setShowStickerPanel}
+            activeStickerPack={activeStickerPack}
+            setActiveStickerPack={setActiveStickerPack}
+            loadedStickerPacks={loadedStickerPacks}
+            setLoadedStickerPacks={setLoadedStickerPacks}
+            onSendSticker={handleSendSticker}
+            attachmentDraft={attachmentDraft}
+            onRemoveAttachment={clearAttachmentDraft}
+            fileInputRef={fileInputRef as any}
+            imageInputRef={imageInputRef as any}
+            videoInputRef={videoInputRef as any}
+          />
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
 
           {showJumpToLatest ? (
             <button
@@ -2118,6 +2784,7 @@ export default function MessagesPage() {
                 setShowJumpToLatest(false)
               }}
             >
+<<<<<<< HEAD
               VĂ¡» tin nhĂ¡º¯n mĂ¡»›i nhĂ¡º¥t
             </button>
           ) : null}
@@ -2713,6 +3380,81 @@ export default function MessagesPage() {
               ) : null}
             </div>
           ) : null}
+=======
+              Về tin nhắn mới nhất
+            </button>
+          ) : null}
+
+          <MessagesOverlays
+            userId={user?.id}
+            conversations={conversations}
+            selectedConversationId={selectedConversationId}
+            actionMenu={actionMenu}
+            activeActionMessage={activeActionMessage}
+            pinnedMessageIds={pinnedMessageIds}
+            forwardingMessageId={forwardingMessageId}
+            showNewMessageModal={showNewMessageModal}
+            newMessageKeyword={newMessageKeyword}
+            searchUsersResult={searchUsersResult}
+            showNotificationsDrawer={showNotificationsDrawer}
+            notifications={notifications}
+            showCreateGroupModal={showCreateGroupModal}
+            groupName={groupName}
+            groupSearchKeyword={groupSearchKeyword}
+            filteredCreateGroupInviteCandidates={filteredCreateGroupInviteCandidates}
+            groupMemberIds={groupMemberIds}
+            busyActionId={busyActionId}
+            creatingGroup={creatingGroup}
+            acceptedFriendsCount={acceptedFriends.length}
+            setForwardingMessageId={setForwardingMessageId}
+            setActionMenu={setActionMenu}
+            setShowNewMessageModal={setShowNewMessageModal}
+            setNewMessageKeyword={setNewMessageKeyword}
+            handleCreateConversationWithUser={handleCreateConversationWithUser}
+            setShowNotificationsDrawer={setShowNotificationsDrawer}
+            handleOpenNotificationConversation={handleOpenNotificationConversation}
+            handleAcceptFromNotification={handleAcceptFromNotification}
+            setShowCreateGroupModal={setShowCreateGroupModal}
+            handleCreateGroupConversation={handleCreateGroupConversation}
+            setGroupName={setGroupName}
+            setGroupSearchKeyword={setGroupSearchKeyword}
+            toggleGroupMember={toggleGroupMember}
+            handleTogglePinMessage={handleTogglePinMessage}
+            handleRecall={handleRecall}
+            handleDeleteMessage={handleDeleteMessage}
+            handleForward={handleForward}
+          />
+        </section>
+
+        <aside className={styles.detailsPanel}>
+          <div className={styles.detailsBody}>
+          <ConversationDetailsPanel
+            selectedGroup={selectedGroup}
+            rightPanelSection={rightPanelSection}
+            setRightPanelSection={setRightPanelSection}
+            myGroupRole={myGroupRole}
+            groupLeader={groupLeader}
+            groupDeputy={groupDeputy}
+            canManageRoles={canManageRoles}
+            canRemoveMembers={canRemoveMembers}
+            canAddMembers={canAddMembers}
+            canDissolveSelectedGroup={canDissolveSelectedGroup}
+            canLeaderLeaveGroup={canLeaderLeaveGroup}
+            groupSearchKeyword={groupSearchKeyword}
+            setGroupSearchKeyword={setGroupSearchKeyword}
+            filteredGroupInviteCandidates={filteredGroupInviteCandidates}
+            groupActionBusyId={groupActionBusyId}
+            userId={user?.id}
+            handleClearChatForMe={handleClearChatForMe}
+            handleTransferLeader={handleTransferLeader}
+            handleSetDeputyRole={handleSetDeputyRole}
+            handleRemoveMemberFromGroup={handleRemoveMemberFromGroup}
+            handleAddMemberToGroup={handleAddMemberToGroup}
+            handleLeaveGroup={handleLeaveGroup}
+            handleDissolveGroup={handleDissolveGroup}
+          />
+          </div>
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
         </aside>
       </div>
     </div>

@@ -61,6 +61,18 @@ const VN_LOCATIONS = [
   'Kiên Giang',
 ]
 
+const POST_REACTIONS = [
+  { type: 'like', emoji: '👍', label: 'Thích' },
+  { type: 'love', emoji: '❤️', label: 'Yêu thích' },
+  { type: 'haha', emoji: '😆', label: 'Haha' },
+  { type: 'wow', emoji: '😮', label: 'Wow' },
+  { type: 'sad', emoji: '😢', label: 'Buồn' },
+  { type: 'angry', emoji: '😡', label: 'Phẫn nộ' },
+] as const
+
+const getPostReactionMeta = (type: string | null | undefined) =>
+  POST_REACTIONS.find((item) => item.type === type) || POST_REACTIONS[0]
+
 const dedupePostsById = (items: FeedPost[]) => {
   const seen = new Set<number>()
   const result: FeedPost[] = []
@@ -71,6 +83,9 @@ const dedupePostsById = (items: FeedPost[]) => {
   })
   return result
 }
+
+const isVideoMediaUrl = (url: string) =>
+  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
 
 type ComposerExtraPanel = 'tag' | 'location' | 'emoji' | null
 
@@ -122,6 +137,7 @@ export default function FeedPage() {
   const [activeComposerPanel, setActiveComposerPanel] = useState<ComposerExtraPanel>(null)
   const [timeTick, setTimeTick] = useState(0)
   const [uploadingMedia, setUploadingMedia] = useState(false)
+  const [openReactionPostId, setOpenReactionPostId] = useState<number | null>(null)
   const [visiblePostsCount, setVisiblePostsCount] = useState(FEED_BATCH_SIZE)
   const mediaInputRef = useRef<HTMLInputElement | null>(null)
   const feedBottomSentinelRef = useRef<HTMLDivElement | null>(null)
@@ -438,16 +454,17 @@ export default function FeedPage() {
     }
   }
 
-  const handleToggleLike = async (post: FeedPost) => {
+  const handlePostReaction = async (post: FeedPost, reactionType: string) => {
     if (!token) {
       navigate('/auth/login')
       return
     }
     try {
-      const response = post.viewerReaction
+      const response = post.viewerReaction === reactionType
         ? await api.unreactPost(token, post.id)
-        : await api.reactPost(token, post.id, 'like')
+        : await api.reactPost(token, post.id, reactionType)
       setPosts((prev) => prev.map((item) => (item.id === post.id ? response.post : item)))
+      setOpenReactionPostId(null)
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to react post', error)
@@ -689,7 +706,15 @@ export default function FeedPage() {
     const file = event.target.files?.[0]
     if (!file || !token) return
 
+    const maxBytes = 15 * 1024 * 1024
+    if (file.size > maxBytes) {
+      setErrorText('Media quá lớn. Vui lòng chọn tệp nhỏ hơn 15MB.')
+      event.target.value = ''
+      return
+    }
+
     setUploadingMedia(true)
+    setErrorText('')
     try {
       const base64Data = await fileToBase64(file)
       const uploaded = await api.uploadPostMediaBase64(token, {
@@ -697,10 +722,14 @@ export default function FeedPage() {
         contentType: file.type || 'application/octet-stream',
         base64Data,
       })
+      if (!uploaded.mediaUrl) {
+        throw new Error('Upload media thất bại, không nhận được URL.')
+      }
       setModalMediaUrl(uploaded.mediaUrl)
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to upload post media', error)
+      setErrorText(error instanceof Error ? error.message : 'Không thể tải ảnh/video lên bài viết.')
     } finally {
       setUploadingMedia(false)
       event.target.value = ''
@@ -808,9 +837,6 @@ export default function FeedPage() {
             </Link>
             <Link to={`/profile/${me?.id || 1}`} className={styles.railItem}>
               HĂ¡»“ sơ
-            </Link>
-            <Link to="/groups" className={styles.railItem}>
-              Nhóm
             </Link>
             <Link to="/messages" className={styles.railItem}>
               Trò chuyĂ¡»‡n
@@ -1061,19 +1087,51 @@ export default function FeedPage() {
                 ) : null}
 
                 <div className={styles.postStats}>
+<<<<<<< HEAD
                   <span>{post.reactionCount} lưĂ¡»£t thích</span>
                   <span>{post.commentCount} bình luĂ¡º­n</span>
+=======
+                  <span>{post.reactionCount} lượt cảm xúc</span>
+                  <span>{post.commentCount} bình luận</span>
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 </div>
 
                 <div className={styles.postActions}>
-                  <button
-                    type="button"
-                    className={`${styles.actionBtn} ${post.viewerReaction ? styles.actionBtnActive : ''}`}
-                    onClick={() => handleToggleLike(post)}
-                    disabled={isGuestView}
-                  >
-                    <Heart size={16} /> Thích
-                  </button>
+                  <div className={styles.reactionActionWrap}>
+                    <button
+                      type="button"
+                      className={`${styles.actionBtn} ${post.viewerReaction ? styles.actionBtnActive : ''}`}
+                      onClick={() => setOpenReactionPostId((current) => (current === post.id ? null : post.id))}
+                      disabled={isGuestView}
+                    >
+                      {post.viewerReaction ? (
+                        <>
+                          <span className={styles.reactionActionEmoji}>{getPostReactionMeta(post.viewerReaction).emoji}</span>
+                          {getPostReactionMeta(post.viewerReaction).label}
+                        </>
+                      ) : (
+                        <>
+                          <Heart size={16} /> Thả cảm xúc
+                        </>
+                      )}
+                    </button>
+                    {openReactionPostId === post.id ? (
+                      <div className={styles.postReactionPicker}>
+                        {POST_REACTIONS.map((reaction) => (
+                          <button
+                            key={reaction.type}
+                            type="button"
+                            className={post.viewerReaction === reaction.type ? styles.postReactionActive : ''}
+                            title={reaction.label}
+                            aria-label={reaction.label}
+                            onClick={() => void handlePostReaction(post, reaction.type)}
+                          >
+                            {reaction.emoji}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     className={styles.actionBtn}
@@ -1278,7 +1336,25 @@ export default function FeedPage() {
             ) : null}
 
             {modalMediaUrl ? (
+<<<<<<< HEAD
               <p className={styles.metaPreview}>ĐĂ£ chĂ¡»n media: {modalMediaUrl}</p>
+=======
+              <div className={styles.modalMediaPreview}>
+                {isVideoMediaUrl(modalMediaUrl) ? (
+                  <video src={modalMediaUrl} controls className={styles.modalMediaPreviewAsset} />
+                ) : (
+                  <img
+                    src={modalMediaUrl}
+                    alt="Media preview"
+                    className={styles.modalMediaPreviewAsset}
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none'
+                      setErrorText('Không thể hiển thị media đã tải lên. Vui lòng thử lại.')
+                    }}
+                  />
+                )}
+              </div>
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
             ) : null}
             {modalTaggedFriend ? (
               <p className={styles.metaPreview}>ĐĂ£ gĂ¡º¯n thẻ: {modalTaggedFriend}</p>

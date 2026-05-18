@@ -25,11 +25,19 @@ export const getConversationDisplayName = (
     return conversation.name || 'Nhóm chat'
   }
   const peer = conversation.members.find((member) => member.userId !== currentUserId)
+<<<<<<< HEAD
   return peer?.fullName || conversation.name || 'CuĂ¡»™c trò chuyĂ¡»‡n'
 }
 
 export const getGroupRoleLabel = (role: string | null | undefined) => {
   if (role === 'leader') return 'TrưĂ¡»ng nhóm'
+=======
+  return peer?.fullName || conversation.name || 'Cuộc trò chuyện'
+}
+
+export const getGroupRoleLabel = (role: string | null | undefined) => {
+  if (role === 'leader') return 'Trưởng nhóm'
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   if (role === 'deputy') return 'Phó nhóm'
   return 'Thành viên'
 }

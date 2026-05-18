@@ -5,8 +5,10 @@ type ChatState = {
   conversations: Conversation[]
   selectedConversationId: string | null
   messagesByConversation: Record<string, ChatMessage[]>
+  locallyReadConversationIds: Record<string, true>
   setConversations: (items: Conversation[]) => void
   selectConversation: (conversationId: string) => void
+  markConversationRead: (conversationId: string) => void
   setMessages: (conversationId: string, messages: ChatMessage[]) => void
   appendMessage: (conversationId: string, message: ChatMessage) => void
   upsertMessage: (conversationId: string, message: ChatMessage) => void
@@ -16,8 +18,34 @@ export const useChatStore = create<ChatState>((set) => ({
   conversations: [],
   selectedConversationId: null,
   messagesByConversation: {},
-  setConversations: (items) => set({ conversations: items }),
+  locallyReadConversationIds: {},
+  setConversations: (items) =>
+    set((state) => ({
+      conversations: items.map((conversation) =>
+        state.locallyReadConversationIds[conversation.id]
+          ? {
+              ...conversation,
+              unreadCount: 0,
+            }
+          : conversation
+      ),
+    })),
   selectConversation: (conversationId) => set({ selectedConversationId: conversationId }),
+  markConversationRead: (conversationId) =>
+    set((state) => ({
+      locallyReadConversationIds: {
+        ...state.locallyReadConversationIds,
+        [conversationId]: true,
+      },
+      conversations: state.conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              unreadCount: 0,
+            }
+          : conversation
+      ),
+    })),
   setMessages: (conversationId, messages) =>
     set((state) => ({
       messagesByConversation: {

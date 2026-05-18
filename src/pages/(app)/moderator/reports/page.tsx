@@ -182,7 +182,11 @@ export default function ModeratorReportsPage() {
                   <div>
                     <b>Báo cáo #{id}</b>
                     <small>
+<<<<<<< HEAD
                       {String(report.targetType || 'unknown')} 킷 đĂ¡»‘i tưĂ¡»£ng #{String(report.targetId || '-')}
+=======
+                      {String(report.targetType || 'unknown')} • đối tượng #{String(report.targetId || '-')}
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                     </small>
                   </div>
                   <span>{String(report.status || 'pending')}</span>
@@ -240,7 +244,11 @@ export default function ModeratorReportsPage() {
                 </button>
               </div>
               <div className={styles.sideBlock}>
+<<<<<<< HEAD
                 <b>#{String(selectedReport.id)} 킷 {String(selectedReport.status || 'pending')}</b>
+=======
+                <b>#{String(selectedReport.id)} • {String(selectedReport.status || 'pending')}</b>
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 <p><span>Loại:</span> {String(selectedReport.targetType || 'unknown')}</p>
                 <p><span>ĐĂ¡»‘i tưĂ¡»£ng:</span> #{String(selectedReport.targetId || '-')}</p>
                 <p><span>Lý do:</span> {String(selectedReport.reason || 'Không có')}</p>

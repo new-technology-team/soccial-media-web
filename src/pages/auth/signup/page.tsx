@@ -35,7 +35,11 @@ export default function SignupPage() {
 
     // Validation
     if(formData.password !== formData.confirmPassword) {
+<<<<<<< HEAD
       setError('MĂ¡º­t khẩu không khĂ¡»›p')
+=======
+      setError('Mật khẩu không khớp')
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       return
     }
 

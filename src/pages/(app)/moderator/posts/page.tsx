@@ -42,10 +42,17 @@ export default function ModeratorPostsPage() {
           <article key={post.id} className={styles.card}>
             <div className={styles.head}>
               <div>
+<<<<<<< HEAD
                 <b>Bài #{post.id} 킷 {post.authorName}</b>
                 <small>{new Date(post.createdAt).toLocaleString('vi-VN')} 킷 trạng thái {post.status}</small>
               </div>
               <span>{post.reactionCount} ❤️ 킷 {post.commentCount} Ä‘Ÿ’¬</span>
+=======
+                <b>Bài #{post.id} • {post.authorName}</b>
+                <small>{new Date(post.createdAt).toLocaleString('vi-VN')} • trạng thái {post.status}</small>
+              </div>
+              <span>{post.reactionCount} ❤️ • {post.commentCount} 💬</span>
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
             </div>
 
             <p className={styles.content}>{post.content || '(Không có nĂ¡»™i dung)'}</p>

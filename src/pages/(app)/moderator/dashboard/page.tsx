@@ -66,8 +66,13 @@ export default function ModeratorDashboard() {
           <div className={styles.priorityList}>
             {pendingReports.slice(0, 5).map((report) => (
               <div key={String(report.id)}>
+<<<<<<< HEAD
                 <b>#{String(report.id)} 킷 {String(report.reason || 'Báo cáo nĂ¡»™i dung')}</b>
                 <small>{String(report.targetType || 'unknown')} 킷 {String(report.status || 'pending')}</small>
+=======
+                <b>#{String(report.id)} • {String(report.reason || 'Báo cáo nội dung')}</b>
+                <small>{String(report.targetType || 'unknown')} • {String(report.status || 'pending')}</small>
+>>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
               </div>
             ))}
             {pendingReports.length === 0 ? <p>Chưa có báo cáo mĂ¡»›i.</p> : null}

@@ -220,7 +220,6 @@ export default function Navbar() {
         : []
 
   const utilityItems = [
-    { href: '/groups', label: 'Nhóm', icon: Users },
     { href: '/friends', label: 'Bạn bè', icon: UserRound },
     { href: '/media', label: 'Thư viĂ¡»‡n media', icon: Image },
     { href: '/system-alerts', label: 'CĂ¡º£nh báo hĂ¡»‡ thống', icon: Siren },

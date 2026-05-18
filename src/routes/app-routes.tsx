@@ -5,7 +5,6 @@ import AIChatPage from '@/pages/(app)/ai-chat/page'
 import ExplorePage from '@/pages/(app)/explore/page'
 import FeedPage from '@/pages/(app)/feed/page'
 import FriendsPage from '@/pages/(app)/friends/page'
-import GroupsPage from '@/pages/(app)/groups/page'
 import MediaPage from '@/pages/(app)/media/page'
 import MessagesPage from '@/pages/(app)/messages/page'
 import ModeratorDashboardPage from '@/pages/(app)/moderator/dashboard/page'
@@ -39,7 +38,6 @@ export function renderAppRoutes() {
       <Route path="/media" element={<MediaPage />} />
       <Route path="/notifications" element={<NotificationsPage />} />
       <Route path="/friends" element={<FriendsPage />} />
-      <Route path="/groups" element={<GroupsPage />} />
       <Route path="/ai-chat" element={<AIChatPage />} />
       <Route path="/report" element={<ReportPage />} />
       <Route path="/system-alerts" element={<SystemAlertsPage />} />
