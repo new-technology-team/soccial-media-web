@@ -1,5 +1,5 @@
-import { create } from 'zustand'
-import type { ChatMessage, Conversation } from '@/lib/types'
+﻿import { create } from 'zustand'
+import type { ChatMessage, Conversation } from '@/types'
 
 type ChatState = {
   conversations: Conversation[]
@@ -52,3 +52,4 @@ export const useChatStore = create<ChatState>((set) => ({
       }
     }),
 }))
+
