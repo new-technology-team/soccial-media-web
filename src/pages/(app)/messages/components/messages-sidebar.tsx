@@ -1,4 +1,4 @@
-import { Bell, CirclePlus, Info, Search, Send, UserPlus } from 'lucide-react'
+import { Bell, CirclePlus, Info, MessageCircle, Search, Send, UserPlus, Users } from 'lucide-react'
 
 import { formatVietnamTime, getConversationDisplayName } from '@/services/messages/formatters'
 import type { Conversation, NotificationItem } from '@/types'
@@ -35,21 +35,23 @@ export function MessagesSidebar({
   return (
     <>
       <aside className={styles.rail}>
-        <div className={styles.railLogo}>M</div>
+        <div className={styles.railLogo}>
+          <MessageCircle size={23} />
+        </div>
         <nav className={styles.railNav}>
-          <button type="button" className={cn(styles.railBtn, styles.railBtnActive)} title="Tin nhan" aria-label="Tin nhan">
+          <button type="button" className={cn(styles.railBtn, styles.railBtnActive)} title="Tin nhắn" aria-label="Tin nhắn">
             <Send size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowNewMessage} title="Tao hoi thoai moi" aria-label="Tao hoi thoai moi">
+          <button type="button" className={styles.railBtn} onClick={onShowNewMessage} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
             <UserPlus size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowCreateGroup} title="Tao nhom" aria-label="Tao nhom">
+          <button type="button" className={styles.railBtn} onClick={onShowCreateGroup} title="Tạo nhóm" aria-label="Tạo nhóm">
             <CirclePlus size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowNotifications} title="Thong bao" aria-label="Thong bao">
+          <button type="button" className={styles.railBtn} onClick={onShowNotifications} title="Thông báo" aria-label="Thông báo">
             <Bell size={16} />
           </button>
-          <button type="button" className={cn(styles.railBtn, styles.railBottomBtn)} title="Thong tin" aria-label="Thong tin">
+          <button type="button" className={cn(styles.railBtn, styles.railBottomBtn)} title="Thông tin" aria-label="Thông tin">
             <Info size={16} />
           </button>
         </nav>
@@ -59,13 +61,13 @@ export function MessagesSidebar({
       <section className={styles.listPanel}>
         <div className={styles.listHeader}>
           <div className={styles.listHeaderTop}>
-            <h1>Tat ca cuoc tro chuyen</h1>
+            <h1>Tất cả cuộc trò chuyện</h1>
             <button
               type="button"
               className={styles.headerNotifyBtn}
               onClick={onShowNotifications}
-              title="Thong bao"
-              aria-label="Thong bao"
+              title="Thông báo"
+              aria-label="Thông báo"
             >
               <Bell size={14} />
               {notifications.some((item) => !item.is_read) ? <i /> : null}
@@ -73,7 +75,7 @@ export function MessagesSidebar({
           </div>
           <div className={styles.searchWrap}>
             <Search size={14} />
-            <input placeholder="Tim cuoc tro chuyen" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
+            <input placeholder="Tìm cuộc trò chuyện" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
           </div>
         </div>
 
@@ -84,24 +86,33 @@ export function MessagesSidebar({
             const fallback = (name[0] || 'C').toUpperCase()
             const lastMessage = conv.lastMessage || null
             const sender = lastMessage ? conv.members.find((member) => member.userId === lastMessage.senderId) || null : null
-            const senderName = lastMessage ? (lastMessage.senderId === userId ? 'Ban' : lastMessage.senderName || sender?.fullName || `Nguoi dung #${lastMessage.senderId}`) : ''
+            const senderName = lastMessage ? (lastMessage.senderId === userId ? 'Bạn' : lastMessage.senderName || sender?.fullName || `Người dùng #${lastMessage.senderId}`) : ''
             const previewText = !lastMessage
-              ? 'Chua co tin nhan'
+              ? 'Chưa có tin nhắn'
               : lastMessage.isDeleted || (lastMessage.meta && (lastMessage.meta as Record<string, unknown>).recalled)
-                ? 'Tin nhan da duoc thu hoi'
+                ? 'Tin nhắn đã được thu hồi'
                 : lastMessage.type === 'sticker'
-                  ? String((lastMessage.meta && (lastMessage.meta as Record<string, unknown>).sticker) || lastMessage.text || 'Sticker')
+                  ? String((lastMessage.meta && (lastMessage.meta as Record<string, unknown>).sticker) || lastMessage.text || 'Sticker').startsWith('icon:')
+                    ? 'Sticker'
+                    : String((lastMessage.meta && (lastMessage.meta as Record<string, unknown>).sticker) || lastMessage.text || 'Sticker')
                   : lastMessage.type === 'image'
-                    ? 'Da gui mot hinh anh'
+                    ? 'Đã gửi một hình ảnh'
                     : lastMessage.type === 'video'
-                      ? 'Da gui mot video'
+                      ? 'Đã gửi một video'
                       : lastMessage.type === 'audio'
-                        ? 'Da gui mot tin nhan am thanh'
+                        ? 'Đã gửi một tin nhắn âm thanh'
                         : lastMessage.mediaUrl
-                          ? lastMessage.fileName || 'Da gui tep dinh kem'
+                          ? lastMessage.fileName || 'Đã gửi tệp đính kèm'
                           : lastMessage.text || ''
             const previewLine = lastMessage ? `${senderName}: ${previewText}` : previewText
-            const avatarUrl = conv.avatarUrl || (conv.type === 'direct' ? sender?.avatarUrl || null : null)
+            const directPeer = conv.type === 'direct' ? conv.members.find((member) => member.userId !== userId) || null : null
+            const avatarUrl = conv.avatarUrl || (conv.type === 'direct' ? directPeer?.avatarUrl || sender?.avatarUrl || null : null)
+            const isOnline = isActive || conv.unreadCount > 0
+            const statusLabel = conv.type === 'group'
+              ? `${conv.members.length} thành viên`
+              : isOnline
+                ? 'Đang hoạt động'
+                : 'Offline'
 
             return (
               <button
@@ -116,11 +127,20 @@ export function MessagesSidebar({
               >
                 <div className={styles.convAvatar}>
                   {avatarUrl ? <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" /> : fallback}
+                  <span className={cn(styles.presenceDot, isOnline ? styles.presenceDotOnline : styles.presenceDotOffline)} />
                 </div>
                 <div className={styles.convText}>
                   <div className={styles.convLineTop}>
                     <strong>{name}</strong>
                     <span>{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
+                  </div>
+                  <div className={styles.convStatusLine}>
+                    {conv.type === 'group' ? (
+                      <Users size={12} />
+                    ) : (
+                      <span className={cn(styles.statusSpark, isOnline ? styles.statusSparkOnline : styles.statusSparkOffline)} />
+                    )}
+                    <small>{statusLabel}</small>
                   </div>
                   <p>{previewLine}</p>
                   {conv.unreadCount > 0 ? (

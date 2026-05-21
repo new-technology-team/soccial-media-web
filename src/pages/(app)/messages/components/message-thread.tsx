@@ -1,8 +1,7 @@
-import { MoreHorizontal, Smile } from 'lucide-react'
+import { Angry, Annoyed, BadgeQuestionMark, Frown, Heart, MoreHorizontal, Smile, SmilePlus, ThumbsUp, type LucideIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Dispatch, MouseEvent, MutableRefObject, ReactNode, SetStateAction, UIEvent } from 'react'
 
-import { MESSAGE_REACTIONS } from '@/services/messages/constants'
 import { formatVietnamTime, getMessageReactionItems, getMessageReactionMeta } from '@/services/messages/formatters'
 import type { ChatMessage, Conversation } from '@/types'
 import { cn } from '@/utils'
@@ -30,6 +29,21 @@ type MessageThreadProps = {
   getMessageReadLabel: (message: ChatMessage) => string | null
   onLoadOlderMessages: () => Promise<void>
   onScroll?: (event: UIEvent<HTMLDivElement>) => void
+}
+
+const MESSAGE_REACTION_ICONS: Array<{ type: string; label: string; Icon: LucideIcon }> = [
+  { type: 'smile', label: 'Cười', Icon: SmilePlus },
+  { type: 'sad', label: 'Buồn', Icon: Frown },
+  { type: 'like', label: 'Thích', Icon: ThumbsUp },
+  { type: 'love', label: 'Yêu thích', Icon: Heart },
+  { type: 'wow', label: 'Bất ngờ', Icon: BadgeQuestionMark },
+  { type: 'cry', label: 'Khóc', Icon: Annoyed },
+  { type: 'angry', label: 'Tức giận', Icon: Angry },
+]
+
+function ReactionIcon({ type, size = 15 }: { type: string | null | undefined; size?: number }) {
+  const reaction = MESSAGE_REACTION_ICONS.find((item) => item.type === type) || MESSAGE_REACTION_ICONS[2]
+  return <reaction.Icon size={size} strokeWidth={2.4} />
 }
 
 export function MessageThread({
@@ -62,17 +76,24 @@ export function MessageThread({
         onScroll?.(event)
       }}
     >
-      {loadingOlderMessages ? <p className={styles.historyLoading}>Dang tai tin nhan cu hon...</p> : null}
+      {loadingOlderMessages ? <p className={styles.historyLoading}>Đang tải tin nhắn cũ hơn...</p> : null}
       {virtualSlice.startIndex > 0 ? (
-        <p className={styles.virtualHint}>Dang hien thi cac tin nhan moi nhat. Cuon len de tai them lich su.</p>
+        <p className={styles.virtualHint}>Đang hiển thị các tin nhắn mới nhất. Cuộn lên để tải thêm lịch sử.</p>
       ) : null}
 
       {virtualSlice.items.map((msg) => {
         const mine = msg.senderId === userId
         const reactionItems = getMessageReactionItems(msg)
         const sender = selectedConversation?.members.find((member) => member.userId === msg.senderId) || null
-        const senderName = sender?.fullName || msg.senderName || `Nguoi dung #${msg.senderId}`
+        const senderName = sender?.fullName || msg.senderName || `Người dùng #${msg.senderId}`
         const readLabel = mine ? getMessageReadLabel(msg) : null
+        const reactionNames = reactionItems
+          .map((reaction) => {
+            const reactor = selectedConversation?.members.find((member) => member.userId === reaction.userId) || null
+            const reactorName = reactor?.fullName || `Người dùng #${reaction.userId}`
+            return `${reactorName}: ${reaction.meta.label}`
+          })
+          .join(', ')
 
         return (
           <div key={msg.id} className={cn(styles.messageRow, mine && styles.messageRowMine)}>
@@ -104,8 +125,8 @@ export function MessageThread({
                 <button
                   type="button"
                   className={styles.messageActionTrigger}
-                  title="Mo menu thao tac"
-                  aria-label="Mo menu thao tac"
+                  title="Mở menu thao tác"
+                  aria-label="Mở menu thao tác"
                   onClick={(event) => {
                     event.stopPropagation()
                     openMessageActions(event, msg.id)
@@ -115,26 +136,28 @@ export function MessageThread({
                 </button>
 
                 {renderMessagePreview(msg)}
-                {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Da ghim</small> : null}
+                {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
 
                 {reactionItems.length > 0 ? (
-                  <div className={styles.reactionsPill}>
+                  <div className={styles.reactionsPill} title={reactionNames}>
                     {reactionItems.slice(0, 4).map((reaction, index) => {
                       const reactor = selectedConversation?.members.find((member) => member.userId === reaction.userId) || null
-                      const reactorName = reactor?.fullName || `Nguoi dung #${reaction.userId}`
-                      const meta = getMessageReactionMeta(reaction.meta)
+                      const reactorName = reactor?.fullName || `Người dùng #${reaction.userId}`
+                      const meta = reaction.meta
                       return (
-                        <span key={`${reaction.userId}-${index}`} className={styles.reactionChip} title={`${reactorName} da tha ${meta.label}`}>
+                        <span key={`${reaction.userId}-${index}`} className={styles.reactionChip} title={`${reactorName} đã thả ${meta.label}`}>
                           {reactor?.avatarUrl ? (
                             <img src={reactor.avatarUrl} alt={reactorName} className={styles.reactionAvatar} loading="lazy" />
                           ) : (
                             <span className={styles.reactionAvatar}>{(reactorName[0] || 'U').toUpperCase()}</span>
                           )}
-                          <span className={styles.reactionEmoji}>{meta.emoji}</span>
+                          <span className={styles.reactionEmoji}>
+                            <ReactionIcon type={reaction.reaction} size={13} />
+                          </span>
                         </span>
                       )
                     })}
-                    {reactionItems.length > 4 ? <span className={styles.reactionMore}>+{reactionItems.length - 4}</span> : null}
+                    <span className={styles.reactionMore}>{reactionItems.length}</span>
                   </div>
                 ) : null}
               </div>
@@ -143,11 +166,11 @@ export function MessageThread({
                 <button
                   type="button"
                   className={cn(styles.reactionTrigger, msg.viewerReaction && styles.reactionTriggerActive)}
-                  title="Tha cam xuc"
-                  aria-label="Tha cam xuc"
+                  title="Thả cảm xúc"
+                  aria-label="Thả cảm xúc"
                   onClick={() => setReactionPickerMessageId((current) => (current === msg.id ? null : msg.id))}
                 >
-                  {msg.viewerReaction ? getMessageReactionMeta(msg.viewerReaction).emoji : <Smile size={14} />}
+                  {msg.viewerReaction ? <ReactionIcon type={msg.viewerReaction} size={14} /> : <Smile size={14} />}
                 </button>
                 <span className={styles.messageTime}>{formatVietnamTime(msg.createdAt)}</span>
                 {readLabel ? <span className={styles.readLabel}>{readLabel}</span> : null}
@@ -155,7 +178,7 @@ export function MessageThread({
 
               {reactionPickerMessageId === msg.id ? (
                 <div className={styles.reactionPicker}>
-                  {MESSAGE_REACTIONS.map((reaction) => (
+                  {MESSAGE_REACTION_ICONS.map((reaction) => (
                     <button
                       key={reaction.type}
                       type="button"
@@ -168,7 +191,7 @@ export function MessageThread({
                         setReactionPickerMessageId(null)
                       }}
                     >
-                      {reaction.emoji}
+                      <reaction.Icon size={17} />
                     </button>
                   ))}
                 </div>
@@ -183,14 +206,14 @@ export function MessageThread({
           <div className={styles.messageAvatar}>...</div>
           <div className={cn(styles.bubble, styles.typingNotice)}>
             {Array.from(typingUserIds)
-              .map((memberId) => selectedConversation?.members.find((member) => member.userId === memberId)?.fullName || `Nguoi dung #${memberId}`)
+              .map((memberId) => selectedConversation?.members.find((member) => member.userId === memberId)?.fullName || `Người dùng #${memberId}`)
               .join(', ')}{' '}
-            dang soan tin nhan...
+            đang soạn tin nhắn...
           </div>
         </div>
       ) : null}
 
-      {virtualSlice.items.length === 0 ? <p className={styles.empty}>Chua co tin nhan trong cuoc tro chuyen nay.</p> : null}
+      {virtualSlice.items.length === 0 ? <p className={styles.empty}>Chưa có tin nhắn trong cuộc trò chuyện này.</p> : null}
     </div>
   )
 }

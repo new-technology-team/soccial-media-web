@@ -352,7 +352,9 @@ export default function Navbar() {
                     ) : (
                       notificationPreviews.map((item) => (
                         <Link key={item.id} to="/notifications" className={styles.dropdownItem}>
-                          <span className={styles.dropdownAvatar}>N</span>
+                          <span className={styles.dropdownAvatar}>
+                            <Bell size={14} />
+                          </span>
                           <span className={styles.dropdownText}>
                             <b>{item.title}</b>
                             <small>{item.body || 'Bạn có thông báo mới'}</small>

@@ -1,7 +1,16 @@
 import type { ChatMessage, Conversation } from '@/types'
-import { MESSAGE_REACTIONS } from './constants'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
+
+const MESSAGE_REACTION_META = [
+  { type: 'smile', label: 'Cười' },
+  { type: 'sad', label: 'Buồn' },
+  { type: 'like', label: 'Thích' },
+  { type: 'love', label: 'Yêu thích' },
+  { type: 'wow', label: 'Bất ngờ' },
+  { type: 'cry', label: 'Khóc' },
+  { type: 'angry', label: 'Tức giận' },
+] as const
 
 export const parseChatDate = (value: string) => {
   const base = new Date(value)
@@ -40,9 +49,9 @@ export const getAvatarInitial = (value: string | null | undefined) => {
 }
 
 export const getMessageReactionMeta = (reaction: string) =>
-  MESSAGE_REACTIONS.find((item) => item.type === reaction) || MESSAGE_REACTIONS[2]
+  MESSAGE_REACTION_META.find((item) => item.type === reaction) || MESSAGE_REACTION_META[2]
 
 export const getMessageReactionItems = (msg: ChatMessage) =>
   (msg.reactions || [])
     .map((item) => ({ ...item, meta: getMessageReactionMeta(item.reaction) }))
-    .filter((item) => MESSAGE_REACTIONS.some((reaction) => reaction.type === item.reaction))
+    .filter((item) => MESSAGE_REACTION_META.some((reaction) => reaction.type === item.reaction))

@@ -3,7 +3,35 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
-import { Bell, CirclePlus, Info, MoreHorizontal, Phone, PhoneOff, Search, Send, Smile, UserPlus, Video } from 'lucide-react'
+import {
+  BadgeCheck,
+  BadgeQuestionMark,
+  Bell,
+  BicepsFlexed,
+  CirclePlus,
+  File,
+  Flame,
+  Handshake,
+  Heart,
+  Info,
+  MoreHorizontal,
+  PartyPopper,
+  Phone,
+  PhoneOff,
+  Rocket,
+  Search,
+  Send,
+  Smile,
+  SmilePlus,
+  Sparkles,
+  Star,
+  Sticker as StickerIcon,
+  ThumbsUp,
+  UserPlus,
+  Video,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react'
 import styles from './page.module.css'
 import { ApiError, api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
@@ -11,7 +39,6 @@ import { useChatStore } from '@/contexts/chat-store'
 import { useCallStore, type IncomingCallState } from '@/contexts/call-store'
 import { connectSocket, getSocket } from '@/services/socket'
 import { useConversationRouting } from '@/hooks/use-conversation-routing'
-import { MESSAGE_REACTIONS, RTC_CONFIG, STICKER_PACKS } from '@/services/messages/constants'
 import { fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
 import {
   loadChatConversations,
@@ -24,8 +51,6 @@ import {
   formatVietnamTime,
   getAvatarInitial,
   getConversationDisplayName,
-  getMessageReactionItems,
-  getMessageReactionMeta,
 } from '@/services/messages/formatters'
 import { normalizeIncomingMessageForViewer } from '@/services/messages/message-normalizer'
 import { parseNotificationMeta, type MessageNotificationItem } from '@/services/messages/notification-meta'
@@ -48,6 +73,55 @@ type AttachmentDraft = {
   previewUrl: string | null
 }
 
+const RTC_CONFIG: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    ...(import.meta.env.VITE_TURN_URL
+      ? [
+          {
+            urls: import.meta.env.VITE_TURN_URL,
+            username: import.meta.env.VITE_TURN_USERNAME,
+            credential: import.meta.env.VITE_TURN_CREDENTIAL,
+          },
+        ]
+      : []),
+  ],
+}
+
+const MESSAGE_ICON_TOKENS: Record<string, { label: string; Icon: LucideIcon }> = {
+  ':smile:': { label: 'Cười', Icon: Smile },
+  ':smile-plus:': { label: 'Vui vẻ', Icon: SmilePlus },
+  ':like:': { label: 'Thích', Icon: ThumbsUp },
+  ':love:': { label: 'Yêu thích', Icon: Heart },
+  ':thanks:': { label: 'Cảm ơn', Icon: Handshake },
+  ':sparkles:': { label: 'Lấp lánh', Icon: Sparkles },
+  ':fire:': { label: 'Nổi bật', Icon: Flame },
+  ':party:': { label: 'Ăn mừng', Icon: PartyPopper },
+  ':strong:': { label: 'Mạnh mẽ', Icon: BicepsFlexed },
+  ':rocket:': { label: 'Bứt phá', Icon: Rocket },
+  ':star:': { label: 'Ngôi sao', Icon: Star },
+  ':zap:': { label: 'Nhanh', Icon: Zap },
+}
+
+const STICKER_ICON_TOKENS: Record<string, { label: string; Icon: LucideIcon }> = {
+  'icon:smile': { label: 'Cười', Icon: Smile },
+  'icon:smile-plus': { label: 'Vui vẻ', Icon: SmilePlus },
+  'icon:heart': { label: 'Yêu thích', Icon: Heart },
+  'icon:sparkles': { label: 'Lấp lánh', Icon: Sparkles },
+  'icon:flame': { label: 'Nổi bật', Icon: Flame },
+  'icon:party': { label: 'Ăn mừng', Icon: PartyPopper },
+  'icon:rocket': { label: 'Bứt phá', Icon: Rocket },
+  'icon:star': { label: 'Ngôi sao', Icon: Star },
+  'icon:like': { label: 'Thích', Icon: ThumbsUp },
+  'icon:thanks': { label: 'Cảm ơn', Icon: Handshake },
+  'icon:strong': { label: 'Mạnh mẽ', Icon: BicepsFlexed },
+  'icon:zap': { label: 'Nhanh', Icon: Zap },
+  'icon:badge-check': { label: 'Đã xong', Icon: BadgeCheck },
+  'icon:question': { label: 'Cần hỏi', Icon: BadgeQuestionMark },
+  'icon:sticker': { label: 'Sticker', Icon: StickerIcon },
+  'icon:file': { label: 'Tệp', Icon: File },
+}
 
 export default function MessagesPage() {
   const [searchParams] = useSearchParams()
@@ -93,8 +167,6 @@ export default function MessagesPage() {
   const [newMessageKeyword, setNewMessageKeyword] = useState('')
   const [searchUsersResult, setSearchUsersResult] = useState<Array<{ id: number; name: string }>>([])
   const [notifications, setNotifications] = useState<Array<{ id: number; type: string; title: string; body: string | null; created_at: string; is_read: number; meta?: Record<string, unknown> | null }>>([])
-  const [activeStickerPack, setActiveStickerPack] = useState<keyof typeof STICKER_PACKS>('Cute')
-  const [loadedStickerPacks, setLoadedStickerPacks] = useState<Record<keyof typeof STICKER_PACKS, boolean>>({ Cute: true })
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [hasMoreHistory, setHasMoreHistory] = useState<Record<string, boolean>>({})
   const [messageLimitByConversation, setMessageLimitByConversation] = useState<
@@ -120,6 +192,14 @@ export default function MessagesPage() {
   const localStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollConversationToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    window.setTimeout(() => {
+      const node = messagesWrapRef.current
+      if (!node) return
+      node.scrollTo({ top: node.scrollHeight, behavior })
+    }, 0)
+  }, [])
 
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
@@ -189,9 +269,10 @@ export default function MessagesPage() {
           ...prev,
           [selectedConversationId]: response.messageLimit || null,
         }))
+        scrollConversationToBottom('auto')
       })
       .catch(console.error)
-  }, [token, selectedConversationId, setMessages])
+  }, [scrollConversationToBottom, token, selectedConversationId, setMessages])
 
   useEffect(() => {
     reloadNotifications().catch(() => undefined)
@@ -453,6 +534,11 @@ export default function MessagesPage() {
     () => (selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []),
     [messagesByConversation, selectedConversationId]
   )
+
+  useEffect(() => {
+    if (!selectedConversationId || loadingOlderMessages) return
+    scrollConversationToBottom('smooth')
+  }, [loadingOlderMessages, messages.length, scrollConversationToBottom, selectedConversationId])
 
   const activeActionMessage = useMemo(
     () => (actionMenu ? messages.find((msg) => msg.id === actionMenu.messageId) || null : null),
@@ -1130,7 +1216,7 @@ export default function MessagesPage() {
             })
 
             if (!upload.mediaUrl) {
-              throw new Error('Tai tep len that bai, khong nhan duoc duong dan file.')
+              throw new Error('Tải tệp lên thất bại, không nhận được đường dẫn file.')
             }
 
             return api.sendMessagePayload(token, selectedConversationId, {
@@ -1180,7 +1266,7 @@ export default function MessagesPage() {
 
     const maxBytes = 12 * 1024 * 1024
     if (file.size > maxBytes) {
-      setChatNotice('Tep qua lon. Vui long chon tep nho hon 12MB.')
+      setChatNotice('Tệp quá lớn. Vui lòng chọn tệp nhỏ hơn 12MB.')
       event.target.value = ''
       return
     }
@@ -1596,11 +1682,20 @@ export default function MessagesPage() {
 
   const renderMessagePreview = (msg: ChatMessage) => {
     const renderRichMessageText = (text: string) => {
-      const urlRegex = /(https?:\/\/[^\s]+)/g
-      const parts = text.split(urlRegex)
+      const richTokenRegex = /(https?:\/\/[^\s]+|:[a-z-]+:)/g
+      const parts = text.split(richTokenRegex)
       if (parts.length === 1) return text
 
       return parts.map((part, index) => {
+        const iconToken = MESSAGE_ICON_TOKENS[part]
+        if (iconToken) {
+          return (
+            <span key={`icon-${index}`} className={styles.inlineMessageIcon} title={iconToken.label} aria-label={iconToken.label}>
+              <iconToken.Icon size={16} />
+            </span>
+          )
+        }
+
         if (!/^https?:\/\//i.test(part)) {
           return <span key={`text-${index}`}>{part}</span>
         }
@@ -1613,9 +1708,9 @@ export default function MessagesPage() {
             target="_blank"
             rel="noreferrer"
             className={styles.fileLink}
-            title={isSharedPostLink ? 'Mo bai viet duoc chia se' : 'Mo lien ket'}
+            title={isSharedPostLink ? 'Mở bài viết được chia sẻ' : 'Mở liên kết'}
           >
-            {isSharedPostLink ? 'Xem bai viet duoc chia se' : part}
+            {isSharedPostLink ? 'Xem bài viết được chia sẻ' : part}
           </a>
         )
       })
@@ -1623,10 +1718,10 @@ export default function MessagesPage() {
 
     const recalled = Boolean(msg.meta && (msg.meta as Record<string, unknown>).recalled)
     const forwarded = Boolean(msg.meta && (msg.meta as Record<string, unknown>).forwarded)
-    const forwardedTag = forwarded ? <small className={styles.forwardTag}>Da chuyen tiep</small> : null
+    const forwardedTag = forwarded ? <small className={styles.forwardTag}>Đã chuyển tiếp</small> : null
 
     if (recalled) {
-      return <p className={styles.recalledText}>Tin nhan da duoc thu hoi</p>
+      return <p className={styles.recalledText}>Tin nhắn đã được thu hồi</p>
     }
 
     if (msg.type === 'image' && msg.mediaUrl) {
@@ -1668,6 +1763,14 @@ export default function MessagesPage() {
 
     if (msg.type === 'sticker') {
       const sticker = (msg.meta?.sticker as string) || msg.text || ':)'
+      const stickerIcon = STICKER_ICON_TOKENS[sticker]
+      if (stickerIcon) {
+        return (
+          <p className={styles.stickerBubble} title={stickerIcon.label} aria-label={stickerIcon.label}>
+            <stickerIcon.Icon size={34} />
+          </p>
+        )
+      }
       return <p className={styles.stickerBubble}>{sticker}</p>
     }
 
@@ -1676,7 +1779,7 @@ export default function MessagesPage() {
         <div className={styles.mediaWrap}>
           {forwardedTag}
           <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className={styles.fileLink}>
-            {msg.fileName || 'Mo tep dinh kem'}
+            {msg.fileName || 'Mở tệp đính kèm'}
           </a>
           {(msg.mimeType || msg.fileSize) ? (
             <small className={styles.fileMeta}>
@@ -1692,7 +1795,7 @@ export default function MessagesPage() {
 
     return (
       <p className={styles.messageText}>
-        {forwarded ? <small className={styles.forwardTagInline}>[Da chuyen tiep] </small> : null}
+        {forwarded ? <small className={styles.forwardTagInline}>[Đã chuyển tiếp] </small> : null}
         {msg.text ? renderRichMessageText(msg.text) : ''}
       </p>
     )
@@ -1766,7 +1869,7 @@ export default function MessagesPage() {
 
           {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
             <div className={styles.limitBadge}>
-              Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phitrước khi cần kết bạn.
+              Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phí trước khi cần kết bạn.
             </div>
           ) : null}
 
@@ -1881,10 +1984,6 @@ export default function MessagesPage() {
             setShowEmojiPanel={setShowEmojiPanel}
             showStickerPanel={showStickerPanel}
             setShowStickerPanel={setShowStickerPanel}
-            activeStickerPack={activeStickerPack}
-            setActiveStickerPack={setActiveStickerPack}
-            loadedStickerPacks={loadedStickerPacks}
-            setLoadedStickerPacks={setLoadedStickerPacks}
             onSendSticker={handleSendSticker}
             attachmentDraft={attachmentDraft}
             onRemoveAttachment={clearAttachmentDraft}
@@ -1951,6 +2050,7 @@ export default function MessagesPage() {
         <aside className={styles.detailsPanel}>
           <div className={styles.detailsBody}>
           <ConversationDetailsPanel
+            selectedConversation={selectedConversation}
             selectedGroup={selectedGroup}
             rightPanelSection={rightPanelSection}
             setRightPanelSection={setRightPanelSection}

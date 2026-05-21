@@ -1,4 +1,4 @@
-import { Crown, LogOut, Trash2, UserCheck } from 'lucide-react'
+import { BellOff, Crown, LogOut, ShieldCheck, Trash2, UserCheck, UserRound, UsersRound } from 'lucide-react'
 
 import { getGroupRoleLabel } from '@/services/messages/formatters'
 import type { Conversation, FriendConnection } from '@/types'
@@ -8,6 +8,7 @@ import styles from '../page.module.css'
 type GroupLeader = { fullName: string; userId: number } | null
 
 type ConversationDetailsPanelProps = {
+  selectedConversation?: Conversation | null
   selectedGroup: Conversation | null
   rightPanelSection: 'overview' | 'members' | 'manage'
   setRightPanelSection: (value: 'overview' | 'members' | 'manage') => void
@@ -34,7 +35,8 @@ type ConversationDetailsPanelProps = {
 }
 
 export function ConversationDetailsPanel({
-  selectedGroup,
+  selectedConversation,
+  selectedGroup: selectedGroupProp,
   rightPanelSection,
   setRightPanelSection,
   myGroupRole,
@@ -58,15 +60,69 @@ export function ConversationDetailsPanel({
   handleLeaveGroup,
   handleDissolveGroup,
 }: ConversationDetailsPanelProps) {
+  const activeConversation = selectedConversation || selectedGroupProp
+  const selectedGroup = activeConversation?.type === 'group' ? activeConversation : null
+
+  if (!activeConversation) return null
+
+  if (!selectedGroup) {
+    const peer = activeConversation.members.find((member) => Number(member.userId) !== Number(userId))
+    const displayName = peer?.fullName || activeConversation.name || 'Cuộc trò chuyện'
+    return (
+      <>
+        <div className={styles.detailsIdentity}>
+          <div className={styles.detailsAvatar}>
+            <UserRound size={20} />
+          </div>
+          <div className={styles.detailsIdentityText}>
+            <strong>{displayName}</strong>
+            <small>Đoạn chat cá nhân</small>
+          </div>
+        </div>
+
+        <div className={styles.detailsSection}>
+          <strong>Cài đặt đoạn chat</strong>
+          <div className={styles.groupMemberList}>
+            <div className={styles.groupMemberRow}>
+              <div className={styles.groupMemberInfo}>
+                <b>Trạng thái</b>
+                <small>Đang hoạt động hoặc vừa có tương tác gần đây</small>
+              </div>
+              <ShieldCheck size={15} />
+            </div>
+            <div className={styles.groupMemberRow}>
+              <div className={styles.groupMemberInfo}>
+                <b>Thông báo</b>
+                <small>Quản lý thông báo cho cuộc trò chuyện này</small>
+              </div>
+              <BellOff size={15} />
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.detailsSection}>
+          <strong>Thao tác nhanh</strong>
+          <div className={styles.detailActionsGrid}>
+            <button type="button" onClick={() => void handleClearChatForMe()}>
+              Xóa đoạn chat phía bạn
+            </button>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   if (!selectedGroup) return null
 
   return (
     <>
       <div className={styles.detailsIdentity}>
-        <div className={styles.detailsAvatar}>{(selectedGroup.name?.[0] || 'G').toUpperCase()}</div>
+        <div className={styles.detailsAvatar}>
+          <UsersRound size={20} />
+        </div>
         <div className={styles.detailsIdentityText}>
-          <strong>{selectedGroup.name || 'Nhom chat'}</strong>
-          <small>Ban: {getGroupRoleLabel(myGroupRole)}</small>
+          <strong>{selectedGroup.name || 'Nhóm chat'}</strong>
+          <small>Bạn: {getGroupRoleLabel(myGroupRole)}</small>
         </div>
       </div>
 
@@ -78,7 +134,7 @@ export function ConversationDetailsPanel({
             className={cn(rightPanelSection === section && styles.detailsTabActive)}
             onClick={() => setRightPanelSection(section)}
           >
-            {section === 'overview' ? 'Tong quan' : section === 'members' ? 'Thanh vien' : 'Quan ly'}
+            {section === 'overview' ? 'Tổng quan' : section === 'members' ? 'Thành viên' : 'Quản lý'}
           </button>
         ))}
       </div>
@@ -86,19 +142,19 @@ export function ConversationDetailsPanel({
       {rightPanelSection === 'overview' ? (
         <>
           <div className={styles.detailsSection}>
-            <strong>Vai tro chinh</strong>
+            <strong>Vai trò chính</strong>
             <div className={styles.groupMemberList}>
               <div className={styles.groupMemberRow}>
                 <div className={styles.groupMemberInfo}>
-                  <b>{groupLeader?.fullName || 'Chua xac dinh'}</b>
-                  <small>Truong nhom - ID {groupLeader?.userId ?? selectedGroup.createdBy}</small>
+                  <b>{groupLeader?.fullName || 'Chưa xác định'}</b>
+                  <small>Trưởng nhóm - ID {groupLeader?.userId ?? selectedGroup.createdBy}</small>
                 </div>
                 <Crown size={14} />
               </div>
               <div className={styles.groupMemberRow}>
                 <div className={styles.groupMemberInfo}>
-                  <b>{groupDeputy?.fullName || 'Chua co pho nhom'}</b>
-                  <small>{groupDeputy ? `Pho nhom - ID ${groupDeputy.userId}` : 'Can chi dinh de truong nhom co the roi nhom'}</small>
+                  <b>{groupDeputy?.fullName || 'Chưa có phó nhóm'}</b>
+                  <small>{groupDeputy ? `Phó nhóm - ID ${groupDeputy.userId}` : 'Cần chỉ định để trưởng nhóm có thể rời nhóm'}</small>
                 </div>
                 <UserCheck size={14} />
               </div>
@@ -106,13 +162,13 @@ export function ConversationDetailsPanel({
           </div>
 
           <div className={styles.detailsSection}>
-            <strong>Thao tac nhanh</strong>
+            <strong>Thao tác nhanh</strong>
             <div className={styles.detailActionsGrid}>
               <button type="button" onClick={() => setRightPanelSection('manage')}>
-                Quan ly quyen & thanh vien
+                Quản lý quyền & thành viên
               </button>
               <button type="button" onClick={() => void handleClearChatForMe()}>
-                Xoa doan chat phia ban
+                Xóa đoạn chat phía bạn
               </button>
             </div>
           </div>
@@ -121,12 +177,12 @@ export function ConversationDetailsPanel({
 
       {rightPanelSection === 'members' ? (
         <div className={styles.detailsSection}>
-          <strong>Danh sach thanh vien ({selectedGroup.members.length})</strong>
+          <strong>Danh sách thành viên ({selectedGroup.members.length})</strong>
           <div className={styles.groupMemberList}>
             {selectedGroup.members.map((member) => (
               <div key={member.userId} className={styles.groupMemberRow}>
                 <div className={styles.groupMemberInfo}>
-                  <b>{member.fullName}{Number(member.userId) === Number(userId) ? ' (Ban)' : ''}</b>
+                  <b>{member.fullName}{Number(member.userId) === Number(userId) ? ' (Bạn)' : ''}</b>
                   <small>{getGroupRoleLabel(member.role)} - ID {member.userId}</small>
                 </div>
               </div>
@@ -139,13 +195,13 @@ export function ConversationDetailsPanel({
         <>
           <p className={styles.groupManageHint}>
             {canManageRoles
-              ? 'Ban la truong nhom: co the phan quyen, them/xoa thanh vien, giai tan nhom va roi nhom.'
+              ? 'Bạn là trưởng nhóm: có thể phân quyền, thêm/xóa thành viên, giải tán nhóm và rời nhóm.'
               : canRemoveMembers
-                ? 'Ban la pho nhom: co the them/xoa thanh vien.'
-                : 'Ban la thanh vien: chi co the roi nhom.'}
+                ? 'Bạn là phó nhóm: có thể thêm/xóa thành viên.'
+                : 'Bạn là thành viên: chỉ có thể rời nhóm.'}
           </p>
           <div className={styles.detailsSection}>
-            <strong>Quan ly thanh vien hien tai</strong>
+            <strong>Quản lý thành viên hiện tại</strong>
             <div className={styles.groupMemberList}>
               {selectedGroup.members.map((member) => {
                 const isSelf = Number(member.userId) === Number(userId)
@@ -154,23 +210,23 @@ export function ConversationDetailsPanel({
                 return (
                   <div key={member.userId} className={styles.groupMemberRow}>
                     <div className={styles.groupMemberInfo}>
-                      <b>{member.fullName}{isSelf ? ' (Ban)' : ''}</b>
+                      <b>{member.fullName}{isSelf ? ' (Bạn)' : ''}</b>
                       <small>{getGroupRoleLabel(member.role)} - ID {member.userId}</small>
                     </div>
                     {(canManageRoles || canRemoveMembers) && !isSelf ? (
                       <div className={styles.groupMemberActions}>
                         {canManageRoles && !isLeader ? (
                           <button type="button" disabled={groupActionBusyId === `role-${member.userId}`} onClick={() => void handleTransferLeader(member.userId)}>
-                            {groupActionBusyId === `role-${member.userId}` ? 'Dang chuyen...' : 'Lam truong nhom'}
+                            {groupActionBusyId === `role-${member.userId}` ? 'Đang chuyển...' : 'Làm trưởng nhóm'}
                           </button>
                         ) : null}
                         {canManageRoles && !isLeader ? (
                           <button type="button" disabled={groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}`} onClick={() => void handleSetDeputyRole(isDeputy ? null : member.userId)}>
-                            {groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}` ? 'Dang cap nhat...' : isDeputy ? 'Go pho nhom' : 'Gan pho nhom'}
+                            {groupActionBusyId === `deputy-${isDeputy ? 'none' : member.userId}` ? 'Đang cập nhật...' : isDeputy ? 'Gỡ phó nhóm' : 'Gán phó nhóm'}
                           </button>
                         ) : null}
                         <button type="button" className={styles.dangerBtn} disabled={groupActionBusyId === `remove-${member.userId}`} onClick={() => void handleRemoveMemberFromGroup(member.userId)}>
-                          {groupActionBusyId === `remove-${member.userId}` ? 'Dang xoa...' : 'Xoa'}
+                          {groupActionBusyId === `remove-${member.userId}` ? 'Đang xóa...' : 'Xóa'}
                         </button>
                       </div>
                     ) : null}
@@ -182,8 +238,8 @@ export function ConversationDetailsPanel({
 
           {canAddMembers ? (
             <div className={styles.detailsSection}>
-              <strong>Them thanh vien</strong>
-              <input className={styles.detailsSearchInput} value={groupSearchKeyword} onChange={(event) => setGroupSearchKeyword(event.target.value)} placeholder="Tim ban be theo ten, email hoac ID" />
+              <strong>Thêm thành viên</strong>
+              <input className={styles.detailsSearchInput} value={groupSearchKeyword} onChange={(event) => setGroupSearchKeyword(event.target.value)} placeholder="Tìm bạn bè theo tên, email hoặc ID" />
               <div className={styles.groupMemberList}>
                 {filteredGroupInviteCandidates.map((friend) => (
                   <div key={friend.id} className={styles.groupMemberRow}>
@@ -192,30 +248,30 @@ export function ConversationDetailsPanel({
                       <small>{friend.email || friend.phone || `ID ${friend.id}`}</small>
                     </div>
                     <button type="button" disabled={groupActionBusyId === `add-${friend.id}`} onClick={() => void handleAddMemberToGroup(friend.id)}>
-                      {groupActionBusyId === `add-${friend.id}` ? 'Dang them...' : 'Them'}
+                      {groupActionBusyId === `add-${friend.id}` ? 'Đang thêm...' : 'Thêm'}
                     </button>
                   </div>
                 ))}
-                {filteredGroupInviteCandidates.length === 0 ? <p className={styles.groupManageHint}>Khong con ban be phu hop de them.</p> : null}
+                {filteredGroupInviteCandidates.length === 0 ? <p className={styles.groupManageHint}>Không còn bạn bè phù hợp để thêm.</p> : null}
               </div>
             </div>
           ) : null}
 
           <div className={styles.detailsSection}>
-            <strong>Hanh dong nhom</strong>
+            <strong>Hành động nhóm</strong>
             <div className={styles.detailActionsGrid}>
               <button type="button" className={styles.dangerBtn} disabled={groupActionBusyId === 'leave-group' || (myGroupRole === 'leader' && !canLeaderLeaveGroup)} onClick={() => void handleLeaveGroup()}>
                 <LogOut size={14} />
-                {groupActionBusyId === 'leave-group' ? 'Dang roi nhom...' : 'Roi nhom'}
+                {groupActionBusyId === 'leave-group' ? 'Đang rời nhóm...' : 'Rời nhóm'}
               </button>
               {canDissolveSelectedGroup ? (
                 <button type="button" className={styles.dangerBtn} disabled={groupActionBusyId === 'dissolve-group'} onClick={() => void handleDissolveGroup()}>
                   <Trash2 size={14} />
-                  {groupActionBusyId === 'dissolve-group' ? 'Dang giai tan...' : 'Giai tan nhom'}
+                  {groupActionBusyId === 'dissolve-group' ? 'Đang giải tán...' : 'Giải tán nhóm'}
                 </button>
               ) : null}
             </div>
-            {myGroupRole === 'leader' && !canLeaderLeaveGroup ? <small>Truong nhom chi co the roi nhom sau khi da co pho nhom.</small> : null}
+            {myGroupRole === 'leader' && !canLeaderLeaveGroup ? <small>Trưởng nhóm chỉ có thể rời nhóm sau khi đã có phó nhóm.</small> : null}
           </div>
         </>
       ) : null}

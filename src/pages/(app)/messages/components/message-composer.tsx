@@ -1,17 +1,88 @@
-import { CirclePlus, File, Image, Paperclip, Send, Smile, Video, X } from 'lucide-react'
-import type { ChangeEvent, Dispatch, RefObject, SetStateAction } from 'react'
+import {
+  BadgeCheck,
+  BadgeQuestionMark,
+  BicepsFlexed,
+  CirclePlus,
+  File,
+  Flame,
+  Handshake,
+  Heart,
+  Image,
+  Paperclip,
+  PartyPopper,
+  Rocket,
+  Send,
+  Smile,
+  SmilePlus,
+  Sparkles,
+  Star,
+  Sticker,
+  ThumbsUp,
+  Video,
+  X,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react'
+import { useState, type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from 'react'
 
-import { EMOJI_SET, STICKER_PACKS } from '@/services/messages/constants'
 import { cn } from '@/utils'
 import styles from '../page.module.css'
-
-type StickerPackName = keyof typeof STICKER_PACKS
 
 type AttachmentDraft = {
   file: File
   type: 'image' | 'video' | 'audio' | 'file'
   previewUrl: string | null
 }
+
+type IconInsert = {
+  value: string
+  label: string
+  Icon: LucideIcon
+}
+
+const QUICK_ICON_SET: IconInsert[] = [
+  { value: ':smile:', label: 'Cười', Icon: Smile },
+  { value: ':smile-plus:', label: 'Vui vẻ', Icon: SmilePlus },
+  { value: ':like:', label: 'Thích', Icon: ThumbsUp },
+  { value: ':love:', label: 'Yêu thích', Icon: Heart },
+  { value: ':thanks:', label: 'Cảm ơn', Icon: Handshake },
+  { value: ':sparkles:', label: 'Lấp lánh', Icon: Sparkles },
+  { value: ':fire:', label: 'Nổi bật', Icon: Flame },
+  { value: ':party:', label: 'Ăn mừng', Icon: PartyPopper },
+  { value: ':strong:', label: 'Mạnh mẽ', Icon: BicepsFlexed },
+  { value: ':rocket:', label: 'Bứt phá', Icon: Rocket },
+  { value: ':star:', label: 'Ngôi sao', Icon: Star },
+  { value: ':zap:', label: 'Nhanh', Icon: Zap },
+]
+
+const ICON_STICKER_PACKS = {
+  'Cảm xúc': [
+    { value: 'icon:smile', label: 'Cười', Icon: Smile },
+    { value: 'icon:smile-plus', label: 'Vui vẻ', Icon: SmilePlus },
+    { value: 'icon:heart', label: 'Yêu thích', Icon: Heart },
+    { value: 'icon:sparkles', label: 'Lấp lánh', Icon: Sparkles },
+  ],
+  'Nổi bật': [
+    { value: 'icon:flame', label: 'Nổi bật', Icon: Flame },
+    { value: 'icon:party', label: 'Ăn mừng', Icon: PartyPopper },
+    { value: 'icon:rocket', label: 'Bứt phá', Icon: Rocket },
+    { value: 'icon:star', label: 'Ngôi sao', Icon: Star },
+  ],
+  'Hành động': [
+    { value: 'icon:like', label: 'Thích', Icon: ThumbsUp },
+    { value: 'icon:thanks', label: 'Cảm ơn', Icon: Handshake },
+    { value: 'icon:strong', label: 'Mạnh mẽ', Icon: BicepsFlexed },
+    { value: 'icon:zap', label: 'Nhanh', Icon: Zap },
+  ],
+  'Tiện ích': [
+    { value: 'icon:badge-check', label: 'Đã xong', Icon: BadgeCheck },
+    { value: 'icon:question', label: 'Cần hỏi', Icon: BadgeQuestionMark },
+    { value: 'icon:sticker', label: 'Sticker', Icon: Sticker },
+    { value: 'icon:file', label: 'Tệp', Icon: File },
+  ],
+} satisfies Record<string, IconInsert[]>
+
+type StickerPackName = keyof typeof ICON_STICKER_PACKS
 
 type MessageComposerProps = {
   message: string
@@ -28,10 +99,6 @@ type MessageComposerProps = {
   setShowEmojiPanel: Dispatch<SetStateAction<boolean>>
   showStickerPanel: boolean
   setShowStickerPanel: Dispatch<SetStateAction<boolean>>
-  activeStickerPack: StickerPackName
-  setActiveStickerPack: Dispatch<SetStateAction<StickerPackName>>
-  loadedStickerPacks: Record<StickerPackName, boolean>
-  setLoadedStickerPacks: Dispatch<SetStateAction<Record<StickerPackName, boolean>>>
   onSendSticker: (sticker: string) => Promise<void> | void
   attachmentDraft: AttachmentDraft | null
   onRemoveAttachment: () => void
@@ -57,10 +124,6 @@ export function MessageComposer({
   setShowEmojiPanel,
   showStickerPanel,
   setShowStickerPanel,
-  activeStickerPack,
-  setActiveStickerPack,
-  loadedStickerPacks,
-  setLoadedStickerPacks,
   onSendSticker,
   attachmentDraft,
   onRemoveAttachment,
@@ -68,11 +131,14 @@ export function MessageComposer({
   imageInputRef,
   videoInputRef,
 }: MessageComposerProps) {
+  const [activeStickerPack, setActiveStickerPack] = useState<StickerPackName>('Cảm xúc')
+  const [loadedStickerPacks, setLoadedStickerPacks] = useState<Record<string, boolean>>({ 'Cảm xúc': true })
+
   return (
     <footer className={styles.composer}>
-      <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Dinh kem tep" title="Dinh kem tep" />
-      <input ref={imageInputRef} type="file" accept="image/*" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Dinh kem anh" title="Dinh kem anh" />
-      <input ref={videoInputRef} type="file" accept="video/*" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Dinh kem video" title="Dinh kem video" />
+      <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Đính kèm tệp" title="Đính kèm tệp" />
+      <input ref={imageInputRef} type="file" accept="image/*" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Đính kèm ảnh" title="Đính kèm ảnh" />
+      <input ref={videoInputRef} type="file" accept="video/*" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Đính kèm video" title="Đính kèm video" />
 
       {attachmentDraft ? (
         <div className={styles.attachmentDraft}>
@@ -89,14 +155,14 @@ export function MessageComposer({
             <strong>{attachmentDraft.file.name}</strong>
             <span>{attachmentDraft.file.type || 'application/octet-stream'} - {formatFileSize(attachmentDraft.file.size)}</span>
           </div>
-          <button type="button" className={styles.attachmentRemoveBtn} onClick={onRemoveAttachment} disabled={busyUploading || isSendingMessage} title="Bo tep dinh kem" aria-label="Bo tep dinh kem">
+          <button type="button" className={styles.attachmentRemoveBtn} onClick={onRemoveAttachment} disabled={busyUploading || isSendingMessage} title="Bỏ tệp đính kèm" aria-label="Bỏ tệp đính kèm">
             <X size={14} />
           </button>
         </div>
       ) : null}
 
       <div className={styles.composerRow}>
-        <button type="button" className={styles.composerIconBtn} onClick={handlePickAttachment} disabled={busyUploading} title="Chon tep dinh kem" aria-label="Chon tep dinh kem">
+        <button type="button" className={styles.composerIconBtn} onClick={handlePickAttachment} disabled={busyUploading} title="Chọn tệp đính kèm" aria-label="Chọn tệp đính kèm">
           <CirclePlus size={18} />
         </button>
 
@@ -104,15 +170,15 @@ export function MessageComposer({
           <div className={styles.composerPlusMenu}>
             <button type="button" onClick={() => handlePickAttachmentType('image')}>
               <Image size={16} />
-              Gui anh
+              Gửi ảnh
             </button>
             <button type="button" onClick={() => handlePickAttachmentType('video')}>
               <Video size={16} />
-              Gui video
+              Gửi video
             </button>
             <button type="button" onClick={() => handlePickAttachmentType('file')}>
               <File size={16} />
-              Gui tep
+              Gửi tệp
             </button>
             <button
               type="button"
@@ -123,7 +189,7 @@ export function MessageComposer({
               }}
             >
               <Smile size={16} />
-              Chen emoji
+              Chèn icon
             </button>
           </div>
         ) : null}
@@ -132,7 +198,7 @@ export function MessageComposer({
           className={styles.composerTextarea}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          placeholder={attachmentDraft ? 'Nhap chu thich...' : 'Nhap tin nhan...'}
+          placeholder={attachmentDraft ? 'Nhập chú thích...' : 'Nhập tin nhắn...'}
           rows={1}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -151,12 +217,12 @@ export function MessageComposer({
             setComposerMenuOpen(false)
           }}
           disabled={busyUploading}
-          title="Mo bang emoji"
-          aria-label="Mo bang emoji"
+          title="Mở bảng icon"
+          aria-label="Mở bảng icon"
         >
           <Smile size={16} />
         </button>
-        <button type="button" className={styles.composerIconBtn} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chon tep" aria-label="Chon tep">
+        <button type="button" className={styles.composerIconBtn} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chọn tệp" aria-label="Chọn tệp">
           <Paperclip size={16} />
         </button>
         <button
@@ -168,13 +234,13 @@ export function MessageComposer({
             setComposerMenuOpen(false)
           }}
           disabled={busyUploading}
-          title="Mo sticker"
-          aria-label="Mo sticker"
+          title="Mở sticker"
+          aria-label="Mở sticker"
         >
-          <span className={styles.composerStickerIcon}>+</span>
+          <Sticker size={16} />
         </button>
         {showStickerPanel ? (
-          <button type="button" className={styles.composerIconBtn} onClick={() => setShowStickerPanel(false)} title="Dong sticker" aria-label="Dong sticker">
+          <button type="button" className={styles.composerIconBtn} onClick={() => setShowStickerPanel(false)} title="Đóng sticker" aria-label="Đóng sticker">
             <X size={14} />
           </button>
         ) : null}
@@ -183,17 +249,17 @@ export function MessageComposer({
           className={styles.composerSendBtn}
           onClick={handleSend}
           disabled={(!message.trim() && !attachmentDraft) || isSendingMessage || busyUploading}
-          title="Gui tin nhan"
-          aria-label="Gui tin nhan"
+          title="Gửi tin nhắn"
+          aria-label="Gửi tin nhắn"
         >
           <Send size={17} />
         </button>
 
         {showEmojiPanel ? (
           <div className={styles.emojiPanel}>
-            {EMOJI_SET.map((emoji) => (
-              <button key={emoji} type="button" onClick={() => setMessage(`${message}${emoji}`)}>
-                {emoji}
+            {QUICK_ICON_SET.map((item) => (
+              <button key={item.value} type="button" title={item.label} aria-label={item.label} onClick={() => setMessage(`${message}${item.value}`)}>
+                <item.Icon size={18} />
               </button>
             ))}
           </div>
@@ -202,7 +268,7 @@ export function MessageComposer({
         {showStickerPanel ? (
           <div className={styles.stickerPanel}>
             <div className={styles.stickerTabs}>
-              {(Object.keys(STICKER_PACKS) as Array<StickerPackName>).map((packName) => (
+              {(Object.keys(ICON_STICKER_PACKS) as Array<StickerPackName>).map((packName) => (
                 <button
                   key={packName}
                   type="button"
@@ -221,13 +287,13 @@ export function MessageComposer({
               ))}
             </div>
             {loadedStickerPacks[activeStickerPack] ? (
-              STICKER_PACKS[activeStickerPack].map((sticker) => (
-                <button key={sticker} type="button" title="Gui sticker" aria-label="Gui sticker" onClick={() => void onSendSticker(sticker)}>
-                  {sticker}
+              ICON_STICKER_PACKS[activeStickerPack].map((sticker) => (
+                <button key={sticker.value} type="button" title={sticker.label} aria-label={sticker.label} onClick={() => void onSendSticker(sticker.value)}>
+                  <sticker.Icon size={20} />
                 </button>
               ))
             ) : (
-              <p className={styles.stickerLoading}>Dang tai pack {activeStickerPack}...</p>
+              <p className={styles.stickerLoading}>Đang tải bộ {activeStickerPack}...</p>
             )}
           </div>
         ) : null}

@@ -107,31 +107,31 @@ export function MessagesOverlays({
         >
           <div className={styles.actionMenuHeader}>
             <span className={styles.listEntryAvatar}>
-              {getAvatarInitial(activeActionMessage.senderName || `Nguoi dung #${activeActionMessage.senderId}`)}
+              {getAvatarInitial(activeActionMessage.senderName || `Người dùng #${activeActionMessage.senderId}`)}
             </span>
             <div className={styles.actionMenuMeta}>
-              <strong>{String(activeActionMessage.senderName || `Nguoi dung #${activeActionMessage.senderId}`)}</strong>
+              <strong>{String(activeActionMessage.senderName || `Người dùng #${activeActionMessage.senderId}`)}</strong>
               <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
             </div>
           </div>
           <button type="button" onClick={() => { setForwardingMessageId(activeActionMessage.id); setActionMenu(null) }}>
             <CornerUpRight size={15} />
-            Chuyen tiep
+            Chuyển tiếp
           </button>
           <button type="button" onClick={() => { void handleTogglePinMessage(activeActionMessage); setActionMenu(null) }}>
             <Pin size={15} />
-            {pinnedMessageIds.has(activeActionMessage.id) ? 'Bo ghim' : 'Ghim'}
+            {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
           </button>
           {activeActionMessage.senderId === userId ? (
             <button type="button" onClick={() => { void handleRecall(activeActionMessage); setActionMenu(null) }}>
               <RotateCcw size={15} />
-              Thu hoi
+              Thu hồi
             </button>
           ) : null}
           {activeActionMessage.senderId === userId ? (
             <button className={styles.actionMenuDanger} type="button" onClick={() => { void handleDeleteMessage(activeActionMessage); setActionMenu(null) }}>
               <Trash2 size={15} />
-              Xoa
+              Xóa
             </button>
           ) : null}
         </div>
@@ -140,17 +140,17 @@ export function MessagesOverlays({
       {showNewMessageModal ? (
         <div className={styles.overlayBackdrop}>
           <div className={styles.overlayCard}>
-            <h3>Tin nhan moi</h3>
-            <input value={newMessageKeyword} onChange={(event) => setNewMessageKeyword(event.target.value)} placeholder="Nhap ten ban be hoac email dang ky" />
+            <h3>Tin nhắn mới</h3>
+            <input value={newMessageKeyword} onChange={(event) => setNewMessageKeyword(event.target.value)} placeholder="Nhập tên bạn bè hoặc email đăng ký" />
             <div className={styles.overlayList}>
               {searchUsersResult.map((item) => (
                 <button key={item.id} type="button" onClick={() => void handleCreateConversationWithUser(item.id)}>
                   <ListIdentity title={item.name} subtitle={`ID ${item.id}`} />
                 </button>
               ))}
-              {searchUsersResult.length === 0 ? <p>Khong co ket qua phu hop.</p> : null}
+              {searchUsersResult.length === 0 ? <p>Không có kết quả phù hợp.</p> : null}
             </div>
-            <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)}>Dong</button>
+            <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)}>Đóng</button>
           </div>
         </div>
       ) : null}
@@ -158,7 +158,7 @@ export function MessagesOverlays({
       {showNotificationsDrawer ? (
         <div className={styles.overlayBackdrop}>
           <div className={styles.overlayCard}>
-            <h3>Thong bao nang cao</h3>
+            <h3>Thông báo</h3>
             <div className={styles.overlayList}>
               {notifications.map((item) => {
                 const meta = parseNotificationMeta(item)
@@ -167,22 +167,22 @@ export function MessagesOverlays({
                 return (
                   <div key={item.id} className={styles.notifyCard}>
                     <button type="button" className={styles.notifyMainBtn} onClick={() => handleOpenNotificationConversation(conversationId)}>
-                      <ListIdentity title={item.title} subtitle={`${item.body || 'Thong bao he thong'} - ${new Date(item.created_at).toLocaleString('vi-VN')}`} />
+                      <ListIdentity title={item.title} subtitle={`${item.body || 'Thông báo hệ thống'} - ${new Date(item.created_at).toLocaleString('vi-VN')}`} />
                     </button>
                     <div className={styles.notifyActions}>
-                      {conversationId ? <button type="button" onClick={() => handleOpenNotificationConversation(conversationId)}>Mo doan chat</button> : null}
+                      {conversationId ? <button type="button" onClick={() => handleOpenNotificationConversation(conversationId)}>Mở đoạn chat</button> : null}
                       {canAccept ? (
                         <button type="button" className={styles.notifyAcceptBtn} disabled={busyActionId === `notif-${item.id}`} onClick={() => void handleAcceptFromNotification(item)}>
-                          {busyActionId === `notif-${item.id}` ? 'Dang dong y...' : 'Dong y'}
+                          {busyActionId === `notif-${item.id}` ? 'Đang đồng ý...' : 'Đồng ý'}
                         </button>
                       ) : null}
                     </div>
                   </div>
                 )
               })}
-              {notifications.length === 0 ? <p>Hien chua co thong bao quan trong.</p> : null}
+              {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
             </div>
-            <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)}>Dong</button>
+            <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)}>Đóng</button>
           </div>
         </div>
       ) : null}
@@ -190,8 +190,8 @@ export function MessagesOverlays({
       {forwardingMessageId ? (
         <div className={styles.overlayBackdrop}>
           <div className={styles.forwardDialog}>
-            <h3>Chuyen tiep tin nhan</h3>
-            <p>Chon cuoc tro chuyen de chuyen tiep:</p>
+            <h3>Chuyển tiếp tin nhắn</h3>
+            <p>Chọn cuộc trò chuyện để chuyển tiếp:</p>
             <div className={styles.forwardList}>
               {conversations.filter((conv) => conv.id !== selectedConversationId).map((conv) => {
                 const name = getConversationDisplayName(conv, userId)
@@ -202,7 +202,7 @@ export function MessagesOverlays({
                 )
               })}
             </div>
-            <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)}>Huy</button>
+            <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)}>Hủy</button>
           </div>
         </div>
       ) : null}
@@ -210,9 +210,9 @@ export function MessagesOverlays({
       {showCreateGroupModal ? (
         <div className={styles.overlayBackdrop}>
           <div className={styles.overlayCard}>
-            <h3>Tao nhom chat</h3>
-            <input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Nhap ten nhom" />
-            <input value={groupSearchKeyword} onChange={(event) => setGroupSearchKeyword(event.target.value)} placeholder="Tim ban be de them vao nhom" />
+            <h3>Tạo nhóm chat</h3>
+            <input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Nhập tên nhóm" />
+            <input value={groupSearchKeyword} onChange={(event) => setGroupSearchKeyword(event.target.value)} placeholder="Tìm bạn bè để thêm vào nhóm" />
             <div className={styles.overlayList}>
               {filteredCreateGroupInviteCandidates.map((friend) => {
                 const checked = groupMemberIds.includes(friend.id)
@@ -220,19 +220,19 @@ export function MessagesOverlays({
                   <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)}>
                     <ListIdentity title={friend.fullName} subtitle={friend.email || friend.phone || `ID ${friend.id}`} />
                     <span className={cn(styles.selectPill, checked && styles.selectPillActive)}>
-                      {checked ? <Check size={13} /> : 'Chon'}
+                      {checked ? <Check size={13} /> : 'Chọn'}
                     </span>
                   </button>
                 )
               })}
-              {acceptedFriendsCount === 0 ? <p>Ban chua co ban be de tao nhom.</p> : null}
-              {acceptedFriendsCount > 0 && filteredCreateGroupInviteCandidates.length === 0 ? <p>Khong tim thay ban be phu hop.</p> : null}
+              {acceptedFriendsCount === 0 ? <p>Bạn chưa có bạn bè để tạo nhóm.</p> : null}
+              {acceptedFriendsCount > 0 && filteredCreateGroupInviteCandidates.length === 0 ? <p>Không tìm thấy bạn bè phù hợp.</p> : null}
             </div>
             <div className={styles.overlayActions}>
               <button type="button" className={styles.primaryOverlayBtn} disabled={!groupName.trim() || groupMemberIds.length === 0 || creatingGroup} onClick={() => void handleCreateGroupConversation()}>
-                {creatingGroup ? 'Dang tao nhom...' : 'Tao nhom'}
+                {creatingGroup ? 'Đang tạo nhóm...' : 'Tạo nhóm'}
               </button>
-              <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)}>Dong</button>
+              <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)}>Đóng</button>
             </div>
           </div>
         </div>

@@ -69,7 +69,7 @@ export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost
                 onClick={handlePost}
                 disabled={!content.trim() || isPosting}
               >
-                {isPosting ? 'Dang dang...' : 'Dang bai'}
+                {isPosting ? 'Đang đăng...' : 'Đăng bài'}
               </Button>
             </div>
           </div>
