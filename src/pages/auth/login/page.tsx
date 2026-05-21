@@ -25,7 +25,7 @@ export default function LoginPage() {
   useEffect(() => {
     const reason = searchParams.get('reason')
     if (reason === 'session-expired') {
-      setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.')
+      setError('Phiên đăng nhĂ¡º­p đã hết hạn. Vui lòng đăng nhĂ¡º­p lại để tiếp tĂ¡»¥c.')
     }
   }, [searchParams])
 
@@ -46,9 +46,9 @@ export default function LoginPage() {
       setAuth(payload)
       navigate('/feed')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Email hoặc mật khẩu không hợp lệ. Vui lòng thử lại.'
+      const message = err instanceof Error ? err.message : 'Email hoặc mĂ¡º­t khẩu không hợp lĂ¡»‡. Vui lòng thá»  lại.'
       setError(message)
-      if (message.toLowerCase().includes('xác thực')) {
+      if (message.toLowerCase().includes('xác thĂ¡»±c')) {
         navigate(`/auth/verify-otp?identifier=${encodeURIComponent(formData.emailOrPhone)}`)
       }
     } finally {
@@ -60,8 +60,8 @@ export default function LoginPage() {
     <div className={styles.loginWrap}>
       <div className={styles.panel}> 
         <header>
-          <h2 className={styles.heading}>Chào mừng trở lại</h2>
-          <p className={styles.subheading}>Đăng nhập để tiếp tục sử dụng tài khoản của bạn</p>
+          <h2 className={styles.heading}>Chào mĂ¡»ừng trĂ¡» lại</h2>
+          <p className={styles.subheading}>Ä ăng nhĂ¡º­p để tiếp tĂ¡»¥c sá»  dĂ¡»¥ng tài khoĂ¡º£n của bạn</p>
         </header>
 
         <div className={styles.alertSpace}>
@@ -76,7 +76,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.field}>
             <label htmlFor="emailOrPhone">
-              Số điện thoại hoặc Email
+              Số điĂ¡»‡n thoại hoặc Email
             </label>
             <div className={styles.inputWrap}>
               <Smartphone size={18} className={styles.inputIcon} />
@@ -84,7 +84,7 @@ export default function LoginPage() {
                 id="emailOrPhone"
                 name="emailOrPhone"
                 type="text"
-                placeholder="Nhập số điện thoại hoặc email"
+                placeholder="NhĂ¡º­p số điĂ¡»‡n thoại hoặc email"
                 value={formData.emailOrPhone}
                 onChange={handleChange}
                 disabled={isLoading}
@@ -96,7 +96,7 @@ export default function LoginPage() {
 
           <div className={styles.field}>
             <label htmlFor="password">
-              Mật khẩu
+              MĂ¡º­t khẩu
             </label>
             <div className={styles.inputWrap}>
               <Lock size={18} className={styles.inputIcon} />
@@ -116,16 +116,16 @@ export default function LoginPage() {
               </button>
             </div>
             <div className={styles.forgot}>
-              <Link to="/auth/forgot-password">Quên mật khẩu?</Link>
+              <Link to="/auth/forgot-password">Quên mĂ¡º­t khẩu?</Link>
             </div>
           </div>
 
           <button type="submit" className={styles.submit} disabled={isLoading}>
-            {isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            {isLoading ? 'Ä ang đăng nhĂ¡º­p...' : 'Ä ăng nhĂ¡º­p'}
           </button>
 
           <div className={styles.divider}>
-            <span>Hoặc đăng nhập bằng</span>
+            <span>Hoặc đăng nhĂ¡º­p bằng</span>
           </div>
 
           <div className={styles.socialGrid}>
@@ -138,21 +138,21 @@ export default function LoginPage() {
           </div>
 
           <p className={styles.switchText}>
-            Chưa có tài khoản?{' '}
+            Chưa có tài khoĂ¡º£n?{' '}
             <Link to="/auth/signup">
-              Đăng ký ngay
+              Ä ăng ký ngay
             </Link>
           </p>
 
           <p className={styles.switchTextSecondary}>
-            Là quản trị viên? <Link to="/auth/admin-login">Đăng nhập admin</Link>
+            Là quĂ¡º£n trĂ¡»‹ viên? <Link to="/auth/admin-login">Ä ăng nhĂ¡º­p admin</Link>
           </p>
         </form>
       </div>
 
       <aside className={styles.loginNotes}>
         <p>
-          Đăng nhập để truy cập tin nhắn, thông báo và cá nhân hóa bảng tin theo sở thích của bạn.
+          Ä ăng nhĂ¡º­p để truy cĂ¡º­p tin nhĂ¡º¯n, thông báo và cá nhân hóa bĂ¡º£ng tin theo sĂ¡» thĂch của bạn.
         </p>
       </aside>
     </div>

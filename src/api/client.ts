@@ -139,7 +139,7 @@ const request = async <T>(
 
     if (isNetworkError) {
       throw new ApiError(
-        'Không thể kết nối backend API. Hãy chạy server API ở frontend (npm run dev:api) và tải lại trang.',
+        'Không thể kết nối backend API. Hãy chạy server API Ă¡»Ÿ frontend (npm run dev:api) và tĂ¡º£i lại trang.',
         { code: 'BACKEND_UNREACHABLE' }
       )
     }
@@ -159,7 +159,7 @@ const request = async <T>(
       lowerMessage.includes('pool failed')
 
     if (isDbUnavailable) {
-      throw new ApiError('Máy chủ đang mất kết nối cơ sở dữ liệu. Vui lòng bật MariaDB và thử lại.', {
+      throw new ApiError('Máy chĂ¡»§ đang mĂ¡º¥t kết nối cơ sĂ¡»Ÿ dĂ¡»¯ liĂ¡»‡u. Vui lòng bĂ¡º­t MariaDB và thĂ¡»  lại.', {
         status: response.status,
         code: 'DB_UNAVAILABLE',
       })
@@ -174,7 +174,7 @@ const request = async <T>(
       lowerMessage.includes('unauthorized')
 
     if (isAuthError) {
-      throw new ApiError(message || 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.', {
+      throw new ApiError(message || 'Phiên đăng nhĂ¡º­p đã hết hạn, vui lòng đăng nhĂ¡º­p lại.', {
         status: response.status,
         code: 'AUTH_EXPIRED',
       })

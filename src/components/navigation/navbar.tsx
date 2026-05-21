@@ -127,7 +127,7 @@ export default function Navbar() {
         const users = (usersRes.users || [])
           .map((item) => ({
             id: Number(item.id || 0),
-            name: String(item.full_name || item.fullName || item.email || item.phone || 'Người dùng'),
+            name: String(item.full_name || item.fullName || item.email || item.phone || 'NgưĂ¡»i dùng'),
           }))
           .filter((item) => item.id > 0)
           .slice(0, 5)
@@ -197,33 +197,33 @@ export default function Navbar() {
 
   const primaryItems = [
     { href: '/', label: 'Trang chủ', icon: Home, private: false },
-    { href: '/feed', label: 'Bảng tin', icon: MessageSquare, private: false },
+    { href: '/feed', label: 'BĂ¡º£ng tin', icon: MessageSquare, private: false },
     { href: '/explore', label: 'Khám phá', icon: Compass, private: false },
     { href: '/ai-chat', label: 'Chat AI', icon: Bot, private: false },
-    { href: '/messages', label: 'Tin nhắn', icon: MessageSquare, private: true },
+    { href: '/messages', label: 'Tin nhĂ¡º¯n', icon: MessageSquare, private: true },
   ].filter((item) => !item.private || isLoggedIn)
 
   const roleItems =
     user?.role === 'admin'
       ? [
           { href: '/admin/dashboard', label: 'Admin dashboard', icon: LayoutDashboard },
-          { href: '/admin/posts', label: 'Thống kê bài viết', icon: FileWarning },
-          { href: '/admin/users', label: 'Thống kê người dùng', icon: UserCog },
-          { href: '/moderator/reports', label: 'Quản lý báo cáo', icon: Shield },
+          { href: '/admin/posts', label: 'ThĂ¡»‘ng kê bài viết', icon: FileWarning },
+          { href: '/admin/users', label: 'ThĂ¡»‘ng kê ngưĂ¡»i dùng', icon: UserCog },
+          { href: '/moderator/reports', label: 'QuĂ¡º£n lý báo cáo', icon: Shield },
         ]
       : user?.role === 'moderator'
         ? [
             { href: '/moderator/dashboard', label: 'Mod dashboard', icon: LayoutDashboard },
-            { href: '/moderator/reports', label: 'Duyệt báo cáo', icon: FileWarning },
-            { href: '/moderator/posts', label: 'Duyệt bài viết', icon: Shield },
+            { href: '/moderator/reports', label: 'DuyĂ¡»‡t báo cáo', icon: FileWarning },
+            { href: '/moderator/posts', label: 'DuyĂ¡»‡t bài viết', icon: Shield },
           ]
         : []
 
   const utilityItems = [
     { href: '/friends', label: 'Bạn bè', icon: UserRound },
-    { href: '/media', label: 'Thư viện media', icon: Image },
-    { href: '/system-alerts', label: 'Cảnh báo hệ thống', icon: Siren },
-    { href: '/settings', label: 'Bảo mật', icon: Shield },
+    { href: '/media', label: 'Thư viĂ¡»‡n media', icon: Image },
+    { href: '/system-alerts', label: 'CĂ¡º£nh báo hĂ¡»‡ thống', icon: Siren },
+    { href: '/settings', label: 'BĂ¡º£o mĂ¡º­t', icon: Shield },
     { href: profileHref, label: 'Trang cá nhân', icon: UserRound },
     ...roleItems,
   ]
@@ -252,7 +252,7 @@ export default function Navbar() {
             <Search size={16} className={styles.searchIcon} />
             <input
               type="text"
-              placeholder="Tìm kiếm trên ZChat"
+              placeholder="Tìm kiĂ¡º¿m trên ZChat"
               className={styles.searchInput}
               value={searchInput}
               onFocus={() => setSearchOpen(true)}
@@ -276,7 +276,7 @@ export default function Navbar() {
                 <>
                   {searchUsers.length > 0 ? (
                     <div className={styles.searchGroup}>
-                      <p>Người dùng</p>
+                      <p>NgưĂ¡»i dùng</p>
                       {searchUsers.map((item) => (
                         <Link key={item.id} to={`/profile/${item.id}`} className={styles.searchItem} onClick={() => setSearchOpen(false)}>
                           <span>{item.name}</span>
@@ -287,7 +287,7 @@ export default function Navbar() {
 
                   {searchPosts.length > 0 ? (
                     <div className={styles.searchGroup}>
-                      <p>Bài viết</p>
+                      <p>Bài viĂ¡º¿t</p>
                       {searchPosts.map((item) => (
                         <Link key={item.id} to={`/posts/${item.id}`} className={styles.searchItem} onClick={() => setSearchOpen(false)}>
                           <span>{item.authorName}: {item.content.slice(0, 58)}</span>
@@ -297,11 +297,11 @@ export default function Navbar() {
                   ) : null}
 
                   <Link to={`/explore?q=${encodeURIComponent(searchInput.trim())}`} className={styles.searchAll} onClick={() => setSearchOpen(false)}>
-                    Xem tất cả kết quả cho "{searchInput.trim()}"
+                    Xem tĂ¡º¥t cĂ¡º£ kĂ¡º¿t quĂ¡º£ cho "{searchInput.trim()}"
                   </Link>
                 </>
               ) : (
-                <p className={styles.searchEmpty}>Không có kết quả phù hợp.</p>
+                <p className={styles.searchEmpty}>Không có kĂ¡º¿t quĂ¡º£ phù hĂ¡»£p.</p>
               )}
             </div>
           ) : null}
@@ -343,7 +343,7 @@ export default function Navbar() {
               {openDropdown === 'notifications' ? (
                 <div className={styles.dropdownPanel}>
                   <div className={styles.dropdownHeader}>
-                    <strong>Thông báo mới</strong>
+                    <strong>Thông báo mĂ¡»›i</strong>
                   </div>
 
                   <div className={styles.dropdownList}>
@@ -357,7 +357,7 @@ export default function Navbar() {
                           </span>
                           <span className={styles.dropdownText}>
                             <b>{item.title}</b>
-                            <small>{item.body || 'Bạn có thông báo mới'}</small>
+                            <small>{item.body || 'Bạn có thông báo mĂ¡»›i'}</small>
                           </span>
                         </Link>
                       ))
@@ -365,7 +365,7 @@ export default function Navbar() {
                   </div>
 
                   <Link to="/notifications" className={styles.viewAllBtn}>
-                    Xem tất cả <ChevronRight size={14} />
+                    Xem tĂ¡º¥t cĂ¡º£ <ChevronRight size={14} />
                   </Link>
                 </div>
               ) : null}
@@ -387,7 +387,7 @@ export default function Navbar() {
               {openDropdown === 'more' ? (
                 <div className={styles.dropdownPanel}>
                   <div className={styles.dropdownHeader}>
-                    <strong>Tiện ích</strong>
+                    <strong>TiĂ¡»‡n ích</strong>
                   </div>
                   <div className={styles.dropdownList}>
                     {utilityItems.map((item) => {
@@ -399,7 +399,7 @@ export default function Navbar() {
                           </span>
                           <span className={styles.dropdownText}>
                             <b>{item.label}</b>
-                            <small>Mở nhanh</small>
+                            <small>MĂ¡» nhanh</small>
                           </span>
                         </Link>
                       )
@@ -415,20 +415,20 @@ export default function Navbar() {
           <div className={styles.userActions}>
             <Link to={profileHref} className={styles.userChip}>
               <span className={styles.avatarCircle}>{initials}</span>
-              <span className={styles.userName}>{user?.fullName || 'Người dùng'}</span>
+              <span className={styles.userName}>{user?.fullName || 'NgưĂ¡»i dùng'}</span>
             </Link>
             <button type="button" className={styles.logoutBtn} onClick={handleLogout}>
               <LogOut size={16} />
-              <span>Đăng xuất</span>
+              <span>Ä ăng xuĂ¡º¥t</span>
             </button>
           </div>
         ) : (
           <div className={styles.authActions}>
             <Link to="/auth/login" className={styles.loginBtn}>
-              Đăng nhập
+              Ä ăng nhĂ¡º­p
             </Link>
             <Link to="/auth/signup" className={styles.signupBtn}>
-              Đăng ký
+              Ä ăng ký
             </Link>
           </div>
         )}
@@ -443,7 +443,7 @@ export default function Navbar() {
           <div className={styles.mobileInner}>
             <div className={styles.searchBox}>
               <Search size={16} className={styles.searchIcon} />
-              <input type="text" placeholder="Tìm kiếm..." className={styles.searchInput} />
+              <input type="text" placeholder="Tìm kiĂ¡º¿m..." className={styles.searchInput} />
             </div>
 
             <div className={styles.mobileLinks}>
@@ -486,20 +486,20 @@ export default function Navbar() {
               <div className={styles.mobileUserBox}>
                 <Link to={profileHref} className={styles.userChip} onClick={closeMobile}>
                   <span className={styles.avatarCircle}>{initials}</span>
-                  <span className={styles.userName}>{user?.fullName || 'Người dùng'}</span>
+                  <span className={styles.userName}>{user?.fullName || 'NgưĂ¡»i dùng'}</span>
                 </Link>
                 <button type="button" className={styles.logoutBtn} onClick={handleLogout}>
                   <LogOut size={16} />
-                  <span>Đăng xuất</span>
+                  <span>Ä ăng xuĂ¡º¥t</span>
                 </button>
               </div>
             ) : (
               <div className={styles.mobileAuth}>
                 <Link to="/auth/login" className={styles.loginBtn} onClick={closeMobile}>
-                  Đăng nhập
+                  Ä ăng nhĂ¡º­p
                 </Link>
                 <Link to="/auth/signup" className={styles.signupBtn} onClick={closeMobile}>
-                  Đăng ký
+                  Ä ăng ký
                 </Link>
               </div>
             )}

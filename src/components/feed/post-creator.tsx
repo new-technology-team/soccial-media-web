@@ -53,15 +53,15 @@ export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm">
                   <Image className="w-4 h-4 mr-2" />
-                  Ảnh
+                  Ă¡º¢nh
                 </Button>
                 <Button variant="ghost" size="sm">
                   <Smile className="w-4 h-4 mr-2" />
-                  Cảm xúc
+                  CĂ¡º£m xúc
                 </Button>
                 <Button variant="ghost" size="sm">
                   <MapPin className="w-4 h-4 mr-2" />
-                  Vị trí
+                  VĂ¡»‹ trí
                 </Button>
               </div>
 

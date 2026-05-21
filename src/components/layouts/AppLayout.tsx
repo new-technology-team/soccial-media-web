@@ -69,16 +69,16 @@ export default function AppLayout({
       <main className={styles.main}>{children}</main>
       {incomingCall ? (
         <aside className={styles.callBanner}>
-          <p className={styles.callTitle}>Cuộc gọi đến</p>
+          <p className={styles.callTitle}>CuĂ¡»™c gĂ¡»i đến</p>
           <p className={styles.callText}>
-            {incomingCall.callType === 'video' ? 'Video call' : 'Voice call'} từ người dùng #{incomingCall.fromUserId}
+            {incomingCall.callType === 'video' ? 'Video call' : 'Voice call'} tĂ¡»« ngưĂ¡»i dùng #{incomingCall.fromUserId}
           </p>
           <div className={styles.callActions}>
             <button type="button" className={styles.acceptBtn} onClick={handleOpenCall}>
-              Mở cuộc gọi
+              MĂ¡» cuĂ¡»™c gĂ¡»i
             </button>
             <button type="button" className={styles.declineBtn} onClick={handleDeclineCall}>
-              Từ chối
+              TĂ¡»Ă¡»ừ chối
             </button>
           </div>
         </aside>

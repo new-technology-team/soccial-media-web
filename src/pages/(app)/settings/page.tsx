@@ -53,7 +53,7 @@ export default function SettingsPage() {
       setSettings(response.settings)
     } catch (err) {
       console.error('Failed to load settings', err)
-      setError('Không thể tải cài đặt')
+      setError('Không thể tĂ¡º£i cài đặt')
     } finally {
       setLoading(false)
     }
@@ -63,11 +63,11 @@ export default function SettingsPage() {
     e.preventDefault()
     if (!token) return
     if (passwordForm.new !== passwordForm.confirm) {
-      setError('Mật khẩu mới không khớp')
+      setError('MĂ¡º­t khẩu mĂ¡»›i không khĂ¡»›p')
       return
     }
     if (passwordForm.new.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự')
+      setError('MĂ¡º­t khẩu phĂ¡º£i có ít nhĂ¡º¥t 6 ký tĂ¡»±')
       return
     }
 
@@ -77,12 +77,12 @@ export default function SettingsPage() {
         oldPassword: passwordForm.old,
         newPassword: passwordForm.new,
       })
-      setSuccess('Đã đổi mật khẩu thành công')
+      setSuccess('ĐĂ£ đĂ¡»•i mĂ¡º­t khẩu thành công')
       setPasswordForm({ old: '', new: '', confirm: '' })
       setShowChangePassword(false)
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể đổi mật khẩu')
+      setError(err instanceof Error ? err.message : 'Không thể đĂ¡»•i mĂ¡º­t khẩu')
     } finally {
       setSaving(false)
     }
@@ -94,7 +94,7 @@ export default function SettingsPage() {
     try {
       const response = await api.saveSettings(token, settings)
       setSettings(response.settings)
-      setSuccess('Đã cập nhật cài đặt thành công')
+      setSuccess('ĐĂ£ cĂ¡º­p nhĂ¡º­t cài đặt thành công')
       setTimeout(() => setSuccess(''), 3000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể lưu cài đặt')
@@ -104,14 +104,14 @@ export default function SettingsPage() {
   }
 
   if (!token || loading) {
-    return <div className={styles.page}><p>Đang tải...</p></div>
+    return <div className={styles.page}><p>Ä ang tĂ¡º£i...</p></div>
   }
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1>Bảo mật và quyền riêng tư</h1>
-        <p>Quản lý khả năng hiển thị hồ sơ, mật khẩu và các tài khoản bị chặn.</p>
+        <h1>BĂ¡º£o mĂ¡º­t và quyĂ¡»n riêng tư</h1>
+        <p>QuĂ¡º£n lý khĂ¡º£ năng hiển thĂ¡»‹ hĂ¡»“ sơ, mĂ¡º­t khẩu và các tài khoĂ¡º£n bĂ¡»‹ chặn.</p>
       </header>
 
       {error && <div style={{ color: 'red', padding: '1rem', margin: '1rem 0' }}>{error}</div>}
@@ -124,14 +124,14 @@ export default function SettingsPage() {
             className={activeSection === 'security' ? styles.menuActive : ''}
             onClick={() => setActiveSection('security')}
           >
-            <Shield size={16} /> Trung tâm bảo mật
+            <Shield size={16} /> Trung tâm bĂ¡º£o mĂ¡º­t
           </button>
           <button 
             type="button"
             className={activeSection === 'privacy' ? styles.menuActive : ''}
             onClick={() => setActiveSection('privacy')}
           >
-            <Users size={16} /> Chính sách quyền riêng tư
+            <Users size={16} /> Chính sách quyĂ¡»n riêng tư
           </button>
         </aside>
 
@@ -139,20 +139,20 @@ export default function SettingsPage() {
           {activeSection === 'security' && (
             <>
               <article className={styles.card}>
-                <h3>Mật khẩu</h3>
-                <p>Đã cập nhật gần đây. Nên đổi mật khẩu định kỳ 6 tháng/lần.</p>
+                <h3>MĂ¡º­t khẩu</h3>
+                <p>ĐĂ£ cĂ¡º­p nhĂ¡º­t gần đây. Nên đĂ¡»•i mĂ¡º­t khẩu đĂ¡»‹nh kĂ¡»³ 6 tháng/lần.</p>
                 <button 
                   type="button" 
                   className={styles.softBtn}
                   onClick={() => setShowChangePassword(!showChangePassword)}
                 >
-                  {showChangePassword ? 'Hủy' : 'Cập nhật mật khẩu'}
+                  {showChangePassword ? 'Hủy' : 'CĂ¡º­p nhĂ¡º­t mĂ¡º­t khẩu'}
                 </button>
                 
                 {showChangePassword && (
                   <form onSubmit={handleChangePassword} style={{ marginTop: '1rem', padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px' }}>
                     <div style={{ marginBottom: '0.8rem' }}>
-                      <label>Mật khẩu hiện tại</label>
+                      <label>MĂ¡º­t khẩu hiĂ¡»‡n tại</label>
                       <input
                         type="password"
                         value={passwordForm.old}
@@ -162,7 +162,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div style={{ marginBottom: '0.8rem' }}>
-                      <label>Mật khẩu mới</label>
+                      <label>MĂ¡º­t khẩu mĂ¡»›i</label>
                       <input
                         type="password"
                         value={passwordForm.new}
@@ -172,7 +172,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div style={{ marginBottom: '0.8rem' }}>
-                      <label>Xác nhận mật khẩu mới</label>
+                      <label>Xác nhĂ¡º­n mĂ¡º­t khẩu mĂ¡»›i</label>
                       <input
                         type="password"
                         value={passwordForm.confirm}
@@ -182,7 +182,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <button type="submit" disabled={saving} className={styles.saveBtn}>
-                      {saving ? 'Đang lưu...' : 'Lưu mật khẩu mới'}
+                      {saving ? 'Ä ang lưu...' : 'Lưu mĂ¡º­t khẩu mĂ¡»›i'}
                     </button>
                   </form>
                 )}
@@ -193,8 +193,8 @@ export default function SettingsPage() {
           {activeSection === 'privacy' && (
             <>
               <article className={styles.card}>
-                <h2>Cài đặt quyền riêng tư</h2>
-                <p>Kiểm soát ai có thể xem thông tin của bạn.</p>
+                <h2>Cài đặt quyĂ¡»n riêng tư</h2>
+                <p>KiĂ¡»ƒm soát ai có thĂ¡»ƒ xem thông tin của bạn.</p>
                 
                 <div style={{ marginTop: '1rem' }}>
                   <label className={styles.checkboxRow}>
@@ -204,8 +204,8 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({ ...settings, privacyLastSeen: e.target.checked })}
                     />
                     <span>
-                      <b>Ẩn trạng thái 'Online'</b>
-                      <small>Người khác không thể biết bạn đang online hay không</small>
+                      <b>Ă¡º¨n trạng thái 'Online'</b>
+                      <small>NgưĂ¡»i khác không thĂ¡»ƒ biĂ¡º¿t bạn đang online hay không</small>
                     </span>
                   </label>
                 </div>
@@ -218,8 +218,8 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({ ...settings, privacyProfilePhoto: e.target.checked })}
                     />
                     <span>
-                      <b>Ẩn ảnh hồ sơ</b>
-                      <small>Chỉ bạn bè mới có thể thấy ảnh hồ sơ của bạn</small>
+                      <b>Ă¡º¨n Ă¡º£nh hĂ¡»“ sơ</b>
+                      <small>ChĂ¡»‰ bạn bè mĂ¡»›i có thĂ¡»ƒ thĂ¡º¥y Ă¡º£nh hĂ¡»“ sơ của bạn</small>
                     </span>
                   </label>
                 </div>
@@ -232,8 +232,8 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({ ...settings, allowFriendRequests: e.target.checked })}
                     />
                     <span>
-                      <b>Cho phép lời mời kết bạn</b>
-                      <small>Cho phép mọi người gửi lời mời kết bạn</small>
+                      <b>Cho phép lĂ¡»i mĂ¡»i kĂ¡º¿t bạn</b>
+                      <small>Cho phép mĂ¡»i ngưĂ¡»i gĂ¡» i lĂ¡»i mĂ¡»i kĂ¡º¿t bạn</small>
                     </span>
                   </label>
                 </div>
@@ -246,8 +246,8 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({ ...settings, notificationMessages: e.target.checked })}
                     />
                     <span>
-                      <b>Thông báo tin nhắn</b>
-                      <small>Nhận thông báo khi có tin nhắn mới</small>
+                      <b>Thông báo tin nhĂ¡º¯n</b>
+                      <small>NhĂ¡º­n thông báo khi có tin nhĂ¡º¯n mĂ¡»›i</small>
                     </span>
                   </label>
                 </div>
@@ -260,8 +260,8 @@ export default function SettingsPage() {
                       onChange={(e) => setSettings({ ...settings, notificationCalls: e.target.checked })}
                     />
                     <span>
-                      <b>Thông báo cuộc gọi</b>
-                      <small>Nhận thông báo khi có cuộc gọi đến</small>
+                      <b>Thông báo cuĂ¡»™c gĂ¡»i</b>
+                      <small>NhĂ¡º­n thông báo khi có cuĂ¡»™c gĂ¡»i đến</small>
                     </span>
                   </label>
                 </div>
@@ -271,7 +271,7 @@ export default function SettingsPage() {
 
           <div className={styles.footerActions}>
             <button type="button" className={styles.ghostBtn} onClick={() => loadSettings()}>
-              Hủy thay đổi
+              Hủy thay đĂ¡»•i
             </button>
             <button 
               type="button" 
@@ -279,7 +279,7 @@ export default function SettingsPage() {
               onClick={handleSaveSettings}
               disabled={saving}
             >
-              {saving ? 'Đang lưu...' : 'Lưu cài đặt'}
+              {saving ? 'Ä ang lưu...' : 'Lưu cài đặt'}
             </button>
           </div>
         </section>
