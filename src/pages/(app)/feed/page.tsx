@@ -42,20 +42,20 @@ const parseFeedDate = (value: string) => {
 }
 
 const VN_LOCATIONS = [
-  'Hà NĂ¡»™i',
+  'Hà Nội',
   'Hà Nam',
   'Hà Giang',
   'Hà Tĩnh',
-  'HĂ¡º£i Phòng',
-  'HĂ¡º£i Dương',
-  'ĐĂ  Nẵng',
-  'HuĂ¡º¿',
-  'NghĂ¡»‡ An',
+  'Hải Phòng',
+  'Hải Dương',
+  'Đà Nẵng',
+  'Huế',
+  'Nghệ An',
   'Thanh Hóa',
-  'QuĂ¡º£ng Ninh',
+  'Quảng Ninh',
   'Nha Trang',
-  'ĐĂ  Lạt',
-  'TP. HĂ¡»“ Chí Minh',
+  'Đà Lạt',
+  'TP. Hồ Chí Minh',
   'Cần Thơ',
   'An Giang',
   'Kiên Giang',
@@ -157,7 +157,7 @@ export default function FeedPage() {
     setIsModalOpen(false)
   }
 
-  const handleAuthExpired = useCallback((error: unknown, fallbackMessage = 'Phiên đăng nhĂ¡º­p đã hết hạn, vui lòng đăng nhĂ¡º­p lại.') => {
+  const handleAuthExpired = useCallback((error: unknown, fallbackMessage = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.') => {
     if (!isAuthExpiredError(error)) return false
     setErrorText(fallbackMessage)
     clearAuth()
@@ -214,7 +214,7 @@ export default function FeedPage() {
           (result.users || [])
             .map((item) => ({
               id: Number(item.id || 0),
-              name: String(item.full_name || item.fullName || 'NgưĂ¡»i dùng'),
+              name: String(item.full_name || item.fullName || 'Người dùng'),
             }))
             .filter((item) => item.id > 0)
             .slice(0, 8)
@@ -363,7 +363,7 @@ export default function FeedPage() {
       .slice(0, 6)
       .map(([tag, count]) => ({
         tag,
-        text: `Có ${count} bài viết gần đây nhĂ¡º¯c đến chĂ¡»§ đĂ¡» này`,
+        text: `Có ${count} bài viết gần đây nhắc đến chủ đề này`,
         count: `${count} bài viết`,
       }))
   }, [posts])
@@ -376,9 +376,9 @@ export default function FeedPage() {
     const diffHours = Math.floor(diffMs / (60 * 60 * 1000))
     const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000))
 
-    if (diffMinutes < 1) return 'vĂ¡»«a xong'
+    if (diffMinutes < 1) return 'vừa xong'
     if (diffMinutes < 60) return `${diffMinutes} phút`
-    if (diffHours < 24) return `${diffHours} giĂ¡»`
+    if (diffHours < 24) return `${diffHours} giờ`
     if (diffDays < 7) return `${diffDays} ngày`
 
     return new Intl.DateTimeFormat('vi-VN', {
@@ -412,15 +412,15 @@ export default function FeedPage() {
   }) => {
     const textWithMeta = [
       payload.text.trim(),
-      payload.taggedFriend ? `\n\nÄ‘Ÿ‘¥ Cùng vĂ¡»›i: ${payload.taggedFriend.trim()}` : '',
-      payload.location ? `\nÄ‘Ÿ“ ĐĂ¡»‹a điĂ¡»ƒm: ${payload.location.trim()}` : '',
+      payload.taggedFriend ? `\n\n👥 Cùng với: ${payload.taggedFriend.trim()}` : '',
+      payload.location ? `\n📍 Địa điểm: ${payload.location.trim()}` : '',
     ]
       .filter(Boolean)
       .join('')
 
     if (!textWithMeta && !payload.mediaUrl?.trim()) return
     if (!token) {
-      setErrorText('Phiên đăng nhĂ¡º­p đã hết hạn, vui lòng đăng nhĂ¡º­p lại.')
+      setErrorText('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.')
       navigate('/auth/login')
       return
     }
@@ -530,12 +530,12 @@ export default function FeedPage() {
     const link = `${window.location.origin}/posts/${post.id}`
     try {
       await api.createPost(token, {
-        content: `Ä‘Ÿ” Chia sẻ tĂ¡»« ${post.authorName}\n\n${post.content.slice(0, 360)}\n\nXem bài gĂ¡»‘c: ${link}`,
+        content: `🔁 Chia sẻ từ ${post.authorName}\n\n${post.content.slice(0, 360)}\n\nXem bài gốc: ${link}`,
         visibility: 'public',
       })
       const refreshed = await api.listFeed(token)
       setPosts(dedupePostsById(refreshed.posts))
-      setErrorText('ĐĂ£ chia sẻ lên trang cá nhân.')
+      setErrorText('Đã chia sẻ lên trang cá nhân.')
       setShareTargetPostId(null)
     } catch (error) {
       if (handleAuthExpired(error)) return
@@ -551,8 +551,8 @@ export default function FeedPage() {
 
     const link = `${window.location.origin}/posts/${post.id}`
     try {
-      await api.sendMessage(token, conversationId, `Ä‘Ÿ“¨ ${me?.fullName || 'Bạn của bạn'} đã chia sẻ mĂ¡»™t bài viết:\n${post.content.slice(0, 240)}\n${link}`)
-      setErrorText('ĐĂ£ chia sẻ bài viết vào tin nhĂ¡º¯n.')
+      await api.sendMessage(token, conversationId, `📨 ${me?.fullName || 'Bạn của bạn'} đã chia sẻ một bài viết:\n${post.content.slice(0, 240)}\n${link}`)
+      setErrorText('Đã chia sẻ bài viết vào tin nhắn.')
       setShareTargetPostId(null)
     } catch (error) {
       if (handleAuthExpired(error)) return
@@ -564,7 +564,7 @@ export default function FeedPage() {
     const url = `${window.location.origin}/posts/${postId}`
     try {
       await navigator.clipboard.writeText(url)
-      setErrorText('ĐĂ£ sao chép liên kĂ¡º¿t bài viết.')
+      setErrorText('Đã sao chép liên kết bài viết.')
       setShareTargetPostId(null)
     } catch (error) {
       console.error('Failed to copy link', error)
@@ -574,7 +574,7 @@ export default function FeedPage() {
   const handleCopyPostId = async (postId: number) => {
     try {
       await navigator.clipboard.writeText(String(postId))
-      setErrorText(`ĐĂ£ sao chép ID bài viết: #${postId}`)
+      setErrorText(`Đã sao chép ID bài viết: #${postId}`)
       setActivePostMenuId(null)
     } catch (error) {
       console.error('Failed to copy post id', error)
@@ -611,7 +611,7 @@ export default function FeedPage() {
     const contentText = postEditDraft.content.trim()
     const mediaText = postEditDraft.mediaUrl.trim()
     if (!contentText && !mediaText) {
-      setErrorText('Bài viĂ¡º¿t cần có nĂ¡»™i dung hoặc media.')
+      setErrorText('Bài viết cần có nội dung hoặc media.')
       return
     }
 
@@ -623,12 +623,12 @@ export default function FeedPage() {
         visibility: postEditDraft.visibility,
       })
       setPosts((prev) => prev.map((item) => (item.id === post.id ? updated.post : item)))
-      setErrorText('ĐĂ£ cĂ¡º­p nhĂ¡º­t bài viết.')
+      setErrorText('Đã cập nhật bài viết.')
       handleCancelEditPost()
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to update post', error)
-      setErrorText('Không thể cĂ¡º­p nhĂ¡º­t bài viết. Vui lòng thĂ¡»  lại.')
+      setErrorText('Không thể cập nhật bài viết. Vui lòng thử lại.')
     } finally {
       setIsSavingPostEdit(false)
     }
@@ -640,7 +640,7 @@ export default function FeedPage() {
       return
     }
 
-    const approved = window.confirm('Bạn có chĂ¡º¯c muĂ¡»‘n xóa bài viết này?')
+    const approved = window.confirm('Bạn có chắc muốn xóa bài viết này?')
     if (!approved) return
 
     try {
@@ -651,18 +651,18 @@ export default function FeedPage() {
       if (editingPostId === post.id) {
         handleCancelEditPost()
       }
-      setErrorText('ĐĂ£ xóa bài viết.')
+      setErrorText('Đã xóa bài viết.')
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to delete post', error)
-      setErrorText('Không thể xóa bài viết. Vui lòng thĂ¡»  lại.')
+      setErrorText('Không thể xóa bài viết. Vui lòng thử lại.')
     }
   }
 
   const handleHidePost = (postId: number) => {
     setHiddenPostIds((prev) => ({ ...prev, [postId]: true }))
     setActivePostMenuId(null)
-    setErrorText('ĐĂ£ ẩn bài viết khĂ¡»i bĂ¡º£ng tin của bạn.')
+    setErrorText('Đã ẩn bài viết khỏi bảng tin của bạn.')
   }
 
   const handleReportPost = async (post: FeedPost) => {
@@ -675,15 +675,15 @@ export default function FeedPage() {
       await api.submitReport(token, {
         targetType: 'post',
         targetId: post.id,
-        reason: 'NĂ¡»™i dung không phù hĂ¡»£p trên bĂ¡º£ng tin',
-        details: `Bài viĂ¡º¿t tĂ¡»« ${post.authorName}`,
+        reason: 'Nội dung không phù hợp trên bảng tin',
+        details: `Bài viết từ ${post.authorName}`,
       })
       setActivePostMenuId(null)
-      setErrorText('ĐĂ£ gĂ¡» i báo cáo bài viết. CĂ¡º£m ơn bạn đã phĂ¡º£n hĂ¡»“i.')
+      setErrorText('Đã gửi báo cáo bài viết. Cảm ơn bạn đã phản hồi.')
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to report post', error)
-      setErrorText('Không thể gĂ¡» i báo cáo bài viết. Vui lòng thĂ¡»  lại.')
+      setErrorText('Không thể gửi báo cáo bài viết. Vui lòng thử lại.')
     }
   }
 
@@ -694,7 +694,7 @@ export default function FeedPage() {
         const result = typeof reader.result === 'string' ? reader.result : ''
         resolve(result.includes(',') ? result.split(',')[1] : result)
       }
-      reader.onerror = () => reject(new Error('Không thể đĂ¡»c file'))
+      reader.onerror = () => reject(new Error('Không thể đọc file'))
       reader.readAsDataURL(file)
     })
 
@@ -827,19 +827,19 @@ export default function FeedPage() {
             <div className={styles.brandIcon}>M</div>
             <div>
               <p className={styles.brandTitle}>ZChat</p>
-              <p className={styles.brandSub}>Mạng xã hĂ¡»™i chuyên nghiĂ¡»‡p</p>
+              <p className={styles.brandSub}>Mạng xã hội chuyên nghiệp</p>
             </div>
           </div>
 
           <nav className={styles.railNav}>
             <Link to="/feed" className={`${styles.railItem} ${styles.railItemActive}`}>
-              BĂ¡º£ng tin
+              Bảng tin
             </Link>
             <Link to={`/profile/${me?.id || 1}`} className={styles.railItem}>
-              HĂ¡»“ sơ
+              Hồ sơ
             </Link>
             <Link to="/messages" className={styles.railItem}>
-              Trò chuyĂ¡»‡n
+              Trò chuyện
             </Link>
           </nav>
 
@@ -864,14 +864,14 @@ export default function FeedPage() {
             </Link>
             <button type="button" className={styles.bottomBtn}>
               <CircleHelp size={15} />
-              <span>HĂ¡»— trĂ¡»£</span>
+              <span>Hỗ trợ</span>
             </button>
           </div>
         </aside>
 
         <section className={styles.mainCol}>
           <header className={styles.topBar}>
-            <input className={styles.searchInput} placeholder="Tìm kiĂ¡º¿m..." />
+            <input className={styles.searchInput} placeholder="Tìm kiếm..." />
             <div className={styles.topActions}>
               <button type="button" className={styles.iconBtn}>
                 <Bell size={16} />
@@ -885,14 +885,14 @@ export default function FeedPage() {
 
           {isGuestView ? (
             <section className={styles.guestBanner}>
-              <h3>ChĂ¡º¿ đĂ¡»™ khách vãng lai</h3>
-              <p>Bạn đang xem bĂ¡º£ng tin Ă¡»Ÿ chĂ¡º¿ đĂ¡»™ chĂ¡»‰ đĂ¡»c. Ä ăng nhĂ¡º­p để đăng bài, bình luĂ¡º­n, chia sẻ và nhĂ¡º¯n tin.</p>
+              <h3>Chế độ khách vãng lai</h3>
+              <p>Bạn đang xem bảng tin ở chế độ chỉ đọc. Đăng nhập để đăng bài, bình luận, chia sẻ và nhắn tin.</p>
               <div className={styles.guestBannerActions}>
                 <button type="button" className={styles.submitBtn} onClick={() => navigate('/auth/login?next=/feed')}>
-                  Ä ăng nhĂ¡º­p để tương tác
+                  Đăng nhập để tương tác
                 </button>
                 <Link to="/ai-chat" className={styles.softBtn}>
-                  <Smile size={15} /> Chat hĂ¡»— trĂ¡»£ vĂ¡»›i AI
+                  <Smile size={15} /> Chat hỗ trợ với AI
                 </Link>
               </div>
             </section>
@@ -910,14 +910,14 @@ export default function FeedPage() {
               <div className={styles.composerFoot}>
                 <div className={styles.composerActions}>
                   <button type="button" className={styles.softBtn} onClick={() => setIsModalOpen(true)}>
-                    <ImageIcon size={15} /> Ă¡º¢nh/Video
+                    <ImageIcon size={15} /> Ảnh/Video
                   </button>
                   <button type="button" className={styles.softBtn} onClick={() => setIsModalOpen(true)}>
-                    <Smile size={15} /> CĂ¡º£m xúc
+                    <Smile size={15} /> Cảm xúc
                   </button>
                 </div>
                 <button type="submit" className={styles.submitBtn} disabled={!content.trim() || isPosting}>
-                  {isPosting ? 'Ä ang đăng...' : 'Ä ăng'}
+                  {isPosting ? 'Đang đăng...' : 'Đăng'}
                 </button>
               </div>
             </form>
@@ -954,7 +954,7 @@ export default function FeedPage() {
                     <button
                       type="button"
                       className={styles.iconBtn}
-                      aria-label="Tùy chĂ¡»n bài viết"
+                      aria-label="Tùy chọn bài viết"
                       aria-expanded={activePostMenuId === post.id}
                       onClick={() => setActivePostMenuId((prev) => (prev === post.id ? null : post.id))}
                     >
@@ -972,7 +972,7 @@ export default function FeedPage() {
                             setActivePostMenuId(null)
                           }}
                         >
-                          Sao chép liên kĂ¡º¿t
+                          Sao chép liên kết
                         </button>
                         <button
                           type="button"
@@ -986,7 +986,7 @@ export default function FeedPage() {
                         {postIsManageable ? (
                           <>
                             <button type="button" onClick={() => handleStartEditPost(post)}>
-                              ChĂ¡»‰nh sĂ¡»­a bài viết
+                              Chỉnh sửa bài viết
                             </button>
                             <button
                               type="button"
@@ -999,7 +999,7 @@ export default function FeedPage() {
                         ) : (
                           <>
                             <button type="button" onClick={() => handleHidePost(post.id)}>
-                              Ă¡º¨n bài viết
+                              Ẩn bài viết
                             </button>
                             <button
                               type="button"
@@ -1029,7 +1029,7 @@ export default function FeedPage() {
                             : prev
                         )
                       }
-                      placeholder="NhĂ¡º­p nĂ¡»™i dung bài viết..."
+                      placeholder="Nhập nội dung bài viết..."
                     />
                     <input
                       value={postEditDraft.mediaUrl}
@@ -1043,7 +1043,7 @@ export default function FeedPage() {
                             : prev
                         )
                       }
-                      placeholder="Link media (tuĂ¡»³ chĂ¡»n)"
+                      placeholder="Link media (tuỳ chọn)"
                     />
                     <div className={styles.postEditRow}>
                       <select
@@ -1066,7 +1066,7 @@ export default function FeedPage() {
                         Hủy
                       </button>
                       <button type="button" onClick={() => void handleSaveEditPost(post)} disabled={isSavingPostEdit}>
-                        {isSavingPostEdit ? 'Ä ang lưu...' : 'Lưu'}
+                        {isSavingPostEdit ? 'Đang lưu...' : 'Lưu'}
                       </button>
                     </div>
                   </div>
@@ -1087,13 +1087,8 @@ export default function FeedPage() {
                 ) : null}
 
                 <div className={styles.postStats}>
-<<<<<<< HEAD
-                  <span>{post.reactionCount} lưĂ¡»£t thích</span>
-                  <span>{post.commentCount} bình luĂ¡º­n</span>
-=======
                   <span>{post.reactionCount} lượt cảm xúc</span>
                   <span>{post.commentCount} bình luận</span>
->>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
                 </div>
 
                 <div className={styles.postActions}>
@@ -1138,7 +1133,7 @@ export default function FeedPage() {
                     onClick={() => handleToggleComments(post.id)}
                     disabled={isGuestView}
                   >
-                    <MessageCircle size={16} /> {expandedComments[post.id] ? 'Ă¡º¨n bình luĂ¡º­n' : 'Bình luĂ¡º­n'}
+                    <MessageCircle size={16} /> {expandedComments[post.id] ? 'Ẩn bình luận' : 'Bình luận'}
                   </button>
                   <button
                     type="button"
@@ -1156,18 +1151,18 @@ export default function FeedPage() {
                       Chia sẻ lên trang cá nhân
                     </button>
                     <button type="button" onClick={() => handleCopyLink(post.id)}>
-                      Sao chép liên kĂ¡º¿t
+                      Sao chép liên kết
                     </button>
                     {shareConversations.length > 0 ? (
                       <div className={styles.shareToMessageList}>
-                        <p>Chia sẻ qua tin nhĂ¡º¯n:</p>
+                        <p>Chia sẻ qua tin nhắn:</p>
                         {shareConversations.slice(0, 6).map((conv) => (
                           <button
                             key={conv.id}
                             type="button"
                             onClick={() => handleShareToConversation(post, conv.id)}
                           >
-                            {conv.name || `CuĂ¡»™c trò chuyĂ¡»‡n ${conv.id}`}
+                            {conv.name || `Cuộc trò chuyện ${conv.id}`}
                           </button>
                         ))}
                       </div>
@@ -1182,21 +1177,21 @@ export default function FeedPage() {
                       onChange={(event) =>
                         setCommentInputs((prev) => ({ ...prev, [post.id]: event.target.value }))
                       }
-                      placeholder="ViĂ¡º¿t bình luĂ¡º­n nhanh..."
+                      placeholder="Viết bình luận nhanh..."
                     />
                     <button type="button" onClick={() => handleAddComment(post.id)} disabled={isCommenting[post.id]}>
-                      {isCommenting[post.id] ? 'Ä ang gĂ¡» i...' : 'GĂ¡»­i'}
+                      {isCommenting[post.id] ? 'Đang gửi...' : 'Gửi'}
                     </button>
                   </div>
                 ) : (
                   <div className={styles.guestPostHint}>
-                    Ä ăng nhĂ¡º­p để bình luĂ¡º­n và chia sẻ bài viết này.
+                    Đăng nhập để bình luận và chia sẻ bài viết này.
                   </div>
                 )}
 
                 {expandedComments[post.id] ? (
                   <div className={`${styles.commentsList} ${styles.commentsListOpen}`}>
-                    {loadingComments[post.id] ? <p className={styles.commentState}>Ä ang tĂ¡º£i bình luĂ¡º­n...</p> : null}
+                    {loadingComments[post.id] ? <p className={styles.commentState}>Đang tải bình luận...</p> : null}
                     {postComments.map((comment) => (
                       <div key={comment.id} className={styles.commentItem}>
                         <div className={styles.commentAvatar}>{(comment.authorName[0] || 'U').toUpperCase()}</div>
@@ -1209,7 +1204,7 @@ export default function FeedPage() {
                       </div>
                     ))}
                     {!loadingComments[post.id] && postComments.length === 0 ? (
-                      <p className={styles.commentState}>Chưa có bình luĂ¡º­n nào.</p>
+                      <p className={styles.commentState}>Chưa có bình luận nào.</p>
                     ) : null}
                     {!loadingComments[post.id] && hasMoreComments ? (
                       <button
@@ -1219,14 +1214,14 @@ export default function FeedPage() {
                         disabled={loadingMoreComments[post.id]}
                       >
                         {loadingMoreComments[post.id]
-                          ? 'Ä ang tĂ¡º£i thêm...'
+                          ? 'Đang tải thêm...'
                           : hiddenCount > 0
                             ? `Xem thêm ${hiddenCount} cmt`
                             : 'Xem thêm cmt'}
                       </button>
                     ) : null}
                     <button type="button" className={styles.viewDetailBtn} onClick={() => navigate(`/posts/${post.id}`)}>
-                      Xem chi tiết bình luĂ¡º­n
+                      Xem chi tiết bình luận
                     </button>
                   </div>
                 ) : null}
@@ -1234,23 +1229,23 @@ export default function FeedPage() {
               )
             })}
 
-            {filteredPosts.length === 0 && <div className={styles.empty}>Chưa có bài viết nào trong bĂ¡º£ng tin.</div>}
+            {filteredPosts.length === 0 && <div className={styles.empty}>Chưa có bài viết nào trong bảng tin.</div>}
             {filteredPosts.length > 0 && hasMorePosts ? (
               <div ref={feedBottomSentinelRef} className={styles.feedLoadingMore}>
-                Ä ang tĂ¡º£i thêm bài viết...
+                Đang tải thêm bài viết...
               </div>
             ) : null}
             {filteredPosts.length > 0 && !hasMorePosts ? (
-              <div className={styles.feedEndMarker}>Bạn đã xem hĂ¡º¿t bài viết hiĂ¡»‡n có.</div>
+              <div className={styles.feedEndMarker}>Bạn đã xem hết bài viết hiện có.</div>
             ) : null}
           </div>
         </section>
 
         <aside className={styles.rightCol}>
           <section className={styles.widget}>
-            <h3>GĂ¡»£i ý cho bạn</h3>
+            <h3>Gợi ý cho bạn</h3>
             {suggestedPeople.length === 0 ? (
-              <p className={styles.suggestionMeta}>Chưa đĂ¡»§ dĂ¡»¯ liĂ¡»‡u để gĂ¡»£i ý ngưĂ¡»i dùng.</p>
+              <p className={styles.suggestionMeta}>Chưa đủ dữ liệu để gợi ý người dùng.</p>
             ) : (
               suggestedPeople.map((person) => (
                 <div key={person.id} className={styles.suggestionItem}>
@@ -1260,7 +1255,7 @@ export default function FeedPage() {
                     <p className={styles.suggestionMeta}>{person.postCount} bài viết gần đây</p>
                   </div>
                   <Link to={`/profile/${person.id}`} className={styles.followBtn}>
-                    Xem hĂ¡»“ sơ
+                    Xem hồ sơ
                   </Link>
                 </div>
               ))
@@ -1268,9 +1263,9 @@ export default function FeedPage() {
           </section>
 
           <section className={styles.widget}>
-            <h3>Xu hưĂ¡»›ng hot</h3>
+            <h3>Xu hướng hot</h3>
             {hotTopics.length === 0 ? (
-              <p className={styles.topicCount}>Chưa có hashtag nào trong dĂ¡»¯ liĂ¡»‡u hiĂ¡»‡n tại.</p>
+              <p className={styles.topicCount}>Chưa có hashtag nào trong dữ liệu hiện tại.</p>
             ) : (
               hotTopics.map((topic) => (
                 <div key={topic.tag} className={styles.topicItem}>
@@ -1300,13 +1295,13 @@ export default function FeedPage() {
             <div className={styles.modalUser}>
               <div className={styles.avatarBadge}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
               <div>
-                <b>{me?.fullName || 'NgưĂ¡»i dùng'}</b>
+                <b>{me?.fullName || 'Người dùng'}</b>
                 <small>{modalVisibility === 'public' ? 'Công khai' : 'Riêng tư'}</small>
               </div>
             </div>
 
             <label className={styles.visibilityRow}>
-              <span>QuyĂ¡»n riêng tư</span>
+              <span>Quyền riêng tư</span>
               <select
                 value={modalVisibility}
                 onChange={(event) => setModalVisibility(event.target.value as 'public' | 'private')}
@@ -1327,7 +1322,7 @@ export default function FeedPage() {
 
             {activeComposerPanel === 'emoji' && showEmojiTray ? (
               <div className={styles.emojiTray}>
-                {['Ä‘Ÿ˜€', 'Ä‘Ÿ˜', 'Ä‘Ÿ”¥', 'Ä‘Ÿ‰', 'Ä‘Ÿ’™', 'Ä‘Ÿ‘', 'Ä‘Ÿ¥³', 'Ä‘Ÿ¤'].map((emoji) => (
+                {['😀', '😍', '🔥', '🎉', '💙', '👍', '🥳', '🤝'].map((emoji) => (
                   <button key={emoji} type="button" onClick={() => appendEmoji(emoji)}>
                     {emoji}
                   </button>
@@ -1336,9 +1331,6 @@ export default function FeedPage() {
             ) : null}
 
             {modalMediaUrl ? (
-<<<<<<< HEAD
-              <p className={styles.metaPreview}>ĐĂ£ chĂ¡»n media: {modalMediaUrl}</p>
-=======
               <div className={styles.modalMediaPreview}>
                 {isVideoMediaUrl(modalMediaUrl) ? (
                   <video src={modalMediaUrl} controls className={styles.modalMediaPreviewAsset} />
@@ -1354,20 +1346,19 @@ export default function FeedPage() {
                   />
                 )}
               </div>
->>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
             ) : null}
             {modalTaggedFriend ? (
-              <p className={styles.metaPreview}>ĐĂ£ gĂ¡º¯n thẻ: {modalTaggedFriend}</p>
+              <p className={styles.metaPreview}>Đã gắn thẻ: {modalTaggedFriend}</p>
             ) : null}
-            {modalLocation ? <p className={styles.metaPreview}>ĐĂ¡»‹a điĂ¡»ƒm: {modalLocation}</p> : null}
+            {modalLocation ? <p className={styles.metaPreview}>Địa điểm: {modalLocation}</p> : null}
 
             {activeComposerPanel === 'tag' ? (
               <div className={styles.modalSection}>
-                <p>GĂ¡º¯n thẻ bạn bè</p>
+                <p>Gắn thẻ bạn bè</p>
                 <input
                   value={tagKeyword}
                   onChange={(event) => setTagKeyword(event.target.value)}
-                  placeholder="NhĂ¡º­p tên, ví dĂ¡»¥: TuĂ¡º¥n"
+                  placeholder="Nhập tên, ví dụ: Tuấn"
                 />
                 {tagSuggestions.length > 0 ? (
                   <div className={styles.dropdownList}>
@@ -1391,11 +1382,11 @@ export default function FeedPage() {
 
             {activeComposerPanel === 'location' ? (
               <div className={styles.modalSection}>
-                <p>ĐĂ¡»‹a điĂ¡»ƒm (ViĂ¡»‡t Nam)</p>
+                <p>Địa điểm (Việt Nam)</p>
                 <input
                   value={locationKeyword}
                   onChange={(event) => setLocationKeyword(event.target.value)}
-                  placeholder="NhĂ¡º­p Hà để gĂ¡»£i ý Hà NĂ¡»™i, Hà Nam..."
+                  placeholder="Nhập Hà để gợi ý Hà Nội, Hà Nam..."
                 />
                 <div className={styles.dropdownList}>
                   {locationSuggestions.map((item) => (
@@ -1417,7 +1408,7 @@ export default function FeedPage() {
             <div className={styles.modalTools}>
               <span>Thêm vào bài viết của bạn</span>
               <div>
-                <button type="button" onClick={handleChooseMediaFile} title="Thêm Ă¡º£nh/video" disabled={uploadingMedia}>
+                <button type="button" onClick={handleChooseMediaFile} title="Thêm ảnh/video" disabled={uploadingMedia}>
                   <ImageIcon size={16} />
                 </button>
                 <button
@@ -1430,7 +1421,7 @@ export default function FeedPage() {
                       return next
                     })
                   }
-                  title="GĂ¡º¯n thẻ bạn bè"
+                  title="Gắn thẻ bạn bè"
                 >
                   <UserPlus size={16} />
                 </button>
@@ -1441,7 +1432,7 @@ export default function FeedPage() {
                     setActiveComposerPanel((prev) => (prev === 'emoji' ? null : 'emoji'))
                     setShowEmojiTray((prev) => !prev)
                   }}
-                  title="Thêm cĂ¡º£m xúc"
+                  title="Thêm cảm xúc"
                 >
                   <Smile size={16} />
                 </button>
@@ -1455,7 +1446,7 @@ export default function FeedPage() {
                       return next
                     })
                   }
-                  title="Thêm vĂ¡»‹ trí"
+                  title="Thêm vị trí"
                 >
                   <MapPin size={16} />
                 </button>
@@ -1464,7 +1455,7 @@ export default function FeedPage() {
                     type="button"
                     className={composerMoreMenuOpen ? styles.modalToolBtnActive : ''}
                     onClick={() => setComposerMoreMenuOpen((prev) => !prev)}
-                    title="Tùy chĂ¡»n khác"
+                    title="Tùy chọn khác"
                   >
                     <MoreHorizontal size={16} />
                   </button>
@@ -1478,7 +1469,7 @@ export default function FeedPage() {
                           setComposerMoreMenuOpen(false)
                         }}
                       >
-                        QuyĂ¡»n riêng tư: Công khai
+                        Quyền riêng tư: Công khai
                       </button>
                       <button
                         type="button"
@@ -1488,7 +1479,7 @@ export default function FeedPage() {
                           setComposerMoreMenuOpen(false)
                         }}
                       >
-                        QuyĂ¡»n riêng tư: Riêng tư
+                        Quyền riêng tư: Riêng tư
                       </button>
                       <button
                         type="button"
@@ -1498,7 +1489,7 @@ export default function FeedPage() {
                         }}
                         disabled={!modalMediaUrl}
                       >
-                        Gỡ Ă¡º£nh/video đã chĂ¡»n
+                        Gỡ ảnh/video đã chọn
                       </button>
                       <button
                         type="button"
@@ -1510,7 +1501,7 @@ export default function FeedPage() {
                         }}
                         disabled={!modalTaggedFriend}
                       >
-                        Gỡ gĂ¡º¯n thẻ bạn bè
+                        Gỡ gắn thẻ bạn bè
                       </button>
                       <button
                         type="button"
@@ -1521,7 +1512,7 @@ export default function FeedPage() {
                         }}
                         disabled={!modalLocation}
                       >
-                        Gỡ vĂ¡»‹ trí
+                        Gỡ vị trí
                       </button>
                     </div>
                   ) : null}
@@ -1534,7 +1525,7 @@ export default function FeedPage() {
               className={styles.modalSubmit}
               disabled={(!modalContent.trim() && !modalMediaUrl.trim()) || isPosting}
             >
-              {isPosting ? 'Ä ang đăng...' : 'Ä ăng'}
+              {isPosting ? 'Đang đăng...' : 'Đăng'}
             </button>
           </form>
         </div>

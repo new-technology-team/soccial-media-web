@@ -24,19 +24,19 @@ export default function AuthLayout({
                 </div>
                 <h1 className={styles.brandTitle}>ZChat</h1>
                 <p className={styles.brandCopy}>
-                  Kết nối mọi lúc, mọi nơi vĂ¡»›i nền tĂ¡º£ng nhĂ¡º¯n tin bĂ¡º£o mĂ¡º­t và mưĂ¡»£t mà nhĂ¡º¥t.
+                  Kết nối mọi lúc, mọi nơi với nền tảng nhắn tin bảo mật và mượt mà nhất.
                 </p>
               </div>
               <div className={styles.leftCards}>
                 <div className={styles.leftCard}>
                   <Shield size={20} />
-                  <h3 className="font-bold">BĂ¡º£o mĂ¡º­t</h3>
-                  <p>Mã hóa đầu cuối cho cuĂ¡»™c trò chuyĂ¡»‡n.</p>
+                  <h3 className="font-bold">Bảo mật</h3>
+                  <p>Mã hóa đầu cuối cho cuộc trò chuyện.</p>
                 </div>
                 <div className={styles.leftCard}>
                   <Gauge size={20} />
-                  <h3 className="font-bold">Tốc đĂ¡»™</h3>
-                  <p>GĂ¡» i tin nhĂ¡º¯n tĂ¡»©c thì, phĂ¡º£n hĂ¡»“i liền mạch.</p>
+                  <h3 className="font-bold">Tốc độ</h3>
+                  <p>Gửi tin nhắn tức thì, phản hồi liền mạch.</p>
                 </div>
               </div>
             </>
@@ -45,16 +45,16 @@ export default function AuthLayout({
               <div>
                 <h1 className={styles.brandTitle} style={{ color: '#0052ce' }}>ZChat</h1>
                 <p className={styles.brandCopy}>
-                  Kết nối vĂ¡»›i cĂ¡»™ng đĂ¡»“ng của bạn trong mĂ¡»™t không gian rõ ràng và tĂ¡º­p trung.
+                  Kết nối với cộng đồng của bạn trong một không gian rõ ràng và tập trung.
                 </p>
               </div>
               <div>
                 <h2 className={styles.heading}>
-                  TrĂ¡º£i nghiĂ¡»‡m
+                  Trải nghiệm
                   <br />
-                  giao diĂ¡»‡n mưĂ¡»£t mà.
+                  giao diện mượt mà.
                 </h2>
-                <p className={styles.loginOnline}>+2.4k ngÆ°á» i dùng đang trĂ¡»±c tuyến</p>
+                <p className={styles.loginOnline}>+2.4k người dùng đang trực tuyến</p>
               </div>
               <div className={styles.loginBlob} />
             </>
@@ -68,8 +68,8 @@ export default function AuthLayout({
 
       <footer className={styles.footer}>
         <span>Quyền riêng tư</span>
-        <span>Ä iều khoĂ¡º£n</span>
-        <span>TrĂ¡»£ giúp</span>
+        <span>Điều khoản</span>
+        <span>Trợ giúp</span>
       </footer>
     </div>
   )

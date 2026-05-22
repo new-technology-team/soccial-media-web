@@ -72,7 +72,7 @@ export default function ProfilePage() {
   const profileName =
     me?.id && String(me.id) === profileId
       ? me.fullName
-      : userPosts[0]?.authorName || profileFriend?.fullName || `NgưĂ¡»i dùng #${profileId}`
+      : userPosts[0]?.authorName || profileFriend?.fullName || `Người dùng #${profileId}`
   const profileAvatar =
     me?.id && String(me.id) === profileId
       ? me.avatarUrl
@@ -87,29 +87,29 @@ export default function ProfilePage() {
   const roleText =
     isOwnProfile && me
       ? me.role === 'admin'
-        ? 'QuĂ¡º£n trĂ¡»‹ viên hĂ¡»‡ thống'
+        ? 'Quản trị viên hệ thống'
         : me.role === 'moderator'
-          ? 'KiĂ¡»ƒm duyĂ¡»‡t viên cĂ¡»™ng đĂ¡»“ng'
+          ? 'Kiểm duyệt viên cộng đồng'
           : 'Thành viên ZChat'
       : profileFriend?.role === 'admin'
-        ? 'QuĂ¡º£n trĂ¡»‹ viên hĂ¡»‡ thống'
+        ? 'Quản trị viên hệ thống'
         : profileFriend?.role === 'moderator'
-          ? 'KiĂ¡»ƒm duyĂ¡»‡t viên cĂ¡»™ng đĂ¡»“ng'
+          ? 'Kiểm duyệt viên cộng đồng'
           : 'Thành viên ZChat'
 
   const accountText =
     isOwnProfile && me
       ? me.accountStatus === 'active'
-        ? 'Tài khoĂ¡º£n hoạt đĂ¡»™ng'
+        ? 'Tài khoản hoạt động'
         : me.accountStatus === 'restricted'
-          ? 'Tài khoĂ¡º£n bĂ¡»‹ hạn chĂ¡º¿'
+          ? 'Tài khoản bị hạn chế'
           : me.accountStatus === 'hidden'
-            ? 'Tài khoĂ¡º£n đang ẩn'
-            : 'Tài khoĂ¡º£n đã xóa'
+            ? 'Tài khoản đang ẩn'
+            : 'Tài khoản đã xóa'
       : friendStatus === 'accepted'
-        ? 'ĐĂ£ kĂ¡º¿t bạn'
+        ? 'Đã kết bạn'
         : friendStatus === 'pending'
-          ? 'Ä ang chĂ¡» xác nhĂ¡º­n'
+          ? 'Đang chờ xác nhận'
           : 'Chưa kết nối'
 
   const handleRequestFriend = async () => {
@@ -119,7 +119,7 @@ export default function ProfilePage() {
       await api.requestFriend(token, Number(profileId))
       setFriendStatus('pending')
     } catch (error) {
-      console.error('Không thể gĂ¡» i lĂ¡»i mĂ¡»i kĂ¡º¿t bạn', error)
+      console.error('Không thể gửi lời mời kết bạn', error)
     } finally {
       setSocialActionBusy(false)
     }
@@ -144,7 +144,7 @@ export default function ProfilePage() {
       const created = await api.createDirectConversation(token, Number(profileId))
       navigate(`/messages?conversation=${created.conversation.id}`)
     } catch (error) {
-      console.error('Không thể mĂ¡»Ÿ hĂ¡»™i thoại', error)
+      console.error('Không thể mở hội thoại', error)
     } finally {
       setSocialActionBusy(false)
     }
@@ -178,12 +178,12 @@ export default function ProfilePage() {
           </div>
           {isOwnProfile ? (
             <Link to="/profile/edit" className={styles.editBtn}>
-              ChĂ¡»‰nh sĂ¡»­a trang cá nhân
+              Chỉnh sửa trang cá nhân
             </Link>
           ) : (
             <div className={styles.profileActionGroup}>
               <button type="button" className={styles.editBtn} onClick={handleMessageUser} disabled={socialActionBusy}>
-                {socialActionBusy ? 'Ä ang mĂ¡»Ÿ...' : 'NhĂ¡º¯n tin'}
+                {socialActionBusy ? 'Đang mở...' : 'Nhắn tin'}
               </button>
               <button
                 type="button"
@@ -191,7 +191,7 @@ export default function ProfilePage() {
                 onClick={handleRequestFriend}
                 disabled={socialActionBusy || friendStatus !== 'none'}
               >
-                {friendStatus === 'accepted' ? 'Bạn bè' : friendStatus === 'pending' ? 'ĐĂ£ gĂ¡» i lĂ¡»i mĂ¡»i' : 'Kết bạn'}
+                {friendStatus === 'accepted' ? 'Bạn bè' : friendStatus === 'pending' ? 'Đã gửi lời mời' : 'Kết bạn'}
               </button>
             </div>
           )}
@@ -199,16 +199,16 @@ export default function ProfilePage() {
 
         <nav className={styles.tabs}>
           <button type="button" className={`${styles.tab} ${styles.tabActive}`}>
-            Bài viĂ¡º¿t
+            Bài viết
           </button>
           <button type="button" className={styles.tab}>
-            GiĂ¡»›i thiĂ¡»‡u
+            Giới thiệu
           </button>
           <button type="button" className={styles.tab}>
             Bạn bè
           </button>
           <button type="button" className={styles.tab}>
-            Ă¡º¢nh
+            Ảnh
           </button>
           <button type="button" className={styles.tab}>
             Video
@@ -218,7 +218,7 @@ export default function ProfilePage() {
         <div className={styles.grid}>
           <aside className={styles.leftCol}>
             <section className={styles.card}>
-              <h3>GiĂ¡»›i thiĂ¡»‡u</h3>
+              <h3>Giới thiệu</h3>
               <ul className={styles.infoList}>
                 <li>
                   <Settings size={16} /> Vai trò: <strong>{roleText}</strong>
@@ -227,23 +227,23 @@ export default function ProfilePage() {
                   <Rss size={16} /> Trạng thái: <strong>{accountText}</strong>
                 </li>
                 <li>
-                  <Rss size={16} /> Bài viĂ¡º¿t công khai: <strong>{userPosts.length}</strong>
+                  <Rss size={16} /> Bài viết công khai: <strong>{userPosts.length}</strong>
                 </li>
                 <li>
-                  <Rss size={16} /> TĂ¡»•ng tương tác: <strong>{totalInteractions}</strong>
+                  <Rss size={16} /> Tổng tương tác: <strong>{totalInteractions}</strong>
                 </li>
               </ul>
               {isOwnProfile ? (
                 <Link to="/profile/edit" className={styles.lightBtn}>
-                  ChĂ¡»‰nh sĂ¡»­a chi tiĂ¡º¿t
+                  Chỉnh sửa chi tiết
                 </Link>
               ) : null}
             </section>
 
             <section className={styles.card}>
               <div className={styles.cardHead}>
-                <h3>Ă¡º¢nh</h3>
-                <Link to="/media">Xem tĂ¡º¥t cĂ¡º£</Link>
+                <h3>Ảnh</h3>
+                <Link to="/media">Xem tất cả</Link>
               </div>
               <div className={styles.photosGrid}>
                 {profileMedia.map((post) => (
@@ -258,16 +258,16 @@ export default function ProfilePage() {
                     }}
                   />
                 ))}
-                {profileMedia.length === 0 ? <p className={styles.empty}>Chưa có Ă¡º£nh/video.</p> : null}
+                {profileMedia.length === 0 ? <p className={styles.empty}>Chưa có ảnh/video.</p> : null}
               </div>
             </section>
 
             <section className={styles.card}>
               <div className={styles.cardHead}>
                 <h3>Bạn bè</h3>
-                <Link to="/friends">Xem tĂ¡º¥t cĂ¡º£</Link>
+                <Link to="/friends">Xem tất cả</Link>
               </div>
-              <p className={styles.friendsCount}>{acceptedFriends.length} ngưĂ¡»i bạn</p>
+              <p className={styles.friendsCount}>{acceptedFriends.length} người bạn</p>
               <div className={styles.friendsGrid}>
                 {acceptedFriends.slice(0, 6).map((friend) => (
                   <div key={friend.id} className={styles.friendItem}>
@@ -299,22 +299,22 @@ export default function ProfilePage() {
               <div className={styles.composerTop}>
                 <div className={styles.avatarMini}>{initials}</div>
                 <button type="button" className={styles.askBtn}>
-                  {profileName.split(' ')[0]} ơi, bạn đang nghĩ gì thĂ¡º¿?
+                  {profileName.split(' ')[0]} ơi, bạn đang nghĩ gì thế?
                 </button>
               </div>
               <div className={styles.composerActions}>
-                <button type="button">Video trĂ¡»±c tiĂ¡º¿p</button>
-                <button type="button">Ă¡º¢nh/Video</button>
-                <button type="button">CĂ¡º£m xúc/Hoạt đĂ¡»™ng</button>
+                <button type="button">Video trực tiếp</button>
+                <button type="button">Ảnh/Video</button>
+                <button type="button">Cảm xúc/Hoạt động</button>
               </div>
             </section>
 
             <section className={styles.card}>
               <div className={styles.postsHead}>
-                <h3>Bài viĂ¡º¿t</h3>
+                <h3>Bài viết</h3>
                 <div className={styles.headActions}>
-                  <button type="button">BĂ¡»™ lĂ¡»c</button>
-                  <button type="button">QuĂ¡º£n lý bài viết</button>
+                  <button type="button">Bộ lọc</button>
+                  <button type="button">Quản lý bài viết</button>
                 </div>
               </div>
 
@@ -343,12 +343,12 @@ export default function ProfilePage() {
                       />
                     ) : null}
                     <div className={styles.postFoot}>
-                      <span>{post.reactionCount} lưĂ¡»£t thích</span>
-                      <span>{post.commentCount} bình luĂ¡º­n</span>
+                      <span>{post.reactionCount} lượt thích</span>
+                      <span>{post.commentCount} bình luận</span>
                     </div>
                   </article>
                 ))}
-                {userPosts.length === 0 ? <p className={styles.empty}>NgưĂ¡»i dùng này chưa có bài viết nào.</p> : null}
+                {userPosts.length === 0 ? <p className={styles.empty}>Người dùng này chưa có bài viết nào.</p> : null}
               </div>
             </section>
           </section>

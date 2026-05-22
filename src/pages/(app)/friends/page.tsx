@@ -13,12 +13,12 @@ type FriendsTab = 'received' | 'sent' | 'accepted'
 const formatRelativeTime = (iso: string) => {
   const date = new Date(iso)
   const diffMins = Math.floor((Date.now() - date.getTime()) / 60000)
-  if (diffMins < 1) return 'VĂ¡»«a xong'
-  if (diffMins < 60) return `${diffMins} phút trưĂ¡»›c`
+  if (diffMins < 1) return 'Vừa xong'
+  if (diffMins < 60) return `${diffMins} phút trước`
   const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours} giĂ¡» trưĂ¡»›c`
+  if (diffHours < 24) return `${diffHours} giờ trước`
   const diffDays = Math.floor(diffHours / 24)
-  return `${diffDays} ngày trưĂ¡»›c`
+  return `${diffDays} ngày trước`
 }
 
 export default function FriendsPage() {
@@ -36,8 +36,8 @@ export default function FriendsPage() {
 
   useEffect(() => {
     reloadFriends().catch((error) => {
-      console.error('Không thể tĂ¡º£i danh sách bạn bè', error)
-      setNotice({ type: 'error', text: 'Không thể tĂ¡º£i danh sách bạn bè. Vui lòng thĂ¡»  lại.' })
+      console.error('Không thể tải danh sách bạn bè', error)
+      setNotice({ type: 'error', text: 'Không thể tải danh sách bạn bè. Vui lòng thử lại.' })
     })
   }, [reloadFriends])
 
@@ -63,10 +63,10 @@ export default function FriendsPage() {
     try {
       await api.acceptFriend(token, id)
       await reloadFriends()
-      setNotice({ type: 'success', text: 'ĐĂ£ chĂ¡º¥p nhĂ¡º­n lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.' })
+      setNotice({ type: 'success', text: 'Đã chấp nhận lời mời kết bạn.' })
     } catch (error) {
-      console.error('Không thể chĂ¡º¥p nhĂ¡º­n lĂ¡»i mĂ¡»i kĂ¡º¿t bạn', error)
-      setNotice({ type: 'error', text: 'Không thể chĂ¡º¥p nhĂ¡º­n lĂ¡»i mĂ¡»i. Vui lòng thĂ¡»  lại.' })
+      console.error('Không thể chấp nhận lời mời kết bạn', error)
+      setNotice({ type: 'error', text: 'Không thể chấp nhận lời mời. Vui lòng thử lại.' })
     } finally {
       setBusyIds((prev) => prev.filter((item) => item !== id))
     }
@@ -78,10 +78,10 @@ export default function FriendsPage() {
     try {
       await api.deleteFriend(token, id)
       await reloadFriends()
-      setNotice({ type: 'success', text: 'ĐĂ£ cĂ¡º­p nhĂ¡º­t danh sách kĂ¡º¿t bạn.' })
+      setNotice({ type: 'success', text: 'Đã cập nhật danh sách kết bạn.' })
     } catch (error) {
-      console.error('Không thể xóa lĂ¡»i mĂ¡»i hoặc hủy kĂ¡º¿t bạn', error)
-      setNotice({ type: 'error', text: 'Không thể cĂ¡º­p nhĂ¡º­t lĂ¡»i mĂ¡»i kĂ¡º¿t bạn.' })
+      console.error('Không thể xóa lời mời hoặc hủy kết bạn', error)
+      setNotice({ type: 'error', text: 'Không thể cập nhật lời mời kết bạn.' })
     } finally {
       setBusyIds((prev) => prev.filter((item) => item !== id))
     }
@@ -93,8 +93,8 @@ export default function FriendsPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div>
-          <h1>LĂ¡»i mĂ¡»i kĂ¡º¿t bạn</h1>
-          <p>QuĂ¡º£n lý các kết nối đến và đi của bạn</p>
+          <h1>Lời mời kết bạn</h1>
+          <p>Quản lý các kết nối đến và đi của bạn</p>
         </div>
         <div className={styles.tabs}>
           <button
@@ -102,14 +102,14 @@ export default function FriendsPage() {
             className={activeTab === 'received' ? styles.tabActive : ''}
             onClick={() => setActiveTab('received')}
           >
-            ĐĂ£ nhĂ¡º­n
+            Đã nhận
           </button>
           <button
             type="button"
             className={activeTab === 'sent' ? styles.tabActive : ''}
             onClick={() => setActiveTab('sent')}
           >
-            ĐĂ£ gĂ¡» i
+            Đã gửi
           </button>
           <button
             type="button"
@@ -140,7 +140,7 @@ export default function FriendsPage() {
                   <span>{formatRelativeTime(item.createdAt)}</span>
                 </div>
                 <p>
-                  <Users size={14} /> {item.email || item.phone || 'Bạn có thĂ¡»ƒ nhĂ¡º¯n tin ngay'}
+                  <Users size={14} /> {item.email || item.phone || 'Bạn có thể nhắn tin ngay'}
                 </p>
                 {activeTab === 'received' ? (
                   <div className={styles.actions}>
@@ -150,7 +150,7 @@ export default function FriendsPage() {
                       onClick={() => handleAccept(item.id)}
                       disabled={busyIds.includes(item.id)}
                     >
-                      {busyIds.includes(item.id) ? 'Ä ang xĂ¡»  lý...' : 'ChĂ¡º¥p nhĂ¡º­n'}
+                      {busyIds.includes(item.id) ? 'Đang xử lý...' : 'Chấp nhận'}
                     </button>
                     <button
                       type="button"
@@ -158,31 +158,31 @@ export default function FriendsPage() {
                       onClick={() => handleDelete(item.id)}
                       disabled={busyIds.includes(item.id)}
                     >
-                      TĂ¡»Ă¡»ừ chối
+                      Từ chối
                     </button>
                   </div>
                 ) : activeTab === 'sent' ? (
                   <div className={styles.actions}>
-                    <span className={styles.sentLabel}>ĐĂ£ gĂ¡» i lĂ¡»i mĂ¡»i</span>
+                    <span className={styles.sentLabel}>Đã gửi lời mời</span>
                     <button
                       type="button"
                       className={styles.declineBtn}
                       onClick={() => handleDelete(item.id)}
                       disabled={busyIds.includes(item.id)}
                     >
-                      Hủy lĂ¡»i mĂ¡»i
+                      Hủy lời mời
                     </button>
                   </div>
                 ) : (
                   <div className={styles.actions}>
-                    <span className={styles.sentLabel}>ĐĂ£ là bạn bè</span>
+                    <span className={styles.sentLabel}>Đã là bạn bè</span>
                     <button
                       type="button"
                       className={styles.declineBtn}
                       onClick={() => handleDelete(item.id)}
                       disabled={busyIds.includes(item.id)}
                     >
-                      Hủy kĂ¡º¿t bạn
+                      Hủy kết bạn
                     </button>
                   </div>
                 )}
@@ -190,18 +190,18 @@ export default function FriendsPage() {
             </article>
           ))}
 
-          {visibleCards.length === 0 ? <p className={styles.empty}>Không còn lĂ¡»i mĂ¡»i nào trong mĂ¡»¥c này.</p> : null}
+          {visibleCards.length === 0 ? <p className={styles.empty}>Không còn lời mời nào trong mục này.</p> : null}
         </section>
 
         <aside className={styles.sideCol}>
           <div className={styles.statCard}>
-            <p>TĂ¡»•ng chĂ¡» xác nhĂ¡º­n</p>
+            <p>Tổng chờ xác nhận</p>
             <strong>{receivedRequests.length}</strong>
             <small>{acceptedFriends.length} bạn bè đang kết nối</small>
           </div>
 
           <div className={styles.suggestCard}>
-            <h3>GĂ¡»£i ý</h3>
+            <h3>Gợi ý</h3>
             <div className={styles.suggestList}>
               {suggestions.map((item) => (
                 <Link key={item.id} to={`/profile/${item.id}`} className={styles.suggestItem}>
@@ -215,7 +215,7 @@ export default function FriendsPage() {
               ))}
             </div>
             <Link to="/explore" className={styles.allSuggestBtn}>
-              Xem tĂ¡º¥t cĂ¡º£ gĂ¡»£i ý
+              Xem tất cả gợi ý
             </Link>
           </div>
         </aside>

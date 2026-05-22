@@ -24,7 +24,7 @@ export default function AdminUserStatsPage() {
         setError('')
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Không thể tĂ¡º£i dĂ¡»¯ liĂ¡»‡u ngưĂ¡»i dùng admin')
+        setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu người dùng admin')
       })
   }, [token])
 
@@ -50,21 +50,21 @@ export default function AdminUserStatsPage() {
   const newestUsers = useMemo(() => users.slice(0, 8), [users])
 
   if (user?.role !== 'admin') {
-    return <div className={styles.denied}>Bạn không có quyĂ¡»n truy cĂ¡º­p khu vĂ¡»±c admin.</div>
+    return <div className={styles.denied}>Bạn không có quyền truy cập khu vực admin.</div>
   }
 
   return (
     <div className={styles.page}>
       <header className={styles.hero}>
         <p className={styles.eyebrow}>Admin CRM / Users</p>
-        <h1>QuĂ¡º£n lý ngưĂ¡»i dùng</h1>
-        <p>Theo dõi vai trò, trạng thái tài khoĂ¡º£n và biĂ¡º¿n đĂ¡»™ng user trong cùng giao diĂ¡»‡n điĂ¡»u hành admin.</p>
+        <h1>Quản lý người dùng</h1>
+        <p>Theo dõi vai trò, trạng thái tài khoản và biến động user trong cùng giao diện điều hành admin.</p>
       </header>
 
       <section className={styles.grid}>
         <article className={styles.card}>
           <div className={styles.cardTop}>
-            <span>TĂ¡»•ng ngưĂ¡»i dùng</span>
+            <span>Tổng người dùng</span>
             <Users size={18} />
           </div>
           <strong>{analytics.totalUsers.toLocaleString('vi-VN')}</strong>
@@ -72,7 +72,7 @@ export default function AdminUserStatsPage() {
 
         <article className={styles.card}>
           <div className={styles.cardTop}>
-            <span>Tài khoĂ¡º£n hoạt đĂ¡»™ng</span>
+            <span>Tài khoản hoạt động</span>
             <UserCheck2 size={18} />
           </div>
           <strong>{analytics.activeUsers.toLocaleString('vi-VN')}</strong>
@@ -80,7 +80,7 @@ export default function AdminUserStatsPage() {
 
         <article className={styles.card}>
           <div className={styles.cardTop}>
-            <span>Tài khoĂ¡º£n hạn chĂ¡º¿</span>
+            <span>Tài khoản hạn chế</span>
             <UserX2 size={18} />
           </div>
           <strong>{analytics.restrictedUsers.toLocaleString('vi-VN')}</strong>
@@ -88,7 +88,7 @@ export default function AdminUserStatsPage() {
 
         <article className={styles.card}>
           <div className={styles.cardTop}>
-            <span>ĐiĂ¡»u phĂ¡»‘i viên</span>
+            <span>Điều phối viên</span>
             <ShieldCheck size={18} />
           </div>
           <strong>{analytics.moderators.toLocaleString('vi-VN')}</strong>
@@ -99,9 +99,9 @@ export default function AdminUserStatsPage() {
 
       <section className={styles.split}>
         <article className={styles.panel}>
-          <h2>Tình trạng tài khoĂ¡º£n</h2>
+          <h2>Tình trạng tài khoản</h2>
           <div className={styles.metricRow}>
-            <span>TĂ¡»· lĂ¡»‡ user active</span>
+            <span>Tỷ lệ user active</span>
             <b>{analytics.activeRate}%</b>
           </div>
           <div className={styles.track}>
@@ -109,7 +109,7 @@ export default function AdminUserStatsPage() {
           </div>
 
           <div className={styles.metricRow}>
-            <span>Tài khoĂ¡º£n hidden</span>
+            <span>Tài khoản hidden</span>
             <b>{analytics.hiddenUsers}</b>
           </div>
           <div className={styles.track}>
@@ -117,14 +117,14 @@ export default function AdminUserStatsPage() {
           </div>
 
           <div className={styles.metricRow}>
-            <span>Admin hĂ¡»‡ thống</span>
+            <span>Admin hệ thống</span>
             <b>{analytics.admins}</b>
           </div>
         </article>
 
         <article className={styles.panel}>
           <h2>
-            <UserRoundCog size={16} /> NgưĂ¡»i dùng gần đây
+            <UserRoundCog size={16} /> Người dùng gần đây
           </h2>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
@@ -145,7 +145,7 @@ export default function AdminUserStatsPage() {
                 ))}
               </tbody>
             </table>
-            {newestUsers.length === 0 ? <p className={styles.empty}>Chưa có dĂ¡»¯ liĂ¡»‡u ngưĂ¡»i dùng.</p> : null}
+            {newestUsers.length === 0 ? <p className={styles.empty}>Chưa có dữ liệu người dùng.</p> : null}
           </div>
         </article>
       </section>

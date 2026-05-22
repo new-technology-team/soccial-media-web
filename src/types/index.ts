@@ -49,9 +49,6 @@ export interface Conversation {
   type: 'direct' | 'group'
   name: string | null
   avatarUrl: string | null
-<<<<<<< HEAD
-  unreadCount: number
-=======
   createdBy?: number
   createdAt?: string
   updatedAt?: string
@@ -72,17 +69,13 @@ export interface Conversation {
     updatedAt?: string | null
     isDeleted?: boolean
   } | null
->>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   pinnedMessageIds?: string[]
   members: Array<{
     userId: number
     fullName: string
     avatarUrl: string | null
     role: string
-<<<<<<< HEAD
-=======
     lastReadAt?: string | null
->>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
   }>
 }
 

@@ -15,7 +15,7 @@ type ChatMessage = {
 }
 
 function buildHistory(messages: ChatMessage[]) {
-  // LĂ¡»c lĂ¡º¥y các tin nhĂ¡º¯n không lĂ¡»—i và map sang dạng { role, text }
+  // Lọc lấy các tin nhắn không lỗi và map sang dạng { role, text }
   const mapped = messages
     .filter((m) => !m.isError)
     .map((m) => ({
@@ -23,8 +23,8 @@ function buildHistory(messages: ChatMessage[]) {
       text: m.content,
     }))
 
-  // Google Generative AI yêu cầu history phĂ¡º£i BĂ¡º®T ĐĂ¡º¦U bằng 'user'
-  // Do đó ta loại bĂ¡» các tin nhĂ¡º¯n 'model' (như tin nhĂ¡º¯n welcome) Ă¡»Ÿ đầu mĂ¡º£ng
+  // Google Generative AI yêu cầu history phải BẮT ĐẦU bằng 'user'
+  // Do đó ta loại bỏ các tin nhắn 'model' (như tin nhắn welcome) ở đầu mảng
   while (mapped.length > 0 && mapped[0].role === 'model') {
     mapped.shift()
   }
@@ -35,15 +35,15 @@ function buildHistory(messages: ChatMessage[]) {
 const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
-  content: 'Xin chào! Tôi là trĂ¡»£ lý AI cĂ¡»§a ZChat. Bạn có thĂ¡»ƒ hĂ¡»i vĂ¡» cách sĂ¡»  dĂ¡»¥ng nĂ¡»n tĂ¡º£ng, tìm nĂ¡»™i dung hoặc nhĂ¡º­n hĂ¡»— trĂ¡»£ nhanh.',
+  content: 'Xin chào! Tôi là trợ lý AI của ZChat. Bạn có thể hỏi về cách sử dụng nền tảng, tìm nội dung hoặc nhận hỗ trợ nhanh.',
   timestamp: new Date(),
 }
 
 const quickPrompts = [
-  'HưĂ¡»›ng dẫn tôi đăng bài trên ZChat',
-  'Làm sao để gĂ¡» i Ă¡º£nh trong chat?',
-  'Cách kĂ¡º¿t bạn trên ZChat?',
-  'Tôi quên mĂ¡º­t khẩu phĂ¡º£i làm gì?',
+  'Hướng dẫn tôi đăng bài trên ZChat',
+  'Làm sao để gửi ảnh trong chat?',
+  'Cách kết bạn trên ZChat?',
+  'Tôi quên mật khẩu phải làm gì?',
 ]
 
 export default function AIChatPage() {
@@ -79,19 +79,19 @@ export default function AIChatPage() {
     setIsLoading(true)
 
     try {
-      // GĂ¡»­i history (loại bĂ¡» tin nhĂ¡º¯n lĂ¡»—i) để AI nhĂ¡»› ngĂ¡»¯ cĂ¡º£nh
-      const history = buildHistory(messages) // messages trưĂ¡»›c khi có userMessage mĂ¡»›i nhĂ¡º¥t
+      // Gửi history (loại bỏ tin nhắn lỗi) để AI nhớ ngữ cảnh
+      const history = buildHistory(messages) // messages trước khi có userMessage mới nhất
       const data = await api.aiChat(token, text, history)
 
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.reply || data.message || 'Xin lĂ¡»—i, hiĂ¡»‡n chưa có phĂ¡º£n hĂ¡»“i.',
+        content: data.reply || data.message || 'Xin lỗi, hiện chưa có phản hồi.',
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
-      const errText = error instanceof Error ? error.message : 'ĐĂ£ có lĂ¡»—i xĂ¡º£y ra. Vui lòng thĂ¡»  lại.'
+      const errText = error instanceof Error ? error.message : 'Đã có lỗi xảy ra. Vui lòng thử lại.'
       setMessages((prev) => [
         ...prev,
         {
@@ -120,15 +120,15 @@ export default function AIChatPage() {
         <header className={styles.hero}>
           <div>
             <p className={styles.badge}>
-              <Sparkles size={14} /> TrĂ¡»£ lý AI ZChat
+              <Sparkles size={14} /> Trợ lý AI ZChat
             </p>
-            <h1>HĂ¡»i nhanh, nhĂ¡º­n hưĂ¡»›ng dẫn rõ</h1>
+            <h1>Hỏi nhanh, nhận hướng dẫn rõ</h1>
             <p>
-              Bạn có thĂ¡»ƒ hĂ¡»i vĂ¡» chĂ¡»©c năng, tìm nĂ¡»™i dung, hoặc nhĂ¡» AI hưĂ¡»›ng dẫn thao tác nhanh trong hĂ¡»‡ thống.
+              Bạn có thể hỏi về chức năng, tìm nội dung, hoặc nhờ AI hướng dẫn thao tác nhanh trong hệ thống.
             </p>
           </div>
           <button type="button" className={styles.clearBtn} onClick={handleClearChat}>
-            <Trash2 size={15} /> Xóa hĂ¡»™i thoại
+            <Trash2 size={15} /> Xóa hội thoại
           </button>
         </header>
 
@@ -187,7 +187,7 @@ export default function AIChatPage() {
           <div className={styles.inputBar}>
             <input
               ref={inputRef}
-              placeholder={token ? 'NhĂ¡º­p câu hĂ¡»i của bạn...' : 'Vui lòng đăng nhĂ¡º­p để chat vĂ¡»›i AI...'}
+              placeholder={token ? 'Nhập câu hỏi của bạn...' : 'Vui lòng đăng nhập để chat với AI...'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -199,7 +199,7 @@ export default function AIChatPage() {
               disabled={isLoading || !token}
             />
             <button type="button" onClick={handleSend} disabled={!input.trim() || isLoading || !token}>
-              <Send size={16} /> GĂ¡»­i
+              <Send size={16} /> Gửi
             </button>
           </div>
         </section>

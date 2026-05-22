@@ -53,10 +53,10 @@ export default function PostCard({ post }: PostCardProps) {
     const diffHours = Math.floor(diffMs / 3600000)
     const diffDays = Math.floor(diffMs / 86400000)
 
-    if (diffMins < 1) return 'vĂ¡»«a xong'
-    if (diffMins < 60) return `${diffMins} phút trưĂ¡»›c`
-    if (diffHours < 24) return `${diffHours} giĂ¡» trưĂ¡»›c`
-    if (diffDays < 7) return `${diffDays} ngày trưĂ¡»›c`
+    if (diffMins < 1) return 'vừa xong'
+    if (diffMins < 60) return `${diffMins} phút trước`
+    if (diffHours < 24) return `${diffHours} giờ trước`
+    if (diffDays < 7) return `${diffDays} ngày trước`
     return dateObj.toLocaleDateString('vi-VN')
   }
 
@@ -88,7 +88,7 @@ export default function PostCard({ post }: PostCardProps) {
           <DropdownMenuContent align="end">
             <DropdownMenuItem>Báo cáo bài viết</DropdownMenuItem>
             <DropdownMenuItem>Lưu bài viết</DropdownMenuItem>
-            <DropdownMenuItem>Sao chép liên kĂ¡º¿t</DropdownMenuItem>
+            <DropdownMenuItem>Sao chép liên kết</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </CardHeader>
@@ -114,7 +114,7 @@ export default function PostCard({ post }: PostCardProps) {
             {likeCount} Thích
           </button>
           <button className="hover:text-foreground transition-colors">
-            {post.commentCount} Bình luĂ¡º­n
+            {post.commentCount} Bình luận
           </button>
           <button className="hover:text-foreground transition-colors">
             0 Chia sẻ
@@ -133,11 +133,11 @@ export default function PostCard({ post }: PostCardProps) {
                 liked ? 'fill-destructive text-destructive' : ''
               }`}
             />
-            {liked ? 'ĐĂ£ thích' : 'Thích'}
+            {liked ? 'Đã thích' : 'Thích'}
           </Button>
           <Button variant="ghost" size="sm" className="flex-1">
             <MessageCircle className="w-4 h-4 mr-2" />
-            Bình luĂ¡º­n
+            Bình luận
           </Button>
           <Button variant="ghost" size="sm" className="flex-1">
             <Share2 className="w-4 h-4 mr-2" />

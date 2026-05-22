@@ -37,7 +37,7 @@ export default function PostDetailPage() {
         setPost(postRes.post || null)
         setComments(commentRes.comments)
       } catch (error) {
-        console.error('Không thể tĂ¡º£i chi tiĂ¡º¿t bài viết', error)
+        console.error('Không thể tải chi tiết bài viết', error)
       } finally {
         setLoading(false)
       }
@@ -58,7 +58,7 @@ export default function PostDetailPage() {
       setComments((prev) => [...prev, response.comment])
       setCommentInput('')
     } catch (error) {
-      console.error('Không thể thêm bình luĂ¡º­n', error)
+      console.error('Không thể thêm bình luận', error)
     }
   }
 
@@ -66,13 +66,13 @@ export default function PostDetailPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         <div className={styles.header}>
-          <h1>Chi tiĂ¡º¿t bài viết</h1>
-          <p>Xem nĂ¡»™i dung đầy đĂ¡»§ và toàn bĂ¡»™ bình luĂ¡º­n theo thĂ¡»i gian thĂ¡»±c.</p>
+          <h1>Chi tiết bài viết</h1>
+          <p>Xem nội dung đầy đủ và toàn bộ bình luận theo thời gian thực.</p>
         </div>
 
-        {loading && <div className={styles.infoCard}>Ä ang tĂ¡º£i dĂ¡»¯ liĂ¡»‡u...</div>}
+        {loading && <div className={styles.infoCard}>Đang tải dữ liệu...</div>}
 
-        {!loading && !post && <div className={styles.infoCard}>Không tìm thĂ¡º¥y bài viết.</div>}
+        {!loading && !post && <div className={styles.infoCard}>Không tìm thấy bài viết.</div>}
 
         {post ? (
           <article className={styles.postCard}>
@@ -88,7 +88,7 @@ export default function PostDetailPage() {
             {post.mediaUrl ? (
               <img
                 src={post.mediaUrl}
-                alt="Ă¡º¢nh bài viết"
+                alt="Ảnh bài viết"
                 className={styles.postMedia}
                 loading="lazy"
                 onError={(event) => {
@@ -98,24 +98,24 @@ export default function PostDetailPage() {
             ) : null}
 
             <div className={styles.postMeta}>
-              {post.reactionCount} lưĂ¡»£t thích • {post.commentCount} bình luĂ¡º­n
+              {post.reactionCount} lượt thích • {post.commentCount} bình luận
             </div>
           </article>
         ) : null}
 
         <section className={styles.commentCard}>
-          <h3>Bình luĂ¡º­n</h3>
+          <h3>Bình luận</h3>
 
           {token ? (
             <div className={styles.commentForm}>
               <textarea
                 value={commentInput}
                 onChange={(e) => setCommentInput(e.target.value)}
-                placeholder="ViĂ¡º¿t bình luĂ¡º­n của bạn..."
+                placeholder="Viết bình luận của bạn..."
                 className={styles.commentTextarea}
               />
               <button type="button" onClick={handleAddComment} disabled={!commentInput.trim()} className={styles.submitBtn}>
-                GĂ¡»­i bình luĂ¡º­n
+                Gửi bình luận
               </button>
             </div>
           ) : null}
@@ -139,7 +139,7 @@ export default function PostDetailPage() {
               </article>
             ))}
 
-            {comments.length === 0 ? <p className={styles.emptyText}>Chưa có bình luĂ¡º­n nào.</p> : null}
+            {comments.length === 0 ? <p className={styles.emptyText}>Chưa có bình luận nào.</p> : null}
           </div>
         </section>
       </div>

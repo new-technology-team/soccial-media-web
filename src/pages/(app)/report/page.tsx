@@ -29,12 +29,12 @@ export default function ReportPage() {
   })
 
   const reportTypes = [
-    { value: 'harassment', label: 'QuĂ¡º¥y rĂ¡»‘i hoặc bĂ¡º¯t nạt' },
-    { value: 'hate_speech', label: 'NĂ¡»™i dung thù hĂ¡º­n' },
-    { value: 'misinformation', label: 'Thông tin sai lĂ¡»‡ch' },
+    { value: 'harassment', label: 'Quấy rối hoặc bắt nạt' },
+    { value: 'hate_speech', label: 'Nội dung thù hận' },
+    { value: 'misinformation', label: 'Thông tin sai lệch' },
     { value: 'spam', label: 'Spam' },
-    { value: 'explicit', label: 'NĂ¡»™i dung nhạy cĂ¡º£m' },
-    { value: 'copyright', label: 'Vi phạm bĂ¡º£n quyĂ¡»n' },
+    { value: 'explicit', label: 'Nội dung nhạy cảm' },
+    { value: 'copyright', label: 'Vi phạm bản quyền' },
     { value: 'impersonation', label: 'Mạo danh' },
     { value: 'other', label: 'Khác' },
   ]
@@ -52,7 +52,7 @@ export default function ReportPage() {
 
     try {
       if (!token) {
-        throw new Error('Bạn cần đăng nhĂ¡º­p để gĂ¡» i báo cáo')
+        throw new Error('Bạn cần đăng nhập để gửi báo cáo')
       }
 
       await api.submitReport(token, {
@@ -81,10 +81,10 @@ export default function ReportPage() {
             </div>
             <h2 className="text-xl font-bold mb-2">Da gui bao cao</h2>
             <p className="text-muted-foreground mb-6">
-              CĂ¡º£m ơn bạn đã đóng góp để giĂ¡»¯ môi trưĂ¡»ng cĂ¡»™ng đĂ¡»“ng an toàn. ĐĂ¡»™i ngũ kiĂ¡»ƒm duyĂ¡»‡t sẽ xĂ¡»  lý sĂ¡»›m.
+              Cảm ơn bạn đã đóng góp để giữ môi trường cộng đồng an toàn. Đội ngũ kiểm duyệt sẽ xử lý sớm.
             </p>
             <Button onClick={() => navigate('/feed')} className="w-full">
-              Quay lại bĂ¡º£ng tin
+              Quay lại bảng tin
             </Button>
           </CardContent>
         </Card>
@@ -97,14 +97,14 @@ export default function ReportPage() {
       <div className="app-container">
         <div className="max-w-2xl mx-auto">
         <div className="app-header">
-          <h1 className="app-title">Báo cáo nĂ¡»™i dung</h1>
-          <p className="app-subtitle">Giúp hĂ¡»‡ thống duy trì cĂ¡»™ng đĂ¡»“ng an toàn bằng cách gĂ¡» i thông tin vi phạm.</p>
+          <h1 className="app-title">Báo cáo nội dung</h1>
+          <p className="app-subtitle">Giúp hệ thống duy trì cộng đồng an toàn bằng cách gửi thông tin vi phạm.</p>
         </div>
 
         <Alert className="mb-6 border-amber-200 bg-amber-50">
           <AlertCircle className="h-4 w-4 text-amber-600" />
           <AlertDescription className="text-amber-800">
-            Vui lòng cung cĂ¡º¥p thông tin chi tiĂ¡º¿t để đĂ¡»™i ngũ kiĂ¡»ƒm duyĂ¡»‡t xĂ¡»  lý nhanh hơn.
+            Vui lòng cung cấp thông tin chi tiết để đội ngũ kiểm duyệt xử lý nhanh hơn.
           </AlertDescription>
         </Alert>
 
@@ -116,7 +116,7 @@ export default function ReportPage() {
                 <Label className="text-base font-semibold">Bạn đang báo cáo loại nào?</Label>
                 <Select value={formData.reportType} onValueChange={(value) => handleChange('reportType', value)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="ChĂ¡»n loại báo cáo" />
+                    <SelectValue placeholder="Chọn loại báo cáo" />
                   </SelectTrigger>
                   <SelectContent>
                     {reportTypes.map((type) => (
@@ -130,33 +130,33 @@ export default function ReportPage() {
 
               {/* Target Type */}
               <div className="space-y-3">
-                <Label className="text-base font-semibold">ĐĂ¡»‘i tưĂ¡»£ng bĂ¡»‹ báo cáo</Label>
+                <Label className="text-base font-semibold">Đối tượng bị báo cáo</Label>
                 <RadioGroup value={formData.targetType} onValueChange={(value) => handleChange('targetType', value)}>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="post" id="post" />
-                    <Label htmlFor="post" className="font-normal cursor-pointer">Bài viĂ¡º¿t</Label>
+                    <Label htmlFor="post" className="font-normal cursor-pointer">Bài viết</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="comment" id="comment" />
-                    <Label htmlFor="comment" className="font-normal cursor-pointer">Bình luĂ¡º­n</Label>
+                    <Label htmlFor="comment" className="font-normal cursor-pointer">Bình luận</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="user" id="user" />
-                    <Label htmlFor="user" className="font-normal cursor-pointer">Tài khoĂ¡º£n ngưĂ¡»i dùng</Label>
+                    <Label htmlFor="user" className="font-normal cursor-pointer">Tài khoản người dùng</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="message" id="message" />
-                    <Label htmlFor="message" className="font-normal cursor-pointer">Tin nhĂ¡º¯n trĂ¡»±c tiĂ¡º¿p</Label>
+                    <Label htmlFor="message" className="font-normal cursor-pointer">Tin nhắn trực tiếp</Label>
                   </div>
                 </RadioGroup>
               </div>
 
               {/* Target ID */}
               <div className="space-y-2">
-                <Label htmlFor="targetId">ID đĂ¡»‘i tưĂ¡»£ng</Label>
+                <Label htmlFor="targetId">ID đối tượng</Label>
                 <Input
                   id="targetId"
-                  placeholder={`NhĂ¡º­p ID ${formData.targetType || 'nĂ¡»™i dung'}`}
+                  placeholder={`Nhập ID ${formData.targetType || 'nội dung'}`}
                   value={formData.targetId}
                   onChange={(e) => handleChange('targetId', e.target.value)}
                   disabled={isSubmitting}
@@ -166,10 +166,10 @@ export default function ReportPage() {
 
               {/* Reason */}
               <div className="space-y-2">
-                <Label htmlFor="reason">Lý do cĂ¡»¥ thĂ¡»ƒ</Label>
+                <Label htmlFor="reason">Lý do cụ thể</Label>
                 <Textarea
                   id="reason"
-                  placeholder="Mô tĂ¡º£ hành vi vi phạm tiêu chuẩn cĂ¡»™ng đĂ¡»“ng..."
+                  placeholder="Mô tả hành vi vi phạm tiêu chuẩn cộng đồng..."
                   value={formData.reason}
                   onChange={(e) => handleChange('reason', e.target.value)}
                   disabled={isSubmitting}
@@ -180,10 +180,10 @@ export default function ReportPage() {
 
               {/* Details */}
               <div className="space-y-2">
-                <Label htmlFor="details">Thông tin bĂ¡»• sung</Label>
+                <Label htmlFor="details">Thông tin bổ sung</Label>
                 <Textarea
                   id="details"
-                  placeholder="BĂ¡»• sung bĂ¡»‘i cĂ¡º£nh hoặc thông tin liên quan..."
+                  placeholder="Bổ sung bối cảnh hoặc thông tin liên quan..."
                   value={formData.details}
                   onChange={(e) => handleChange('details', e.target.value)}
                   disabled={isSubmitting}
@@ -193,10 +193,10 @@ export default function ReportPage() {
 
               {/* Evidence */}
               <div className="space-y-2">
-                <Label htmlFor="evidence">Bằng chĂ¡»©ng/Ă¡º£nh chĂ¡»¥p màn hình</Label>
+                <Label htmlFor="evidence">Bằng chứng/ảnh chụp màn hình</Label>
                 <Textarea
                   id="evidence"
-                  placeholder="Mô tĂ¡º£ bằng chĂ¡»©ng giúp xác minh báo cáo..."
+                  placeholder="Mô tả bằng chứng giúp xác minh báo cáo..."
                   value={formData.evidence}
                   onChange={(e) => handleChange('evidence', e.target.value)}
                   disabled={isSubmitting}
@@ -207,7 +207,7 @@ export default function ReportPage() {
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input type="checkbox" required disabled={isSubmitting} />
-                  Tôi xác nhĂ¡º­n thông tin cung cĂ¡º¥p là đúng sĂ¡»± thĂ¡º­t.
+                  Tôi xác nhận thông tin cung cấp là đúng sự thật.
                 </label>
               </div>
 
@@ -216,7 +216,7 @@ export default function ReportPage() {
                 className="w-full"
                 disabled={!formData.reportType || !formData.targetType || !formData.targetId || !formData.reason || isSubmitting}
               >
-                {isSubmitting ? 'Ä ang gĂ¡» i...' : 'GĂ¡»­i báo cáo'}
+                {isSubmitting ? 'Đang gửi...' : 'Gửi báo cáo'}
               </Button>
             </form>
           </CardContent>

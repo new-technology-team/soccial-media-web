@@ -35,11 +35,7 @@ export default function SignupPage() {
 
     // Validation
     if(formData.password !== formData.confirmPassword) {
-<<<<<<< HEAD
-      setError('MĂ¡º­t khẩu không khĂ¡»›p')
-=======
       setError('Mật khẩu không khớp')
->>>>>>> e1e0f981eaeaaf7229c1f05934c42d2d9ef91993
       return
     }
 
@@ -62,7 +58,7 @@ export default function SignupPage() {
         navigate('/auth/login')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể tạo tài khoĂ¡º£n. Vui lòng thĂ¡»  lại.')
+      setError(err instanceof Error ? err.message : 'Không thể tạo tài khoản. Vui lòng thử lại.')
     } finally {
       setIsLoading(false)
     }
@@ -71,8 +67,8 @@ export default function SignupPage() {
   return (
     <div className={styles.panel}>
       <header>
-        <h2 className={styles.heading}>Ä ăng ký tài khoĂ¡º£n</h2>
-        <p className={styles.subheading}>BĂ¡º¯t đầu hành trình kết nối của bạn</p>
+        <h2 className={styles.heading}>Đăng ký tài khoản</h2>
+        <p className={styles.subheading}>Bắt đầu hành trình kết nối của bạn</p>
       </header>
 
       <div className={styles.alertSpace}>
@@ -87,7 +83,7 @@ export default function SignupPage() {
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.fieldUpper}>
           <label htmlFor="displayName">
-              HĂ¡» và tên
+              Họ và tên
           </label>
           <div className={styles.inputWrap}>
             <User size={18} className={styles.inputIcon} />
@@ -95,7 +91,7 @@ export default function SignupPage() {
               id="displayName"
               name="displayName"
               type="text"
-              placeholder="NguyĂ¡»…n Văn A"
+              placeholder="Nguyễn Văn A"
               value={formData.displayName}
               onChange={handleChange}
               disabled={isLoading}
@@ -107,7 +103,7 @@ export default function SignupPage() {
 
         <div className={styles.fieldUpper}>
           <label htmlFor="emailOrPhone">
-              SĂ¡»‘ điĂ¡»‡n thoại hoặc Email
+              Số điện thoại hoặc Email
           </label>
           <div className={styles.inputWrap}>
             <Phone size={18} className={styles.inputIcon} />
@@ -146,7 +142,7 @@ export default function SignupPage() {
 
           <div className={styles.fieldUpper}>
             <label htmlFor="gender">
-              GiĂ¡»›i tính
+              Giới tính
             </label>
             <select
               id="gender"
@@ -156,9 +152,9 @@ export default function SignupPage() {
               disabled={isLoading}
               className={`${ styles.select } ${ styles.inputMuted } `}
             >
-              <option value="">ChĂ¡»n giĂ¡»›i tính</option>
+              <option value="">Chọn giới tính</option>
               <option value="male">Nam</option>
-              <option value="female">NĂ¡»¯</option>
+              <option value="female">Nữ</option>
               <option value="other">Khác</option>
             </select>
           </div>
@@ -168,7 +164,7 @@ export default function SignupPage() {
         <div className={styles.twoCols}>
           <div className={styles.fieldUpper}>
             <label htmlFor="password">
-                MĂ¡º­t khẩu
+                Mật khẩu
             </label>
             <div className={styles.inputWrap}>
               <Lock size={18} className={styles.inputIcon} />
@@ -188,7 +184,7 @@ export default function SignupPage() {
 
           <div className={styles.fieldUpper}>
             <label htmlFor="confirmPassword">
-                Xác nhĂ¡º­n
+                Xác nhận
             </label>
             <div className={styles.inputWrap}>
               <ShieldCheck size={18} className={styles.inputIcon} />
@@ -208,7 +204,7 @@ export default function SignupPage() {
         </div>
 
         <button type="submit" className={styles.submit} disabled={isLoading}>
-          {isLoading ? 'Ä ang tạo tài khoĂ¡º£n...' : 'Ä ăng ký'}
+          {isLoading ? 'Đang tạo tài khoản...' : 'Đăng ký'}
         </button>
 
         <div className={styles.divider}>
@@ -225,9 +221,9 @@ export default function SignupPage() {
         </div>
 
         <p className={styles.switchText}>
-          ĐĂ£ có tài khoĂ¡º£n?{' '}
+          Đã có tài khoản?{' '}
           <Link to="/auth/login">
-            Ä ăng nhĂ¡º­p
+            Đăng nhập
           </Link>
         </p>
       </form>
