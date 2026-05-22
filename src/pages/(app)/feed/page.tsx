@@ -121,6 +121,9 @@ export default function FeedPage() {
   const [locationKeyword, setLocationKeyword] = useState('')
   const [tagSuggestions, setTagSuggestions] = useState<Array<{ id: number; name: string }>>([])
   const [commentLists, setCommentLists] = useState<Record<number, FeedComment[]>>({})
+  const [reactionViewers, setReactionViewers] = useState<Record<number, Array<{ userId: number; fullName: string; avatarUrl: string | null; reaction: string }>>>({})
+  const [reactionViewerPostId, setReactionViewerPostId] = useState<number | null>(null)
+  const [busyCommentId, setBusyCommentId] = useState<number | string | null>(null)
   const [expandedComments, setExpandedComments] = useState<Record<number, boolean>>({})
   const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({})
   const [loadingMoreComments, setLoadingMoreComments] = useState<Record<number, boolean>>({})
@@ -514,6 +517,53 @@ export default function FeedPage() {
       console.error('Failed to add comment', error)
     } finally {
       setIsCommenting((prev) => ({ ...prev, [postId]: false }))
+    }
+  }
+
+  const handleOpenReactionViewers = async (post: FeedPost) => {
+    setReactionViewerPostId(post.id)
+    if (reactionViewers[post.id]) return
+    try {
+      const response = await api.listPostReactions(post.id)
+      setReactionViewers((prev) => ({ ...prev, [post.id]: response.reactions }))
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      console.error('Failed to load reaction viewers', error)
+    }
+  }
+
+  const handleDeleteComment = async (post: FeedPost, comment: FeedComment) => {
+    if (!token || Number(post.authorId) !== Number(me?.id)) return
+    if (!window.confirm('Xóa bình luận này khỏi bài viết?')) return
+    setBusyCommentId(comment.id)
+    try {
+      await api.deleteComment(token, comment.id)
+      setCommentLists((prev) => ({ ...prev, [post.id]: (prev[post.id] || []).filter((item) => item.id !== comment.id) }))
+      setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, commentCount: Math.max(0, item.commentCount - 1) } : item)))
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      console.error('Failed to delete comment', error)
+    } finally {
+      setBusyCommentId(null)
+    }
+  }
+
+  const handleReportComment = async (comment: FeedComment) => {
+    if (!token) {
+      navigate('/auth/login')
+      return
+    }
+    const reason = window.prompt('Lý do báo cáo bình luận', 'Nội dung không phù hợp')
+    if (!reason?.trim()) return
+    setBusyCommentId(comment.id)
+    try {
+      await api.submitReport(token, { targetType: 'comment', targetId: comment.id, reason: reason.trim() })
+      setErrorText('Đã gửi báo cáo bình luận.')
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      console.error('Failed to report comment', error)
+    } finally {
+      setBusyCommentId(null)
     }
   }
 
@@ -1109,8 +1159,12 @@ export default function FeedPage() {
                 ) : null}
 
                 <div className={styles.postStats}>
-                  <span>{post.reactionCount} lượt cảm xúc</span>
-                  <span>{post.commentCount} bình luận</span>
+                  <button type="button" onClick={() => void handleOpenReactionViewers(post)}>
+                    {post.reactionCount} lượt cảm xúc
+                  </button>
+                  <button type="button" onClick={() => handleToggleComments(post.id)} disabled={isGuestView}>
+                    {post.commentCount} bình luận
+                  </button>
                 </div>
 
                 <div className={styles.postActions}>
@@ -1222,6 +1276,16 @@ export default function FeedPage() {
                             <b>{comment.authorName}</b>
                           </Link>
                           <p>{comment.content}</p>
+                          {Number(post.authorId) === Number(me?.id) ? (
+                            <div className={styles.commentActions}>
+                              <button type="button" onClick={() => void handleReportComment(comment)} disabled={busyCommentId === comment.id}>
+                                Báo cáo
+                              </button>
+                              <button type="button" onClick={() => void handleDeleteComment(post, comment)} disabled={busyCommentId === comment.id}>
+                                Xóa
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -1303,6 +1367,30 @@ export default function FeedPage() {
           </section>
         </aside>
       </div>
+
+      {reactionViewerPostId ? (
+        <div className={styles.viewerBackdrop} role="presentation" onClick={() => setReactionViewerPostId(null)}>
+          <section className={styles.viewerDialog} role="dialog" aria-label="Người thả cảm xúc" onClick={(event) => event.stopPropagation()}>
+            <div className={styles.viewerHead}>
+              <h3>Người thả cảm xúc</h3>
+              <button type="button" onClick={() => setReactionViewerPostId(null)} aria-label="Đóng">
+                <X size={16} />
+              </button>
+            </div>
+            <div className={styles.viewerList}>
+              {(reactionViewers[reactionViewerPostId] || []).map((viewer) => (
+                <Link key={`${viewer.userId}-${viewer.reaction}`} to={`/profile/${viewer.userId}`} className={styles.viewerRow}>
+                  {viewer.avatarUrl ? <img src={viewer.avatarUrl} alt={viewer.fullName} /> : <span>{(viewer.fullName[0] || 'U').toUpperCase()}</span>}
+                  <b>{viewer.fullName}</b>
+                  <i>{getPostReactionMeta(viewer.reaction).emoji}</i>
+                </Link>
+              ))}
+              {reactionViewers[reactionViewerPostId]?.length === 0 ? <p>Chưa có lượt cảm xúc.</p> : null}
+              {!reactionViewers[reactionViewerPostId] ? <p>Đang tải danh sách...</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {isModalOpen ? (
         <div className={styles.modalOverlay}>

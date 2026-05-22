@@ -1,5 +1,6 @@
 ﻿import { Outlet, Route } from 'react-router-dom'
 
+import { Navigate } from 'react-router-dom'
 import AppLayout from '@/components/layouts/AppLayout'
 import AIChatPage from '@/pages/(app)/ai-chat/page'
 import ExplorePage from '@/pages/(app)/explore/page'
@@ -19,6 +20,7 @@ import ReportPage from '@/pages/(app)/report/page'
 import SettingsPage from '@/pages/(app)/settings/page'
 import SystemAlertsPage from '@/pages/(app)/system-alerts/page'
 import { renderAdminRoutes } from '@/routes/admin-routes'
+import { useAuthStore } from '@/contexts/auth-store'
 
 function AppLayoutRoute() {
   return (
@@ -26,6 +28,11 @@ function AppLayoutRoute() {
       <Outlet />
     </AppLayout>
   )
+}
+
+function OwnProfileRoute() {
+  const user = useAuthStore((state) => state.user)
+  return <Navigate to={user ? `/profile/${user.id}` : '/auth/login?next=/profile'} replace />
 }
 
 export function renderAppRoutes() {
@@ -42,6 +49,7 @@ export function renderAppRoutes() {
       <Route path="/report" element={<ReportPage />} />
       <Route path="/system-alerts" element={<SystemAlertsPage />} />
       <Route path="/posts/:id" element={<PostDetailPage />} />
+      <Route path="/profile" element={<OwnProfileRoute />} />
       <Route path="/profile/:id" element={<ProfilePage />} />
       <Route path="/profile/edit" element={<EditProfilePage />} />
 

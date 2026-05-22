@@ -6,6 +6,7 @@ import { Bell, MessageCircle, UserPlus, Heart, Share2, CheckCheck } from 'lucide
 import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import type { NotificationItem } from '@/types'
+import { connectSocket } from '@/services/socket'
 import styles from './page.module.css'
 
 type NotifFilter = 'all' | 'social' | 'messages'
@@ -71,7 +72,8 @@ export default function NotificationsPage() {
   const token = useAuthStore((state) => state.accessToken)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [activeFilter, setActiveFilter] = useState<NotifFilter>('all')
-  const [busyActionId, setBusyActionId] = useState<number | null>(null)
+  const user = useAuthStore((state) => state.user)
+  const [busyActionId, setBusyActionId] = useState<number | string | null>(null)
 
   const parseMeta = (item: NotificationItem): NotificationMeta | null => {
     const source = item.meta ?? item.meta_json
@@ -103,6 +105,18 @@ export default function NotificationsPage() {
       })
   }, [token])
 
+  useEffect(() => {
+    if (!token || !user?.id) return
+    const socket = connectSocket(token, user.id)
+    const handleNotification = () => {
+      api.notifications(token).then((response) => setNotifications(response.notifications)).catch(console.error)
+    }
+    socket.on('notification:new', handleNotification)
+    return () => {
+      socket.off('notification:new', handleNotification)
+    }
+  }, [token, user?.id])
+
   const unreadCount = useMemo(() => notifications.filter((item) => !item.is_read).length, [notifications])
 
   const filteredNotifications = useMemo(() => {
@@ -123,7 +137,7 @@ export default function NotificationsPage() {
     }
   }
 
-  const handleMarkOneAsRead = async (id: number) => {
+  const handleMarkOneAsRead = async (id: number | string) => {
     if (!token) return
     const target = notifications.find((item) => item.id === id)
     if (!target || target.is_read) return
@@ -319,4 +333,3 @@ export default function NotificationsPage() {
     </div>
   )
 }
-

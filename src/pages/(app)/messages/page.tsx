@@ -194,7 +194,6 @@ export default function MessagesPage() {
   >({})
   const [friendMap, setFriendMap] = useState<Record<number, FriendConnection>>({})
   const [pendingFriendRequestTo, setPendingFriendRequestTo] = useState<Record<number, boolean>>({})
-  const [creatingDirectConversation, setCreatingDirectConversation] = useState(false)
   const [mutedMic, setMutedMic] = useState(false)
   const [mutedCam, setMutedCam] = useState(false)
   const [callAnswered, setCallAnswered] = useState(false)
@@ -202,6 +201,7 @@ export default function MessagesPage() {
   const [isSendingMessage, setIsSendingMessage] = useState(false)
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [typingUserIds, setTypingUserIds] = useState<Set<number>>(new Set())
+  const [messageSearchDraft, setMessageSearchDraft] = useState('')
   const [messageSearchKeyword, setMessageSearchKeyword] = useState('')
   const [showMessageFilters, setShowMessageFilters] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -347,6 +347,8 @@ export default function MessagesPage() {
     setShowStickerPanel(false)
     setShowJumpToLatest(false)
     setReactionPickerMessageId(null)
+    setTypingUserIds(new Set())
+    setMessageSearchDraft('')
     markConversationRead(selectedConversationId)
   }, [markConversationRead, selectedConversationId])
 
@@ -357,6 +359,13 @@ export default function MessagesPage() {
     socket.on('message:new', (payload: ChatMessage) => {
       const normalized = normalizeIncomingMessageForViewer(payload, user?.id)
       upsertMessage(normalized.conversationId, normalized)
+      if (normalized.conversationId === selectedConversationId) {
+        setTypingUserIds((prev) => {
+          const next = new Set(prev)
+          next.delete(normalized.senderId)
+          return next
+        })
+      }
       refreshConversations().catch(() => undefined)
     })
 
@@ -396,7 +405,7 @@ export default function MessagesPage() {
     })
 
     socket.on('message:typing', (payload: { conversationId: string; fromUserId: number; isTyping: boolean }) => {
-      if (!payload) return
+      if (!payload || String(payload.conversationId) !== String(selectedConversationId) || Number(payload.fromUserId) === Number(user?.id)) return
       setTypingUserIds((prev) => {
         const next = new Set(prev)
         if (payload.isTyping) {
@@ -408,7 +417,7 @@ export default function MessagesPage() {
       })
     })
 
-    socket.on('notification:new', (payload) => {
+    const handleSocketNotification = (payload: { type?: string } | null) => {
       if (!payload) return
       reloadNotifications().catch(() => undefined)
       if (payload.type === 'message') {
@@ -418,7 +427,8 @@ export default function MessagesPage() {
       if (payload.type === 'friend-request' || payload.type === 'friend-accepted') {
         reloadFriendMap().catch(() => undefined)
       }
-    })
+    }
+    socket.on('notification:new', handleSocketNotification)
 
     socket.on('call:offer', (payload) => {
       if (!payload.offer) return
@@ -541,7 +551,7 @@ export default function MessagesPage() {
       socket.off('conversation:nickname')
       socket.off('conversation:members')
       socket.off('presence:updated')
-      socket.off('notification:new')
+      socket.off('notification:new', handleSocketNotification)
       socket.off('call:offer')
       socket.off('call:answer')
       socket.off('call:join')
@@ -550,7 +560,7 @@ export default function MessagesPage() {
       socket.off('call:end')
       socket.off('call:participants')
     }
-  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, setGlobalIncomingCall, token, upsertMessage, user?.id])
+  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
@@ -1021,34 +1031,6 @@ export default function MessagesPage() {
       }
     } finally {
       setPendingFriendRequestTo((prev) => ({ ...prev, [directPeer.id]: false }))
-    }
-  }
-
-  const handleOpenOrCreateDirectConversation = async (targetUserId: number) => {
-    if (!token) return
-
-    const existing = conversations.find(
-      (conv) => conv.type === 'direct' && conv.members.some((m) => m.userId === targetUserId)
-    )
-    if (existing) {
-      openConversation(existing.id)
-      return
-    }
-
-    setCreatingDirectConversation(true)
-    try {
-      const result = await api.createDirectConversation(token, targetUserId)
-      await refreshConversations()
-      openConversation(result.conversation.id)
-      setChatNotice('Đã mở cuộc trò chuyện trực tiếp.')
-    } catch (error) {
-      if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể mở cuộc trò chuyện.')
-      }
-    } finally {
-      setCreatingDirectConversation(false)
     }
   }
 
@@ -2059,17 +2041,32 @@ export default function MessagesPage() {
           </header>
 
           {showMessageFilters ? (
-            <div className={styles.messageFilters}>
+            <form
+              className={styles.messageFilters}
+              onSubmit={(event) => {
+                event.preventDefault()
+                setMessageSearchKeyword(messageSearchDraft.trim())
+              }}
+            >
               <input
-                value={messageSearchKeyword}
-                onChange={(event) => setMessageSearchKeyword(event.target.value)}
+                value={messageSearchDraft}
+                onChange={(event) => setMessageSearchDraft(event.target.value)}
                 placeholder="Tìm theo nội dung tin nhắn"
                 aria-label="Tìm theo nội dung tin nhắn"
               />
+              <button type="submit">Tìm</button>
               {messageSearchKeyword ? (
-                <button type="button" onClick={() => setMessageSearchKeyword('')}>Xóa tìm kiếm</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMessageSearchDraft('')
+                    setMessageSearchKeyword('')
+                  }}
+                >
+                  Xóa tìm kiếm
+                </button>
               ) : null}
-            </div>
+            </form>
           ) : null}
 
           {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
@@ -2086,14 +2083,6 @@ export default function MessagesPage() {
 
           {directPeer ? (
             <div className={styles.chatSocialBar}>
-              <button
-                type="button"
-                className={styles.socialActionBtn}
-                onClick={() => handleOpenOrCreateDirectConversation(directPeer.id)}
-                disabled={creatingDirectConversation}
-              >
-                {creatingDirectConversation ? 'Đang mở hội thoại...' : 'Nhắn tin'}
-              </button>
               {!isDirectPeerFriend && !isDirectPeerPending ? (
                 <button
                   type="button"
@@ -2148,8 +2137,6 @@ export default function MessagesPage() {
               </button>
             </div>
           )}
-
-          <div className={styles.timeline}>Hôm nay</div>
 
           <MessageThread
             userId={user?.id}

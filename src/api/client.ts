@@ -6,6 +6,7 @@
   FriendConnection,
   FeedPost,
   NotificationItem,
+  PostReactionViewer,
   User,
 } from '@/types'
 import { API_BASE } from '@/config/api'
@@ -70,6 +71,15 @@ const normalizeFeedPost = (post: FeedPost): FeedPost => ({
   ...post,
   mediaUrl: resolveApiAssetUrl(post.mediaUrl),
   authorAvatar: resolveApiAssetUrl(post.authorAvatar),
+})
+
+const normalizeNotification = (item: NotificationItem & Record<string, unknown>): NotificationItem => ({
+  ...item,
+  id: String(item.id),
+  is_read: item.is_read !== undefined ? Number(item.is_read) : item.isRead ? 1 : 0,
+  created_at: String(item.created_at || item.createdAt || ''),
+  meta: (item.meta as Record<string, unknown> | null | undefined) || null,
+  body: item.body ? String(item.body) : null,
 })
 
 export class ApiError extends Error {
@@ -434,6 +444,14 @@ export const api = {
       post: normalizeFeedPost(res.post),
     })),
 
+  listPostReactions: (postId: number | string) =>
+    request<{ reactions: PostReactionViewer[] }>(`/social/posts/${postId}/reactions`, { method: 'GET' }).then((res) => ({
+      reactions: (res.reactions || []).map((item) => ({
+        ...item,
+        avatarUrl: resolveApiAssetUrl(item.avatarUrl),
+      })),
+    })),
+
   listComments: (
     postId: number | string,
     token?: string,
@@ -462,6 +480,9 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ content }) },
       token
     ),
+
+  deleteComment: (token: string, commentId: number | string) =>
+    request<{ message: string }>(`/social/comments/${commentId}`, { method: 'DELETE' }, token),
 
   listConversations: (token: string) =>
     request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token).then((data) => ({
@@ -713,9 +734,11 @@ export const api = {
     }, token),
 
   notifications: (token: string) =>
-    request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token),
+    request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token).then((res) => ({
+      notifications: (res.notifications || []).map((item) => normalizeNotification(item as NotificationItem & Record<string, unknown>)),
+    })),
 
-  readNotification: (token: string, id: number) =>
+  readNotification: (token: string, id: number | string) =>
     request<{ message: string }>(`/social/notifications/${id}/read`, { method: 'PATCH' }, token),
 
   readAllNotifications: (token: string) =>
@@ -725,7 +748,7 @@ export const api = {
     token: string,
     payload: {
       targetType: 'post' | 'comment' | 'user' | 'message'
-      targetId: number
+      targetId: number | string
       reason: string
       details?: string
     }

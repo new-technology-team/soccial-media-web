@@ -20,6 +20,8 @@ export default function ProfilePage() {
   const [friendStatus, setFriendStatus] = useState<'none' | 'pending' | 'accepted'>('none')
   const [socialActionBusy, setSocialActionBusy] = useState(false)
   const [profileAvatarBroken, setProfileAvatarBroken] = useState(false)
+  const [activeTab, setActiveTab] = useState<'posts' | 'about' | 'friends' | 'photos' | 'videos'>('posts')
+  const [mediaOnly, setMediaOnly] = useState(false)
 
   useEffect(() => {
     api.listFeed(token || undefined).then((r) => setPosts(r.posts)).catch(console.error)
@@ -63,6 +65,15 @@ export default function ProfilePage() {
     () => userPosts.filter((post) => Boolean(post.mediaUrl)).slice(0, 6),
     [userPosts]
   )
+
+  const isVideoPost = (post: FeedPost) => Boolean(post.mediaUrl && /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(post.mediaUrl))
+
+  const visibleProfilePosts = useMemo(() => {
+    if (activeTab === 'photos') return userPosts.filter((post) => post.mediaUrl && !isVideoPost(post))
+    if (activeTab === 'videos') return userPosts.filter(isVideoPost)
+    if (mediaOnly) return userPosts.filter((post) => Boolean(post.mediaUrl))
+    return userPosts
+  }, [activeTab, mediaOnly, userPosts])
 
   const totalInteractions = useMemo(
     () => userPosts.reduce((sum, post) => sum + post.reactionCount + post.commentCount, 0),
@@ -198,19 +209,19 @@ export default function ProfilePage() {
         </header>
 
         <nav className={styles.tabs}>
-          <button type="button" className={`${styles.tab} ${styles.tabActive}`}>
+          <button type="button" className={`${styles.tab} ${activeTab === 'posts' ? styles.tabActive : ''}`} onClick={() => setActiveTab('posts')}>
             Bài viết
           </button>
-          <button type="button" className={styles.tab}>
+          <button type="button" className={`${styles.tab} ${activeTab === 'about' ? styles.tabActive : ''}`} onClick={() => setActiveTab('about')}>
             Giới thiệu
           </button>
-          <button type="button" className={styles.tab}>
+          <button type="button" className={`${styles.tab} ${activeTab === 'friends' ? styles.tabActive : ''}`} onClick={() => setActiveTab('friends')}>
             Bạn bè
           </button>
-          <button type="button" className={styles.tab}>
+          <button type="button" className={`${styles.tab} ${activeTab === 'photos' ? styles.tabActive : ''}`} onClick={() => setActiveTab('photos')}>
             Ảnh
           </button>
-          <button type="button" className={styles.tab}>
+          <button type="button" className={`${styles.tab} ${activeTab === 'videos' ? styles.tabActive : ''}`} onClick={() => setActiveTab('videos')}>
             Video
           </button>
         </nav>
@@ -298,14 +309,14 @@ export default function ProfilePage() {
             <section className={styles.card}>
               <div className={styles.composerTop}>
                 <div className={styles.avatarMini}>{initials}</div>
-                <button type="button" className={styles.askBtn}>
+                <button type="button" className={styles.askBtn} onClick={() => navigate(isOwnProfile ? '/feed?compose=1' : '/messages')}>
                   {profileName.split(' ')[0]} ơi, bạn đang nghĩ gì thế?
                 </button>
               </div>
               <div className={styles.composerActions}>
-                <button type="button">Video trực tiếp</button>
-                <button type="button">Ảnh/Video</button>
-                <button type="button">Cảm xúc/Hoạt động</button>
+                <button type="button" onClick={() => navigate('/feed?compose=1')}>Tạo bài viết</button>
+                <button type="button" onClick={() => setActiveTab('photos')}>Ảnh/Video</button>
+                <button type="button" onClick={() => navigate('/feed')}>Bảng tin</button>
               </div>
             </section>
 
@@ -313,13 +324,15 @@ export default function ProfilePage() {
               <div className={styles.postsHead}>
                 <h3>Bài viết</h3>
                 <div className={styles.headActions}>
-                  <button type="button">Bộ lọc</button>
-                  <button type="button">Quản lý bài viết</button>
+                  <button type="button" onClick={() => setMediaOnly((current) => !current)}>{mediaOnly ? 'Tất cả' : 'Chỉ media'}</button>
+                  <button type="button" onClick={() => navigate(isOwnProfile ? '/feed?compose=1' : `/profile/${profileId}`)}>
+                    {isOwnProfile ? 'Tạo bài viết' : 'Làm mới'}
+                  </button>
                 </div>
               </div>
 
               <div className={styles.postsList}>
-                {userPosts.map((post) => (
+                {visibleProfilePosts.map((post) => (
                   <article key={post.id} className={styles.postItem}>
                     <div className={styles.postAuthor}>
                       <div className={styles.avatarMini}>{(post.authorName[0] || 'U').toUpperCase()}</div>
@@ -348,7 +361,7 @@ export default function ProfilePage() {
                     </div>
                   </article>
                 ))}
-                {userPosts.length === 0 ? <p className={styles.empty}>Người dùng này chưa có bài viết nào.</p> : null}
+                {visibleProfilePosts.length === 0 ? <p className={styles.empty}>Chưa có nội dung phù hợp mục đang chọn.</p> : null}
               </div>
             </section>
           </section>
@@ -357,4 +370,3 @@ export default function ProfilePage() {
     </div>
   )
 }
-

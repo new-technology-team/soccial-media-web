@@ -33,8 +33,8 @@ export interface FeedPost {
 }
 
 export interface FeedComment {
-  id: number
-  postId: number
+  id: number | string
+  postId: number | string
   userId: number
   authorName: string
   authorAvatar: string | null
@@ -95,6 +95,14 @@ export interface Conversation {
   }>
 }
 
+export interface PostReactionViewer {
+  userId: number
+  fullName: string
+  avatarUrl: string | null
+  reaction: string
+  createdAt?: string | null
+}
+
 export interface ChatMessage {
   id: string
   conversationId: string
@@ -121,7 +129,7 @@ export interface ChatMessage {
 }
 
 export interface NotificationItem {
-  id: number
+  id: number | string
   type: string
   title: string
   body: string | null

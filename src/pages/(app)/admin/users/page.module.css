@@ -149,6 +149,32 @@
   font-weight: 700;
 }
 
+.table select,
+.restrictBtn {
+  min-height: 32px;
+  border: 1px solid rgba(171, 173, 174, 0.28);
+  border-radius: 10px;
+  background: #fff;
+  color: #233748;
+  padding: 0 0.45rem;
+  font-size: 0.76rem;
+}
+
+.restrictBtn {
+  border: 0;
+  background: #eaf1ff;
+  color: #0052ce;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.restrictBtn:disabled,
+.table select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .empty {
   margin: 0.5rem 0 0;
   color: #647079;

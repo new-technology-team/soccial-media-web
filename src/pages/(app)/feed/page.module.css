@@ -589,6 +589,20 @@
   border-top: 1px solid rgba(171, 173, 174, 0.14);
 }
 
+.postStats button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.postStats button:hover {
+  color: #0052ce;
+  text-decoration: underline;
+}
+
 .postActions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -787,6 +801,28 @@
   overflow-wrap: anywhere;
 }
 
+.commentActions {
+  margin-top: 0.24rem;
+  display: flex;
+  gap: 0.28rem;
+}
+
+.commentActions button {
+  border: 0;
+  border-radius: 999px;
+  background: #edf2f8;
+  color: #526274;
+  min-height: 25px;
+  padding: 0 0.48rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.commentActions button:last-child {
+  color: #b4232f;
+}
+
 .commentState {
   margin: 0;
   font-size: 0.8rem;
@@ -929,6 +965,105 @@
   text-decoration: none;
   display: grid;
   place-items: center;
+}
+
+.viewerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.34);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  padding: 1rem;
+}
+
+.viewerDialog {
+  width: min(420px, 100%);
+  max-height: min(560px, calc(100dvh - 2rem));
+  border: 1px solid rgba(102, 126, 234, 0.18);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
+  padding: 0.78rem;
+  overflow: hidden;
+}
+
+.viewerHead,
+.viewerRow {
+  display: flex;
+  align-items: center;
+}
+
+.viewerHead {
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.55rem;
+}
+
+.viewerHead h3,
+.viewerList p {
+  margin: 0;
+}
+
+.viewerHead button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 11px;
+  background: #eef3fb;
+  color: #526274;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.viewerList {
+  max-height: 470px;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.34rem;
+}
+
+.viewerRow {
+  min-width: 0;
+  gap: 0.5rem;
+  border-radius: 15px;
+  background: #f4f7fb;
+  color: #203044;
+  min-height: 48px;
+  padding: 0.38rem;
+  text-decoration: none;
+}
+
+.viewerRow img,
+.viewerRow span {
+  width: 36px;
+  height: 36px;
+  border-radius: 13px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #3567f1, #14b8a6);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.viewerRow b {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+}
+
+.viewerRow i {
+  font-style: normal;
+  font-size: 1.2rem;
 }
 
 .modalOverlay {

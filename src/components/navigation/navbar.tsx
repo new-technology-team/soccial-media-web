@@ -28,6 +28,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/contexts/auth-store'
 import { api } from '@/api/client'
 import type { NotificationItem } from '@/types'
+import { connectSocket } from '@/services/socket'
 import styles from './navbar.module.css'
 
 export default function Navbar() {
@@ -35,6 +36,7 @@ export default function Navbar() {
   const [mounted, setMounted] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<'notifications' | 'more' | null>(null)
   const [notificationPreviews, setNotificationPreviews] = useState<NotificationItem[]>([])
+  const [liveNotification, setLiveNotification] = useState<NotificationItem | null>(null)
   const [pendingReportsCount, setPendingReportsCount] = useState(0)
   const [searchInput, setSearchInput] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -98,6 +100,30 @@ export default function Navbar() {
       canceled = true
     }
   }, [clearAuth, isLoggedIn, isStaff, pathname, navigate, token])
+
+  useEffect(() => {
+    if (!isLoggedIn || !token || !user?.id) return
+    const socket = connectSocket(token, user.id)
+    const handleNotification = (payload: NotificationItem & Record<string, unknown>) => {
+      const item: NotificationItem = {
+        ...payload,
+        id: String(payload.id),
+        title: String(payload.title || 'Thông báo mới'),
+        type: String(payload.type || 'other'),
+        body: payload.body ? String(payload.body) : null,
+        is_read: payload.is_read !== undefined ? Number(payload.is_read) : payload.isRead ? 1 : 0,
+        created_at: String(payload.created_at || payload.createdAt || new Date().toISOString()),
+        meta: (payload.meta as Record<string, unknown> | null | undefined) || null,
+      }
+      setNotificationPreviews((prev) => [item, ...prev.filter((existing) => String(existing.id) !== String(item.id))].slice(0, 5))
+      setLiveNotification(item)
+      window.setTimeout(() => setLiveNotification((current) => (current?.id === item.id ? null : current)), 5200)
+    }
+    socket.on('notification:new', handleNotification)
+    return () => {
+      socket.off('notification:new', handleNotification)
+    }
+  }, [isLoggedIn, token, user?.id])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -242,6 +268,15 @@ export default function Navbar() {
 
   return (
     <nav className={styles.navbar}>
+      {liveNotification ? (
+        <Link to="/notifications" className={styles.liveNotification} onClick={() => setLiveNotification(null)}>
+          <Bell size={16} />
+          <span>
+            <b>{liveNotification.title}</b>
+            <small>{liveNotification.body || 'Mở trung tâm thông báo để xem chi tiết.'}</small>
+          </span>
+        </Link>
+      ) : null}
       <div className={styles.inner}>
         <Link to={isLoggedIn ? '/feed' : '/'} className={styles.logo}>
           ZChat
@@ -509,4 +544,3 @@ export default function Navbar() {
     </nav>
   )
 }
-
