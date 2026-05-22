@@ -70,12 +70,28 @@ export interface Conversation {
     isDeleted?: boolean
   } | null
   pinnedMessageIds?: string[]
+  role?: string
+  groupOwner?: number
+  onlineCount?: number
+  isPinned?: boolean
+  isMuted?: boolean
+  mutedUntil?: string | null
+  notificationsEnabled?: boolean
   members: Array<{
     userId: number
     fullName: string
+    realName?: string
+    nickname?: string | null
     avatarUrl: string | null
     role: string
     lastReadAt?: string | null
+    lastReadMessageId?: string | null
+    isPinned?: boolean
+    isMuted?: boolean
+    mutedUntil?: string | null
+    deletedHistoryAt?: string | null
+    online?: boolean
+    lastActiveAt?: string | null
   }>
 }
 
@@ -92,6 +108,10 @@ export interface ChatMessage {
   mimeType?: string | null
   fileSize?: number | null
   meta?: Record<string, unknown> | null
+  links?: string[]
+  status?: 'sent' | 'delivered' | 'seen'
+  readBy?: Array<{ userId: number; at?: string | null }>
+  deliveredTo?: Array<{ userId: number; at?: string | null }>
   isDeleted?: boolean
   reactionCount: number
   viewerReaction: string | null

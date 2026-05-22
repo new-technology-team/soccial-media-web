@@ -1,28 +1,4 @@
-import {
-  BadgeCheck,
-  BadgeQuestionMark,
-  BicepsFlexed,
-  CirclePlus,
-  File,
-  Flame,
-  Handshake,
-  Heart,
-  Image,
-  Paperclip,
-  PartyPopper,
-  Rocket,
-  Send,
-  Smile,
-  SmilePlus,
-  Sparkles,
-  Star,
-  Sticker,
-  ThumbsUp,
-  Video,
-  X,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react'
+import { CirclePlus, File, Image, Paperclip, Send, Smile, Sticker, Video, X } from 'lucide-react'
 import { useState, type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from 'react'
 
 import { cn } from '@/utils'
@@ -34,55 +10,55 @@ type AttachmentDraft = {
   previewUrl: string | null
 }
 
-type IconInsert = {
+type EmojiInsert = {
   value: string
   label: string
-  Icon: LucideIcon
+  emoji: string
 }
 
-const QUICK_ICON_SET: IconInsert[] = [
-  { value: ':smile:', label: 'Cười', Icon: Smile },
-  { value: ':smile-plus:', label: 'Vui vẻ', Icon: SmilePlus },
-  { value: ':like:', label: 'Thích', Icon: ThumbsUp },
-  { value: ':love:', label: 'Yêu thích', Icon: Heart },
-  { value: ':thanks:', label: 'Cảm ơn', Icon: Handshake },
-  { value: ':sparkles:', label: 'Lấp lánh', Icon: Sparkles },
-  { value: ':fire:', label: 'Nổi bật', Icon: Flame },
-  { value: ':party:', label: 'Ăn mừng', Icon: PartyPopper },
-  { value: ':strong:', label: 'Mạnh mẽ', Icon: BicepsFlexed },
-  { value: ':rocket:', label: 'Bứt phá', Icon: Rocket },
-  { value: ':star:', label: 'Ngôi sao', Icon: Star },
-  { value: ':zap:', label: 'Nhanh', Icon: Zap },
+const QUICK_EMOJI_SET: EmojiInsert[] = [
+  { value: '😀', label: 'Cười', emoji: '😀' },
+  { value: '😍', label: 'Yêu thích', emoji: '😍' },
+  { value: '😂', label: 'Cười lớn', emoji: '😂' },
+  { value: '🥳', label: 'Ăn mừng', emoji: '🥳' },
+  { value: '👍', label: 'Thích', emoji: '👍' },
+  { value: '❤️', label: 'Trái tim', emoji: '❤️' },
+  { value: '🔥', label: 'Nổi bật', emoji: '🔥' },
+  { value: '✨', label: 'Lấp lánh', emoji: '✨' },
+  { value: '🤝', label: 'Cảm ơn', emoji: '🤝' },
+  { value: '💪', label: 'Mạnh mẽ', emoji: '💪' },
+  { value: '🚀', label: 'Bứt phá', emoji: '🚀' },
+  { value: '🌟', label: 'Ngôi sao', emoji: '🌟' },
 ]
 
-const ICON_STICKER_PACKS = {
+const EMOJI_STICKER_PACKS = {
   'Cảm xúc': [
-    { value: 'icon:smile', label: 'Cười', Icon: Smile },
-    { value: 'icon:smile-plus', label: 'Vui vẻ', Icon: SmilePlus },
-    { value: 'icon:heart', label: 'Yêu thích', Icon: Heart },
-    { value: 'icon:sparkles', label: 'Lấp lánh', Icon: Sparkles },
+    { value: 'emoji:🤩', label: 'Mắt sao', emoji: '🤩' },
+    { value: 'emoji:🥰', label: 'Ấm áp', emoji: '🥰' },
+    { value: 'emoji:😂', label: 'Cười lớn', emoji: '😂' },
+    { value: 'emoji:🥹', label: 'Cảm động', emoji: '🥹' },
   ],
   'Nổi bật': [
-    { value: 'icon:flame', label: 'Nổi bật', Icon: Flame },
-    { value: 'icon:party', label: 'Ăn mừng', Icon: PartyPopper },
-    { value: 'icon:rocket', label: 'Bứt phá', Icon: Rocket },
-    { value: 'icon:star', label: 'Ngôi sao', Icon: Star },
+    { value: 'emoji:🔥', label: 'Nổi bật', emoji: '🔥' },
+    { value: 'emoji:🎉', label: 'Ăn mừng', emoji: '🎉' },
+    { value: 'emoji:🚀', label: 'Bứt phá', emoji: '🚀' },
+    { value: 'emoji:🌈', label: 'Rực rỡ', emoji: '🌈' },
   ],
   'Hành động': [
-    { value: 'icon:like', label: 'Thích', Icon: ThumbsUp },
-    { value: 'icon:thanks', label: 'Cảm ơn', Icon: Handshake },
-    { value: 'icon:strong', label: 'Mạnh mẽ', Icon: BicepsFlexed },
-    { value: 'icon:zap', label: 'Nhanh', Icon: Zap },
+    { value: 'emoji:👏', label: 'Vỗ tay', emoji: '👏' },
+    { value: 'emoji:🙌', label: 'Tuyệt vời', emoji: '🙌' },
+    { value: 'emoji:💪', label: 'Mạnh mẽ', emoji: '💪' },
+    { value: 'emoji:🤝', label: 'Cảm ơn', emoji: '🤝' },
   ],
   'Tiện ích': [
-    { value: 'icon:badge-check', label: 'Đã xong', Icon: BadgeCheck },
-    { value: 'icon:question', label: 'Cần hỏi', Icon: BadgeQuestionMark },
-    { value: 'icon:sticker', label: 'Sticker', Icon: Sticker },
-    { value: 'icon:file', label: 'Tệp', Icon: File },
+    { value: 'emoji:✅', label: 'Đã xong', emoji: '✅' },
+    { value: 'emoji:❓', label: 'Cần hỏi', emoji: '❓' },
+    { value: 'emoji:💡', label: 'Ý tưởng', emoji: '💡' },
+    { value: 'emoji:📎', label: 'Đính kèm', emoji: '📎' },
   ],
-} satisfies Record<string, IconInsert[]>
+} satisfies Record<string, EmojiInsert[]>
 
-type StickerPackName = keyof typeof ICON_STICKER_PACKS
+type StickerPackName = keyof typeof EMOJI_STICKER_PACKS
 
 type MessageComposerProps = {
   message: string
@@ -189,7 +165,7 @@ export function MessageComposer({
               }}
             >
               <Smile size={16} />
-              Chèn icon
+              Chèn emoji
             </button>
           </div>
         ) : null}
@@ -217,8 +193,8 @@ export function MessageComposer({
             setComposerMenuOpen(false)
           }}
           disabled={busyUploading}
-          title="Mở bảng icon"
-          aria-label="Mở bảng icon"
+          title="Mở bảng emoji"
+          aria-label="Mở bảng emoji"
         >
           <Smile size={16} />
         </button>
@@ -257,9 +233,9 @@ export function MessageComposer({
 
         {showEmojiPanel ? (
           <div className={styles.emojiPanel}>
-            {QUICK_ICON_SET.map((item) => (
+            {QUICK_EMOJI_SET.map((item) => (
               <button key={item.value} type="button" title={item.label} aria-label={item.label} onClick={() => setMessage(`${message}${item.value}`)}>
-                <item.Icon size={18} />
+                <span className={styles.emojiGlyph}>{item.emoji}</span>
               </button>
             ))}
           </div>
@@ -268,7 +244,7 @@ export function MessageComposer({
         {showStickerPanel ? (
           <div className={styles.stickerPanel}>
             <div className={styles.stickerTabs}>
-              {(Object.keys(ICON_STICKER_PACKS) as Array<StickerPackName>).map((packName) => (
+              {(Object.keys(EMOJI_STICKER_PACKS) as Array<StickerPackName>).map((packName) => (
                 <button
                   key={packName}
                   type="button"
@@ -287,9 +263,9 @@ export function MessageComposer({
               ))}
             </div>
             {loadedStickerPacks[activeStickerPack] ? (
-              ICON_STICKER_PACKS[activeStickerPack].map((sticker) => (
+              EMOJI_STICKER_PACKS[activeStickerPack].map((sticker) => (
                 <button key={sticker.value} type="button" title={sticker.label} aria-label={sticker.label} onClick={() => void onSendSticker(sticker.value)}>
-                  <sticker.Icon size={20} />
+                  <span className={styles.stickerGlyph}>{sticker.emoji}</span>
                 </button>
               ))
             ) : (

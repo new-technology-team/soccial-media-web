@@ -9,12 +9,16 @@ import {
   Dot,
   Ellipsis,
   Heart,
+  House,
   Image as ImageIcon,
   MessageCircle,
+  MessagesSquare,
   MoreHorizontal,
+  PenLine,
   Settings,
   Share2,
   Smile,
+  UserRound,
   UserPlus,
   X,
   MapPin,
@@ -824,22 +828,35 @@ export default function FeedPage() {
       <div className={styles.layout}>
         <aside className={styles.leftRail}>
           <div className={styles.brandWrap}>
-            <div className={styles.brandIcon}>M</div>
+            <div className={styles.brandIcon}>
+              <MessageCircle size={21} />
+            </div>
             <div>
               <p className={styles.brandTitle}>ZChat</p>
               <p className={styles.brandSub}>Mạng xã hội chuyên nghiệp</p>
             </div>
           </div>
 
+          <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railProfile}>
+            <span className={styles.avatarBadge}>{(me?.fullName?.[0] || 'K').toUpperCase()}</span>
+            <span>
+              <b>{isGuestView ? 'Khách vãng lai' : me?.fullName || 'Người dùng'}</b>
+              <small>{isGuestView ? 'Đăng nhập để tương tác' : 'Xem hồ sơ của bạn'}</small>
+            </span>
+          </Link>
+
           <nav className={styles.railNav}>
             <Link to="/feed" className={`${styles.railItem} ${styles.railItemActive}`}>
-              Bảng tin
+              <House size={17} />
+              <span>Bảng tin</span>
             </Link>
-            <Link to={`/profile/${me?.id || 1}`} className={styles.railItem}>
-              Hồ sơ
+            <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railItem}>
+              <UserRound size={17} />
+              <span>Hồ sơ</span>
             </Link>
             <Link to="/messages" className={styles.railItem}>
-              Trò chuyện
+              <MessagesSquare size={17} />
+              <span>Trò chuyện</span>
             </Link>
           </nav>
 
@@ -854,7 +871,8 @@ export default function FeedPage() {
               setIsModalOpen(true)
             }}
           >
-            + Tạo bài viết
+            <PenLine size={16} />
+            <span>Tạo bài viết</span>
           </button>
 
           <div className={styles.railBottom}>
@@ -871,6 +889,10 @@ export default function FeedPage() {
 
         <section className={styles.mainCol}>
           <header className={styles.topBar}>
+            <div className={styles.feedHeading}>
+              <h1>Bảng tin</h1>
+              <p>Cập nhật mới từ cộng đồng của bạn</p>
+            </div>
             <input className={styles.searchInput} placeholder="Tìm kiếm..." />
             <div className={styles.topActions}>
               <button type="button" className={styles.iconBtn}>
@@ -1533,4 +1555,3 @@ export default function FeedPage() {
     </div>
   )
 }
-

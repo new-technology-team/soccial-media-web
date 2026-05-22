@@ -1,4 +1,4 @@
-import { Bell, CirclePlus, Info, MessageCircle, Search, Send, UserPlus, Users } from 'lucide-react'
+import { Bell, BellOff, CirclePlus, Info, MessageCircle, Pin, Search, Send, UserPlus, Users } from 'lucide-react'
 
 import { formatVietnamTime, getConversationDisplayName } from '@/services/messages/formatters'
 import type { Conversation, NotificationItem } from '@/types'
@@ -107,12 +107,14 @@ export function MessagesSidebar({
             const previewLine = lastMessage ? `${senderName}: ${previewText}` : previewText
             const directPeer = conv.type === 'direct' ? conv.members.find((member) => member.userId !== userId) || null : null
             const avatarUrl = conv.avatarUrl || (conv.type === 'direct' ? directPeer?.avatarUrl || sender?.avatarUrl || null : null)
-            const isOnline = isActive || conv.unreadCount > 0
+            const isOnline = Boolean(directPeer?.online)
             const statusLabel = conv.type === 'group'
-              ? `${conv.members.length} thành viên`
+              ? `${conv.members.length} thành viên${conv.onlineCount ? ` • ${conv.onlineCount} online` : ''}`
               : isOnline
                 ? 'Đang hoạt động'
-                : 'Offline'
+                : directPeer?.lastActiveAt
+                  ? `Hoạt động ${new Date(directPeer.lastActiveAt).toLocaleString('vi-VN')}`
+                  : 'Offline'
 
             return (
               <button
@@ -131,7 +133,7 @@ export function MessagesSidebar({
                 </div>
                 <div className={styles.convText}>
                   <div className={styles.convLineTop}>
-                    <strong>{name}</strong>
+                    <strong>{name} {conv.isPinned ? <Pin size={11} /> : null} {conv.isMuted ? <BellOff size={11} /> : null}</strong>
                     <span>{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
                   </div>
                   <div className={styles.convStatusLine}>

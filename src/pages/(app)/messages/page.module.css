@@ -441,6 +441,63 @@
   outline: none;
 }
 
+.sharedBlock {
+  min-width: 0;
+  display: grid;
+  gap: 0.28rem;
+  border-radius: 9px;
+  background: #f4f7fb;
+  padding: 0.46rem;
+  color: #506373;
+}
+
+.sharedTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.24rem;
+}
+
+.sharedTabs button {
+  min-width: 0;
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: #e6edf6;
+  color: #53687a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.22rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sharedTabActive {
+  color: #174b95 !important;
+  background: #d6e7ff !important;
+}
+
+.sharedBlock b {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  color: #253744;
+  font-size: 0.74rem;
+}
+
+.sharedBlock a,
+.sharedBlock p,
+.sharedBlock small {
+  margin: 0;
+  min-width: 0;
+  color: #53687a;
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chatHeader {
   display: flex;
   align-items: center;
@@ -454,6 +511,44 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.messageFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.38rem;
+  margin: 0 1rem 0.55rem;
+  padding: 0.42rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(171, 173, 174, 0.2);
+}
+
+.messageFilters select,
+.messageFilters input,
+.messageFilters button {
+  min-height: 32px;
+  max-width: 100%;
+  border: 1px solid rgba(171, 173, 174, 0.3);
+  border-radius: 9px;
+  background: #fff;
+  color: #304453;
+  padding: 0 0.58rem;
+  font-size: 0.75rem;
+}
+
+.messageFilters button {
+  border: 0;
+  background: #dce8fa;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chatActions .chatActionActive {
+  color: var(--chat-primary);
+  border-color: rgba(79, 109, 255, 0.34);
+  background: rgba(229, 237, 255, 0.96);
 }
 
 .socialActionBtn,
@@ -1230,6 +1325,54 @@
 .emojiPanel button:hover,
 .stickerPanel button:hover {
   background: #e8edf3;
+}
+
+.emojiGlyph,
+.stickerGlyph,
+.reactionEmojiGlyph,
+.reactionPickerGlyph,
+.stickerMessageGlyph {
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  line-height: 1;
+}
+
+.emojiGlyph {
+  font-size: 1.35rem;
+}
+
+.stickerGlyph {
+  font-size: 1.8rem;
+}
+
+.reactionEmojiGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reactionPickerGlyph {
+  font-size: 1.25rem;
+}
+
+.stickerMessageGlyph {
+  font-size: 3rem;
+  filter: drop-shadow(0 5px 9px rgba(20, 30, 40, 0.12));
+}
+
+.bubble .reactionEmojiGlyph,
+.bubble .stickerMessageGlyph {
+  display: inline-flex;
+  margin-top: 0;
+  color: inherit;
+  text-align: inherit;
+}
+
+.bubble .reactionEmojiGlyph {
+  font-size: inherit;
+}
+
+.bubble .stickerMessageGlyph {
+  font-size: 3rem;
 }
 
 .stickerBubble {
@@ -2951,5 +3094,761 @@
   .composerSendBtn {
     width: 40px;
     height: 40px;
+  }
+}
+
+.settingsBackdrop {
+  display: none;
+}
+
+.settingsSidebar {
+  min-height: 100%;
+  display: grid;
+  gap: 0.72rem;
+  align-content: start;
+  color: var(--chat-text, #172033);
+}
+
+.settingsHeader {
+  position: sticky;
+  top: -0.85rem;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 0.42rem;
+  margin: -0.85rem -0.85rem 0;
+  padding: 1rem 0.85rem 0.85rem;
+  border-bottom: 1px solid var(--chat-border, rgba(102, 126, 234, 0.2));
+  background: rgba(246, 249, 255, 0.94);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  text-align: center;
+}
+
+.settingsHeader h3,
+.settingsHeader p {
+  margin: 0;
+}
+
+.settingsHeader h3 {
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.settingsHeader p,
+.groupMeta,
+.settingsEmpty {
+  color: var(--chat-muted, #647087);
+  font-size: 0.73rem;
+}
+
+.settingsClose {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  display: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(226, 232, 240, 0.86);
+  color: inherit;
+  cursor: pointer;
+}
+
+.settingsHeroAvatars {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settingsAvatar {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 22px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: visible;
+  background: linear-gradient(135deg, #2563eb, #14b8a6);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.settingsAvatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.settingsAvatar i {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.settingsAvatarCompact {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+
+.settingsAvatarCompact i {
+  width: 10px;
+  height: 10px;
+}
+
+.settingsAvatarStacked {
+  width: 48px;
+  height: 48px;
+  border-radius: 18px;
+  margin-left: -11px;
+  box-shadow: 0 9px 20px rgba(37, 99, 235, 0.17);
+}
+
+.settingsAvatarStacked:first-child {
+  width: 58px;
+  height: 58px;
+  margin-left: 0;
+  z-index: 1;
+}
+
+.settingsTitleRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.settingsTitleRow button,
+.memberActions button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(226, 232, 240, 0.84);
+  color: #49607d;
+  cursor: pointer;
+}
+
+.groupMeta,
+.settingsStats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.groupMeta span,
+.settingsStats span {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 0.24rem;
+  border-radius: 999px;
+  background: rgba(231, 238, 250, 0.9);
+  padding: 0 0.52rem;
+}
+
+.quickActionsRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.quickAction {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #455a73;
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.quickAction span {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(102, 126, 234, 0.16);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 18px rgba(37, 56, 104, 0.08);
+}
+
+.quickAction small {
+  width: 100%;
+  color: inherit;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.quickAction:hover:not(:disabled) span,
+.settingsTitleRow button:hover,
+.memberActions button:hover {
+  border-color: rgba(70, 102, 255, 0.32);
+  transform: translateY(-2px);
+}
+
+.quickAction:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.quickActionActive {
+  color: var(--chat-primary, #4666ff);
+}
+
+.quickActionActive span {
+  background: rgba(70, 102, 255, 0.14);
+  border-color: rgba(70, 102, 255, 0.28);
+}
+
+.settingsSections {
+  display: grid;
+  gap: 0.52rem;
+}
+
+.settingsAccordion {
+  overflow: hidden;
+  border: 1px solid rgba(102, 126, 234, 0.15);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 10px 24px rgba(39, 50, 99, 0.07);
+}
+
+.settingsAccordionTrigger {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  padding: 0.65rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settingsAccordionTitle,
+.settingsAccordionMeta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.settingsAccordionTitle b {
+  font-size: 0.81rem;
+}
+
+.settingsAccordionMeta {
+  color: var(--chat-muted, #647087);
+  font-size: 0.7rem;
+}
+
+.settingsAccordionMeta svg {
+  transform: rotate(0);
+}
+
+.settingsAccordionOpen .settingsAccordionMeta svg {
+  transform: rotate(180deg);
+}
+
+.settingsAccordionBody {
+  display: grid;
+  gap: 0.48rem;
+  padding: 0 0.65rem 0.65rem;
+  animation: settingsReveal 180ms ease;
+}
+
+.mediaTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.24rem;
+  border-radius: 13px;
+  background: rgba(232, 239, 252, 0.9);
+  padding: 0.22rem;
+}
+
+.mediaTabs button,
+.viewAllButton {
+  border: 0;
+  min-height: 32px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.22rem;
+  background: transparent;
+  color: #526784;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mediaTabActive,
+.viewAllButton {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: var(--chat-primary, #4666ff) !important;
+  box-shadow: 0 6px 16px rgba(37, 56, 104, 0.12);
+}
+
+.mediaGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.28rem;
+}
+
+.mediaTile,
+.mediaGrid .settingsSkeleton {
+  aspect-ratio: 1;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(227, 236, 249, 0.92);
+  color: #526784;
+}
+
+.mediaTile img,
+.mediaTile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mediaTile:hover img,
+.mediaTile:hover video {
+  transform: scale(1.07);
+}
+
+.settingsList,
+.settingsSkeletonRows,
+.memberList,
+.actionRows,
+.nicknameList,
+.mockRows {
+  display: grid;
+  gap: 0.34rem;
+}
+
+.settingsListRow,
+.infoRow,
+.nicknamePreview,
+.nicknameList button,
+.inviteBox button {
+  min-width: 0;
+  border: 1px solid rgba(102, 126, 234, 0.12);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0.46rem;
+  padding: 0.45rem;
+  background: rgba(244, 248, 255, 0.86);
+  color: inherit;
+  text-decoration: none;
+}
+
+.settingsListRow span,
+.infoRow span,
+.nicknamePreview span,
+.nicknameList span,
+.memberName {
+  min-width: 0;
+  display: grid;
+}
+
+.settingsListRow b,
+.infoRow b,
+.nicknamePreview b,
+.nicknameList b,
+.memberName b {
+  min-width: 0;
+  color: inherit;
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsListRow small,
+.infoRow small,
+.nicknamePreview small,
+.nicknameList small,
+.memberName small {
+  min-width: 0;
+  color: var(--chat-muted, #647087);
+  font-size: 0.66rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsListRow svg,
+.infoRow svg,
+.actionRows svg,
+.dangerAction svg {
+  flex: 0 0 auto;
+}
+
+.settingsEmpty {
+  min-height: 48px;
+  margin: 0;
+  border: 1px dashed rgba(102, 126, 234, 0.22);
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(244, 248, 255, 0.54);
+  padding: 0.45rem;
+  text-align: center;
+}
+
+.settingsSkeleton {
+  min-height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(224, 232, 246, 0.9), rgba(243, 247, 255, 0.98), rgba(224, 232, 246, 0.9));
+  background-size: 220% 100%;
+  animation: settingsShimmer 1.1s linear infinite;
+}
+
+.memberRow {
+  min-width: 0;
+  border: 1px solid rgba(102, 126, 234, 0.12);
+  border-radius: 15px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.44rem;
+  background: rgba(244, 248, 255, 0.8);
+}
+
+.memberActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.18rem;
+}
+
+.memberActions button {
+  width: 25px;
+  height: 25px;
+  border-radius: 9px;
+}
+
+.memberActions button:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+.memberDanger {
+  color: #dc2626 !important;
+}
+
+.inviteBox {
+  display: grid;
+  gap: 0.32rem;
+  border-top: 1px solid rgba(102, 126, 234, 0.12);
+  padding-top: 0.45rem;
+}
+
+.inviteBox label {
+  color: #455a73;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.inviteBox input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 0 0.55rem;
+  color: inherit;
+  outline: none;
+}
+
+.inviteBox button,
+.nicknameList button {
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.inviteBox button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nicknamePreview button {
+  margin-left: auto;
+  min-height: 28px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(70, 102, 255, 0.12);
+  color: var(--chat-primary, #4666ff);
+  padding: 0 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.actionRows button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 13px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(244, 248, 255, 0.86);
+  color: inherit;
+  padding: 0 0.52rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.actionRows button:hover,
+.settingsListRow:hover,
+.nicknameList button:hover,
+.inviteBox button:hover {
+  background: rgba(232, 239, 252, 0.98);
+}
+
+.settingsToggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  border-radius: 14px;
+  background: rgba(244, 248, 255, 0.86);
+  padding: 0.5rem;
+}
+
+.settingsToggleRow span {
+  min-width: 0;
+  display: grid;
+}
+
+.settingsToggleRow b {
+  font-size: 0.74rem;
+}
+
+.settingsToggleRow small {
+  color: var(--chat-muted, #647087);
+  font-size: 0.66rem;
+}
+
+.toggleSwitch {
+  width: 40px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  position: relative;
+  flex: 0 0 auto;
+  background: #cbd5e1;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.toggleSwitch span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.22);
+}
+
+.toggleSwitchChecked {
+  background: var(--chat-primary, #4666ff);
+}
+
+.toggleSwitchChecked span {
+  transform: translateX(16px);
+}
+
+.settingsToggleDisabled {
+  opacity: 0.55;
+}
+
+.settingsPreviewText {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--chat-primary, #4666ff);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.dangerAction {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(254, 242, 242, 0.92);
+  color: #dc2626;
+  padding: 0.5rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dangerAction span {
+  display: grid;
+}
+
+.dangerAction b {
+  font-size: 0.74rem;
+}
+
+.dangerAction small {
+  color: #ef4444;
+  font-size: 0.66rem;
+}
+
+.dangerAction:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+@keyframes settingsReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes settingsShimmer {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .settingsHeader {
+    background: rgba(15, 23, 42, 0.94);
+  }
+
+  .settingsAccordion,
+  .quickAction span {
+    background: rgba(30, 41, 59, 0.78);
+    border-color: rgba(148, 163, 184, 0.16);
+  }
+
+  .settingsListRow,
+  .infoRow,
+  .memberRow,
+  .settingsToggleRow,
+  .actionRows button,
+  .nicknamePreview,
+  .nicknameList button,
+  .inviteBox button,
+  .mediaTile,
+  .settingsEmpty {
+    background: rgba(15, 23, 42, 0.5);
+    border-color: rgba(148, 163, 184, 0.14);
+  }
+
+  .inviteBox input,
+  .settingsTitleRow button,
+  .memberActions button,
+  .settingsClose {
+    background: rgba(30, 41, 59, 0.92);
+    color: var(--chat-text);
+  }
+
+  .mediaTabs,
+  .groupMeta span,
+  .settingsStats span {
+    background: rgba(30, 41, 59, 0.68);
+  }
+}
+
+@media (max-width: 1180px) {
+  .settingsBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, 0.38);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+
+  .detailsPanelOpen {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 20;
+    display: block !important;
+    width: min(390px, 100vw);
+    box-shadow: -18px 0 48px rgba(15, 23, 42, 0.22);
+    animation: settingsDrawerIn 180ms ease;
+  }
+
+  .detailsPanelOpen .settingsClose {
+    display: grid;
+  }
+}
+
+@media (max-width: 420px) {
+  .detailsPanelOpen {
+    width: 100vw;
+  }
+
+  .quickActionsRow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mediaGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@keyframes settingsDrawerIn {
+  from {
+    transform: translateX(18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }

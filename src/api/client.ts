@@ -9,6 +9,7 @@
   User,
 } from '@/types'
 import { API_BASE } from '@/config/api'
+import { useAuthStore } from '@/contexts/auth-store'
 
 const resolveApiAssetUrl = (value: string | null | undefined) => {
   if (!value) return null
@@ -115,7 +116,8 @@ const buildHeaders = (token?: string) => {
 const request = async <T>(
   path: string,
   options: RequestInit = {},
-  token?: string
+  token?: string,
+  retriedAfterRefresh = false
 ): Promise<T> => {
   const requestUrl = `${API_BASE}${path}`
   let response: Response
@@ -148,6 +150,13 @@ const request = async <T>(
   }
 
   const data = await response.json().catch(() => ({}))
+
+  if ((response.status === 401 || response.status === 403) && token && !retriedAfterRefresh && path !== '/auth/refresh') {
+    const refreshedToken = await refreshAccessToken()
+    if (refreshedToken) {
+      return request<T>(path, options, refreshedToken, true)
+    }
+  }
 
   if (!response.ok) {
     const message = typeof data.message === 'string' ? data.message : ''
@@ -187,6 +196,44 @@ const request = async <T>(
   }
 
   return data as T
+}
+
+let refreshRequest: Promise<string | null> | null = null
+
+const refreshAccessToken = async () => {
+  if (refreshRequest) return refreshRequest
+
+  refreshRequest = (async () => {
+    const auth = useAuthStore.getState()
+    if (!auth.refreshToken) return null
+
+    try {
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: buildHeaders(),
+        body: JSON.stringify({ refreshToken: auth.refreshToken }),
+        cache: 'no-store',
+      })
+      const data = await response.json().catch(() => ({})) as Partial<AuthPayload>
+      if (!response.ok || !data.accessToken || !data.refreshToken || !data.user) {
+        auth.clearAuth()
+        return null
+      }
+
+      auth.setAuth({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      })
+      return data.accessToken
+    } catch {
+      return null
+    } finally {
+      refreshRequest = null
+    }
+  })()
+
+  return refreshRequest
 }
 
 export const api = {
@@ -494,6 +541,34 @@ export const api = {
       token
     ),
 
+  pinConversation: (token: string, conversationId: string, pinned: boolean) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/pin`,
+      { method: pinned ? 'PATCH' : 'DELETE' },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
+  muteConversation: (token: string, conversationId: string, muted: boolean, mutedUntil?: string | null) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/mute`,
+      { method: 'PATCH', body: JSON.stringify({ muted, mutedUntil }) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
+  updateConversationNickname: (token: string, conversationId: string, userId: number, nickname: string | null) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/members/${userId}/nickname`,
+      { method: 'PATCH', body: JSON.stringify({ nickname }) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
+  updateGroupProfile: (token: string, conversationId: string, payload: { name: string; avatarUrl?: string | null }) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/profile`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
   dissolveGroupConversation: (token: string, conversationId: string) =>
     request<{ message: string }>(`/chat/conversations/${conversationId}`, { method: 'DELETE' }, token),
 
@@ -503,11 +578,19 @@ export const api = {
     params?: {
       limit?: number
       beforeId?: string
+      senderId?: number
+      type?: string
+      sentDate?: string
+      q?: string
     }
   ) => {
     const query = new URLSearchParams()
     if (params?.limit) query.set('limit', String(params.limit))
     if (params?.beforeId) query.set('beforeId', String(params.beforeId))
+    if (params?.senderId) query.set('senderId', String(params.senderId))
+    if (params?.type) query.set('type', params.type)
+    if (params?.sentDate) query.set('sentDate', params.sentDate)
+    if (params?.q) query.set('q', params.q)
     const suffix = query.toString() ? `?${query.toString()}` : ''
 
     return request<{
@@ -523,6 +606,24 @@ export const api = {
       messages: (data.messages || []).map(normalizeChatMessage),
     }))
   },
+
+  markConversationRead: (token: string, conversationId: string, lastReadMessageId?: string | null) =>
+    request<{ message: string }>(
+      `/chat/conversations/${conversationId}/messages/read`,
+      { method: 'PATCH', body: JSON.stringify({ lastReadMessageId }) },
+      token
+    ),
+
+  getConversationSharedContent: (token: string, conversationId: string) =>
+    request<{ photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }>(
+      `/chat/conversations/${conversationId}/shared`,
+      { method: 'GET' },
+      token
+    ).then((data) => ({
+      photosVideos: (data.photosVideos || []).map(normalizeChatMessage),
+      files: (data.files || []).map(normalizeChatMessage),
+      links: (data.links || []).map(normalizeChatMessage),
+    })),
 
   sendMessage: (token: string, conversationId: string, text: string) =>
     request<{ message: ChatMessage }>(
@@ -594,6 +695,9 @@ export const api = {
 
   clearConversationMessages: (token: string, conversationId: string) =>
     request<{ message: string }>(`/chat/conversations/${conversationId}/messages`, { method: 'DELETE' }, token),
+
+  blockUser: (token: string, userId: number) =>
+    request<{ message: string }>(`/social/users/${userId}/block`, { method: 'POST' }, token),
 
   forwardMessage: (token: string, messageId: string, targetConversationId: string) =>
     request<{ message: string; chatMessage: ChatMessage }>(
@@ -715,4 +819,3 @@ export const api = {
       token
     ),
 }
-

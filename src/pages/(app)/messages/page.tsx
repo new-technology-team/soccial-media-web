@@ -123,6 +123,25 @@ const STICKER_ICON_TOKENS: Record<string, { label: string; Icon: LucideIcon }> =
   'icon:file': { label: 'Tệp', Icon: File },
 }
 
+const STICKER_EMOJI_TOKENS: Record<string, { label: string; emoji: string }> = {
+  'emoji:🤩': { label: 'Mắt sao', emoji: '🤩' },
+  'emoji:🥰': { label: 'Ấm áp', emoji: '🥰' },
+  'emoji:😂': { label: 'Cười lớn', emoji: '😂' },
+  'emoji:🥹': { label: 'Cảm động', emoji: '🥹' },
+  'emoji:🔥': { label: 'Nổi bật', emoji: '🔥' },
+  'emoji:🎉': { label: 'Ăn mừng', emoji: '🎉' },
+  'emoji:🚀': { label: 'Bứt phá', emoji: '🚀' },
+  'emoji:🌈': { label: 'Rực rỡ', emoji: '🌈' },
+  'emoji:👏': { label: 'Vỗ tay', emoji: '👏' },
+  'emoji:🙌': { label: 'Tuyệt vời', emoji: '🙌' },
+  'emoji:💪': { label: 'Mạnh mẽ', emoji: '💪' },
+  'emoji:🤝': { label: 'Cảm ơn', emoji: '🤝' },
+  'emoji:✅': { label: 'Đã xong', emoji: '✅' },
+  'emoji:❓': { label: 'Cần hỏi', emoji: '❓' },
+  'emoji:💡': { label: 'Ý tưởng', emoji: '💡' },
+  'emoji:📎': { label: 'Đính kèm', emoji: '📎' },
+}
+
 export default function MessagesPage() {
   const [searchParams] = useSearchParams()
   const token = useAuthStore((state) => state.accessToken)
@@ -158,6 +177,7 @@ export default function MessagesPage() {
   const [showNewMessageModal, setShowNewMessageModal] = useState(false)
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
+  const [showSettingsDrawer, setShowSettingsDrawer] = useState(false)
   const [rightPanelSection, setRightPanelSection] = useState<'overview' | 'members' | 'manage'>('overview')
   const [groupName, setGroupName] = useState('')
   const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
@@ -182,6 +202,15 @@ export default function MessagesPage() {
   const [isSendingMessage, setIsSendingMessage] = useState(false)
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
   const [typingUserIds, setTypingUserIds] = useState<Set<number>>(new Set())
+  const [messageSearchKeyword, setMessageSearchKeyword] = useState('')
+  const [showMessageFilters, setShowMessageFilters] = useState(false)
+  const [loadingMessages, setLoadingMessages] = useState(false)
+  const [sharedContent, setSharedContent] = useState<{ photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }>({
+    photosVideos: [],
+    files: [],
+    links: [],
+  })
+  const [loadingSharedContent, setLoadingSharedContent] = useState(false)
   const typingTimeoutRef = useRef<number | null>(null)
   const sendingMessageRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -261,7 +290,11 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!token || !selectedConversationId) return
 
-    loadChatMessages(token, selectedConversationId, 25)
+    setLoadingMessages(true)
+    api.listMessages(token, selectedConversationId, {
+      limit: 25,
+      q: messageSearchKeyword.trim() || undefined,
+    })
       .then((response) => {
         setMessages(selectedConversationId, response.messages)
         setHasMoreHistory((prev) => ({ ...prev, [selectedConversationId]: response.messages.length >= 25 }))
@@ -269,10 +302,22 @@ export default function MessagesPage() {
           ...prev,
           [selectedConversationId]: response.messageLimit || null,
         }))
+        const lastMessageId = response.messages[response.messages.length - 1]?.id || null
+        api.markConversationRead(token, selectedConversationId, lastMessageId).catch(() => undefined)
         scrollConversationToBottom('auto')
       })
       .catch(console.error)
-  }, [scrollConversationToBottom, token, selectedConversationId, setMessages])
+      .finally(() => setLoadingMessages(false))
+  }, [messageSearchKeyword, scrollConversationToBottom, token, selectedConversationId, setMessages])
+
+  useEffect(() => {
+    if (!token || !selectedConversationId) return
+    setLoadingSharedContent(true)
+    api.getConversationSharedContent(token, selectedConversationId)
+      .then(setSharedContent)
+      .catch(() => setSharedContent({ photosVideos: [], files: [], links: [] }))
+      .finally(() => setLoadingSharedContent(false))
+  }, [token, selectedConversationId, messagesByConversation[selectedConversationId || '']?.length])
 
   useEffect(() => {
     reloadNotifications().catch(() => undefined)
@@ -323,6 +368,30 @@ export default function MessagesPage() {
     socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage | null }) => {
       if (!payload?.message) return
       upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
+      refreshConversations().catch(() => undefined)
+    })
+
+    socket.on('conversation:updated', () => {
+      refreshConversations().catch(() => undefined)
+    })
+
+    socket.on('conversation:seen', () => {
+      refreshConversations().catch(() => undefined)
+    })
+
+    socket.on('conversation:nickname', () => {
+      refreshConversations().catch(() => undefined)
+    })
+
+    socket.on('conversation:members', () => {
+      refreshConversations().catch(() => undefined)
+    })
+
+    socket.on('presence:updated', () => {
+      refreshConversations().catch(() => undefined)
+    })
+
+    socket.on('message:seen', () => {
       refreshConversations().catch(() => undefined)
     })
 
@@ -466,6 +535,12 @@ export default function MessagesPage() {
       socket.off('message:reaction')
       socket.off('message:updated')
       socket.off('message:typing')
+      socket.off('message:seen')
+      socket.off('conversation:updated')
+      socket.off('conversation:seen')
+      socket.off('conversation:nickname')
+      socket.off('conversation:members')
+      socket.off('presence:updated')
       socket.off('notification:new')
       socket.off('call:offer')
       socket.off('call:answer')
@@ -587,6 +662,16 @@ export default function MessagesPage() {
     (message: ChatMessage) => {
       if (!selectedConversation || message.senderId !== user?.id) return null
 
+      const readByIds = new Set((message.readBy || []).map((item) => Number(item.userId)))
+      if (readByIds.size > 0) {
+        const otherMembers = selectedConversation.members.filter((member) => member.userId !== user.id)
+        const names = otherMembers
+          .filter((member) => readByIds.has(Number(member.userId)))
+          .map((member) => member.fullName)
+        if (selectedConversation.type === 'direct') return names.length ? 'Đã xem' : message.status === 'delivered' ? 'Đã nhận' : 'Đã gửi'
+        if (names.length > 0) return `Đã xem bởi ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
+      }
+
       const sentAt = new Date(message.createdAt).getTime()
       if (Number.isNaN(sentAt)) return 'Đã gửi'
 
@@ -597,7 +682,7 @@ export default function MessagesPage() {
         return !Number.isNaN(readAt) && readAt >= sentAt
       }).length
 
-      if (seenCount === 0) return 'Đã gửi'
+      if (seenCount === 0) return message.status === 'delivered' ? 'Đã nhận' : 'Đã gửi'
       if (selectedConversation.type === 'direct' || seenCount >= otherMembers.length) return 'Đã xem'
       return `Đã xem bởi ${seenCount}`
     },
@@ -616,7 +701,10 @@ export default function MessagesPage() {
           getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
         )
 
-    return [...items].sort((a, b) => getConversationActivityTime(b) - getConversationActivityTime(a))
+    return [...items].sort((a, b) => {
+      if (Boolean(a.isPinned) !== Boolean(b.isPinned)) return Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned))
+      return getConversationActivityTime(b) - getConversationActivityTime(a)
+    })
   }, [conversations, searchTerm, user?.id])
 
   const callTargetId = useMemo(() => {
@@ -673,8 +761,19 @@ export default function MessagesPage() {
     return {
       id: member.userId,
       name: member.fullName,
+      online: Boolean(member.online),
+      lastActiveAt: member.lastActiveAt || null,
     }
   }, [selectedConversation, user?.id])
+
+  const directPeerActivityLabel = useMemo(() => {
+    if (!directPeer) return ''
+    if (directPeer.online) return 'Đang hoạt động'
+    if (!directPeer.lastActiveAt) return 'Ngoại tuyến'
+    const minutes = Math.max(1, Math.round((Date.now() - new Date(directPeer.lastActiveAt).getTime()) / 60000))
+    if (!Number.isFinite(minutes)) return 'Ngoại tuyến'
+    return minutes < 60 ? `Hoạt động ${minutes} phút trước` : `Hoạt động ${Math.round(minutes / 60)} giờ trước`
+  }, [directPeer])
 
   const selectedGroup = useMemo(() => {
     if (!selectedConversation || selectedConversation.type !== 'group') return null
@@ -705,7 +804,7 @@ export default function MessagesPage() {
   }, [selectedGroup])
 
   const canLeaveGroup = Boolean(selectedGroup && myGroupMember)
-  const canLeaderLeaveGroup = myGroupRole !== 'leader' || Boolean(groupDeputy && Number(groupDeputy.userId) !== Number(user?.id))
+  const canLeaderLeaveGroup = Boolean(selectedGroup && selectedGroup.members.some((member) => Number(member.userId) !== Number(user?.id)))
 
   const groupInviteCandidates = useMemo(() => {
     if (!selectedGroup) return []
@@ -745,7 +844,70 @@ export default function MessagesPage() {
 
   useEffect(() => {
     setRightPanelSection('overview')
+    setMessageSearchKeyword('')
   }, [selectedConversationId])
+
+  const handleToggleConversationPin = async () => {
+    if (!token || !selectedConversation) return
+    try {
+      await api.pinConversation(token, selectedConversation.id, !selectedConversation.isPinned)
+      await refreshConversations()
+      setChatNotice(selectedConversation.isPinned ? 'Đã bỏ ghim hội thoại.' : 'Đã ghim hội thoại.')
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật ghim hội thoại.')
+    }
+  }
+
+  const handleToggleConversationMute = async () => {
+    if (!token || !selectedConversation) return
+    try {
+      await api.muteConversation(token, selectedConversation.id, !selectedConversation.isMuted)
+      await refreshConversations()
+      setChatNotice(selectedConversation.isMuted ? 'Đã bật thông báo.' : 'Đã tắt thông báo.')
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật thông báo.')
+    }
+  }
+
+  const handleUpdateNickname = async (memberId: number) => {
+    if (!token || !selectedConversation) return
+    const member = selectedConversation.members.find((item) => item.userId === memberId)
+    const nextNickname = window.prompt('Nhập biệt danh. Để trống để xóa biệt danh.', member?.nickname || '')
+    if (nextNickname === null) return
+    try {
+      await api.updateConversationNickname(token, selectedConversation.id, memberId, nextNickname.trim() || null)
+      await refreshConversations()
+      setChatNotice(nextNickname.trim() ? 'Đã cập nhật biệt danh.' : 'Đã xóa biệt danh.')
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật biệt danh.')
+    }
+  }
+
+  const handleUpdateGroupProfile = async () => {
+    if (!token || !selectedGroup || !canAddMembers) return
+    const nextName = window.prompt('Tên nhóm mới', selectedGroup.name || '')
+    if (nextName === null || !nextName.trim()) return
+    const nextAvatar = window.prompt('URL ảnh đại diện nhóm (có thể để trống)', selectedGroup.avatarUrl || '')
+    if (nextAvatar === null) return
+    try {
+      await api.updateGroupProfile(token, selectedGroup.id, { name: nextName.trim(), avatarUrl: nextAvatar.trim() || null })
+      await refreshConversations()
+      setChatNotice('Đã cập nhật thông tin nhóm.')
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật nhóm.')
+    }
+  }
+
+  const handleBlockPeer = async () => {
+    if (!token || !directPeer) return
+    if (!window.confirm(`Chặn ${directPeer.name}? Hai bên sẽ không thể gửi tin nhắn trực tiếp trong hội thoại này.`)) return
+    try {
+      await api.blockUser(token, directPeer.id)
+      setChatNotice(`Đã chặn ${directPeer.name}.`)
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : 'Không thể chặn người dùng.')
+    }
+  }
 
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
     if (localStreamRef.current) return localStreamRef.current
@@ -1093,7 +1255,7 @@ export default function MessagesPage() {
   const handleLeaveGroup = async () => {
     if (!token || !selectedGroup || !canLeaveGroup) return
     if (myGroupRole === 'leader' && !canLeaderLeaveGroup) {
-      setChatNotice('Bạn đang là trưởng nhóm. Hãy chỉ định phó nhóm trước khi rời nhóm.')
+      setChatNotice('Nhóm cần có thành viên khác trước khi trưởng nhóm rời đi.')
       setRightPanelSection('manage')
       return
     }
@@ -1145,7 +1307,11 @@ export default function MessagesPage() {
     const previousScrollHeight = messagesWrapRef.current?.scrollHeight || 0
 
     try {
-      const response = await loadChatMessages(token, selectedConversationId, 20, beforeId)
+      const response = await api.listMessages(token, selectedConversationId, {
+        limit: 20,
+        beforeId,
+        q: messageSearchKeyword.trim() || undefined,
+      })
 
       if (response.messages.length === 0) {
         setHasMoreHistory((prev) => ({ ...prev, [selectedConversationId]: false }))
@@ -1763,6 +1929,14 @@ export default function MessagesPage() {
 
     if (msg.type === 'sticker') {
       const sticker = (msg.meta?.sticker as string) || msg.text || ':)'
+      const stickerEmoji = STICKER_EMOJI_TOKENS[sticker]
+      if (stickerEmoji) {
+        return (
+          <p className={styles.stickerBubble} title={stickerEmoji.label} aria-label={stickerEmoji.label}>
+            <span className={styles.stickerMessageGlyph}>{stickerEmoji.emoji}</span>
+          </p>
+        )
+      }
       const stickerIcon = STICKER_ICON_TOKENS[sticker]
       if (stickerIcon) {
         return (
@@ -1833,9 +2007,9 @@ export default function MessagesPage() {
                 <p>
                   {directPeer
                     ? isDirectPeerFriend
-                      ? 'Bạn bè • Online'
+                      ? `Bạn bè • ${directPeerActivityLabel}`
                       : 'Chưa kết bạn • Giới hạn 3 tin nhắn'
-                    : 'Online'}
+                    : `${selectedConversation?.onlineCount || 0} thành viên online`}
                 </p>
               </div>
             </div>
@@ -1848,10 +2022,24 @@ export default function MessagesPage() {
               </button>
               <button
                 type="button"
+                className={showMessageFilters || messageSearchKeyword ? styles.chatActionActive : undefined}
+                title="Tìm tin nhắn"
+                aria-label="Tìm tin nhắn"
+                aria-expanded={showMessageFilters}
+                disabled={!selectedConversation}
+                onClick={() => setShowMessageFilters((value) => !value)}
+              >
+                <Search size={16} />
+              </button>
+              <button
+                type="button"
                 title="Thêm người vào cuộc trò chuyện"
                 aria-label="Thêm người vào cuộc trò chuyện"
                 disabled={!selectedGroup || !canAddMembers}
-                onClick={() => setRightPanelSection('manage')}
+                onClick={() => {
+                  setRightPanelSection('manage')
+                  setShowSettingsDrawer(true)
+                }}
               >
                 <UserPlus size={16} />
               </button>
@@ -1860,12 +2048,29 @@ export default function MessagesPage() {
                 title="Xem chi tiết cuộc trò chuyện"
                 aria-label="Xem chi tiết cuộc trò chuyện"
                 disabled={!selectedConversation}
-                onClick={() => setRightPanelSection('overview')}
+                onClick={() => {
+                  setRightPanelSection('overview')
+                  setShowSettingsDrawer(true)
+                }}
               >
                 <Info size={16} />
               </button>
             </div>
           </header>
+
+          {showMessageFilters ? (
+            <div className={styles.messageFilters}>
+              <input
+                value={messageSearchKeyword}
+                onChange={(event) => setMessageSearchKeyword(event.target.value)}
+                placeholder="Tìm theo nội dung tin nhắn"
+                aria-label="Tìm theo nội dung tin nhắn"
+              />
+              {messageSearchKeyword ? (
+                <button type="button" onClick={() => setMessageSearchKeyword('')}>Xóa tìm kiếm</button>
+              ) : null}
+            </div>
+          ) : null}
 
           {selectedConversationId && messageLimitByConversation[selectedConversationId] ? (
             <div className={styles.limitBadge}>
@@ -1944,14 +2149,14 @@ export default function MessagesPage() {
             </div>
           )}
 
-          <div className={styles.timeline}>TODAY</div>
+          <div className={styles.timeline}>Hôm nay</div>
 
           <MessageThread
             userId={user?.id}
             selectedConversation={selectedConversation}
             virtualSlice={virtualSlice}
             messagesWrapRef={messagesWrapRef}
-            loadingOlderMessages={loadingOlderMessages}
+            loadingOlderMessages={loadingOlderMessages || loadingMessages}
             typingUserIds={typingUserIds}
             busyActionId={busyActionId}
             pinnedMessageIds={pinnedMessageIds}
@@ -2047,7 +2252,8 @@ export default function MessagesPage() {
           />
         </section>
 
-        <aside className={styles.detailsPanel}>
+        {showSettingsDrawer ? <button type="button" className={styles.settingsBackdrop} aria-label="Đóng cài đặt hội thoại" onClick={() => setShowSettingsDrawer(false)} /> : null}
+        <aside className={`${styles.detailsPanel} ${showSettingsDrawer ? styles.detailsPanelOpen : ''}`}>
           <div className={styles.detailsBody}>
           <ConversationDetailsPanel
             selectedConversation={selectedConversation}
@@ -2074,6 +2280,14 @@ export default function MessagesPage() {
             handleAddMemberToGroup={handleAddMemberToGroup}
             handleLeaveGroup={handleLeaveGroup}
             handleDissolveGroup={handleDissolveGroup}
+            handleToggleConversationPin={handleToggleConversationPin}
+            handleToggleConversationMute={handleToggleConversationMute}
+            handleUpdateNickname={handleUpdateNickname}
+            handleUpdateGroupProfile={handleUpdateGroupProfile}
+            handleBlockPeer={handleBlockPeer}
+            sharedContent={sharedContent}
+            loadingSharedContent={loadingSharedContent}
+            onClose={() => setShowSettingsDrawer(false)}
           />
           </div>
         </aside>

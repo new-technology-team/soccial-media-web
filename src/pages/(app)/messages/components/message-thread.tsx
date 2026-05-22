@@ -1,4 +1,4 @@
-import { Angry, Annoyed, BadgeQuestionMark, Frown, Heart, MoreHorizontal, Smile, SmilePlus, ThumbsUp, type LucideIcon } from 'lucide-react'
+import { MoreHorizontal, Smile } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Dispatch, MouseEvent, MutableRefObject, ReactNode, SetStateAction, UIEvent } from 'react'
 
@@ -31,19 +31,23 @@ type MessageThreadProps = {
   onScroll?: (event: UIEvent<HTMLDivElement>) => void
 }
 
-const MESSAGE_REACTION_ICONS: Array<{ type: string; label: string; Icon: LucideIcon }> = [
-  { type: 'smile', label: 'Cười', Icon: SmilePlus },
-  { type: 'sad', label: 'Buồn', Icon: Frown },
-  { type: 'like', label: 'Thích', Icon: ThumbsUp },
-  { type: 'love', label: 'Yêu thích', Icon: Heart },
-  { type: 'wow', label: 'Bất ngờ', Icon: BadgeQuestionMark },
-  { type: 'cry', label: 'Khóc', Icon: Annoyed },
-  { type: 'angry', label: 'Tức giận', Icon: Angry },
+const MESSAGE_REACTION_ICONS: Array<{ type: string; label: string; emoji: string }> = [
+  { type: 'smile', label: 'Cười', emoji: '😄' },
+  { type: 'sad', label: 'Buồn', emoji: '😔' },
+  { type: 'like', label: 'Thích', emoji: '👍' },
+  { type: 'love', label: 'Yêu thích', emoji: '❤️' },
+  { type: 'wow', label: 'Bất ngờ', emoji: '😮' },
+  { type: 'cry', label: 'Khóc', emoji: '😭' },
+  { type: 'angry', label: 'Tức giận', emoji: '😡' },
 ]
 
 function ReactionIcon({ type, size = 15 }: { type: string | null | undefined; size?: number }) {
   const reaction = MESSAGE_REACTION_ICONS.find((item) => item.type === type) || MESSAGE_REACTION_ICONS[2]
-  return <reaction.Icon size={size} strokeWidth={2.4} />
+  return (
+    <span className={styles.reactionEmojiGlyph} style={{ fontSize: size }}>
+      {reaction.emoji}
+    </span>
+  )
 }
 
 export function MessageThread({
@@ -191,7 +195,7 @@ export function MessageThread({
                         setReactionPickerMessageId(null)
                       }}
                     >
-                      <reaction.Icon size={17} />
+                      <span className={styles.reactionPickerGlyph}>{reaction.emoji}</span>
                     </button>
                   ))}
                 </div>
