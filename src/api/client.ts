@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AuthPayload,
   ChatMessage,
   Conversation,
@@ -6,13 +6,11 @@ import type {
   FriendConnection,
   FeedPost,
   NotificationItem,
+  PostReactionViewer,
   User,
-} from '@/lib/types'
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.NEXT_PUBLIC_API_BASE_URL ||
-  '/backend/api'
+} from '@/types'
+import { API_BASE } from '@/config/api'
+import { useAuthStore } from '@/contexts/auth-store'
 
 const resolveApiAssetUrl = (value: string | null | undefined) => {
   if (!value) return null
@@ -46,6 +44,20 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
   ...conversation,
   id: String(conversation.id),
   pinnedMessageIds: (conversation.pinnedMessageIds || []).map((item) => String(item)),
+  avatarUrl: resolveApiAssetUrl(conversation.avatarUrl),
+  lastMessage: conversation.lastMessage
+    ? {
+        ...conversation.lastMessage,
+        id: String(conversation.lastMessage.id),
+        senderId: Number(conversation.lastMessage.senderId || 0),
+        senderAvatar: resolveApiAssetUrl(conversation.lastMessage.senderAvatar),
+        mediaUrl: resolveApiAssetUrl(conversation.lastMessage.mediaUrl),
+      }
+    : conversation.lastMessage,
+  members: (conversation.members || []).map((member) => ({
+    ...member,
+    avatarUrl: resolveApiAssetUrl(member.avatarUrl),
+  })),
 })
 
 const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({
@@ -53,6 +65,21 @@ const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({
   id: String(message.id),
   conversationId: String(message.conversationId),
   mediaUrl: resolveApiAssetUrl(message.mediaUrl),
+})
+
+const normalizeFeedPost = (post: FeedPost): FeedPost => ({
+  ...post,
+  mediaUrl: resolveApiAssetUrl(post.mediaUrl),
+  authorAvatar: resolveApiAssetUrl(post.authorAvatar),
+})
+
+const normalizeNotification = (item: NotificationItem & Record<string, unknown>): NotificationItem => ({
+  ...item,
+  id: String(item.id),
+  is_read: item.is_read !== undefined ? Number(item.is_read) : item.isRead ? 1 : 0,
+  created_at: String(item.created_at || item.createdAt || ''),
+  meta: (item.meta as Record<string, unknown> | null | undefined) || null,
+  body: item.body ? String(item.body) : null,
 })
 
 export class ApiError extends Error {
@@ -99,7 +126,8 @@ const buildHeaders = (token?: string) => {
 const request = async <T>(
   path: string,
   options: RequestInit = {},
-  token?: string
+  token?: string,
+  retriedAfterRefresh = false
 ): Promise<T> => {
   const requestUrl = `${API_BASE}${path}`
   let response: Response
@@ -132,6 +160,13 @@ const request = async <T>(
   }
 
   const data = await response.json().catch(() => ({}))
+
+  if ((response.status === 401 || response.status === 403) && token && !retriedAfterRefresh && path !== '/auth/refresh') {
+    const refreshedToken = await refreshAccessToken()
+    if (refreshedToken) {
+      return request<T>(path, options, refreshedToken, true)
+    }
+  }
 
   if (!response.ok) {
     const message = typeof data.message === 'string' ? data.message : ''
@@ -171,6 +206,44 @@ const request = async <T>(
   }
 
   return data as T
+}
+
+let refreshRequest: Promise<string | null> | null = null
+
+const refreshAccessToken = async () => {
+  if (refreshRequest) return refreshRequest
+
+  refreshRequest = (async () => {
+    const auth = useAuthStore.getState()
+    if (!auth.refreshToken) return null
+
+    try {
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: buildHeaders(),
+        body: JSON.stringify({ refreshToken: auth.refreshToken }),
+        cache: 'no-store',
+      })
+      const data = await response.json().catch(() => ({})) as Partial<AuthPayload>
+      if (!response.ok || !data.accessToken || !data.refreshToken || !data.user) {
+        auth.clearAuth()
+        return null
+      }
+
+      auth.setAuth({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      })
+      return data.accessToken
+    } catch {
+      return null
+    } finally {
+      refreshRequest = null
+    }
+  })()
+
+  return refreshRequest
 }
 
 export const api = {
@@ -240,12 +313,54 @@ export const api = {
     payload: { fullName?: string; avatarUrl?: string; dateOfBirth?: string; gender?: string }
   ) => request<{ message: string; user: User }>('/auth/me', { method: 'PUT', body: JSON.stringify(payload) }, token),
 
+  getSettings: (token: string) =>
+    request<{
+      settings: {
+        privacyLastSeen: boolean
+        privacyProfilePhoto: boolean
+        allowFriendRequests: boolean
+        notificationMessages: boolean
+        notificationCalls: boolean
+        updatedAt: string
+      }
+    }>('/social/settings', { method: 'GET' }, token),
+
+  saveSettings: (
+    token: string,
+    settings: {
+      privacyLastSeen?: boolean
+      privacyProfilePhoto?: boolean
+      allowFriendRequests?: boolean
+      notificationMessages?: boolean
+      notificationCalls?: boolean
+    }
+  ) =>
+    request<{
+      message: string
+      settings: {
+        privacyLastSeen: boolean
+        privacyProfilePhoto: boolean
+        allowFriendRequests: boolean
+        notificationMessages: boolean
+        notificationCalls: boolean
+        updatedAt: string
+      }
+    }>('/social/settings', { method: 'PUT', body: JSON.stringify(settings) }, token),
+
+  changePassword: (
+    token: string,
+    payload: { oldPassword: string; newPassword: string }
+  ) => request<{ message: string }>('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword: payload.oldPassword, newPassword: payload.newPassword }) }, token),
+
   listFeed: (token?: string) =>
     request<{ posts: FeedPost[]; viewer: { id: number; role: string } | null }>(
       '/social/feed',
       { method: 'GET' },
       token
-    ),
+    ).then((res) => ({
+      ...res,
+      posts: (res.posts || []).map(normalizeFeedPost),
+    })),
 
   listFeedWithParams: (params: { includeHidden?: boolean; limit?: number }, token?: string) => {
     const query = new URLSearchParams()
@@ -256,7 +371,10 @@ export const api = {
       `/social/feed${suffix}`,
       { method: 'GET' },
       token
-    )
+    ).then((res) => ({
+      ...res,
+      posts: (res.posts || []).map(normalizeFeedPost),
+    }))
   },
 
   createPost: (token: string, payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private' }) =>
@@ -267,11 +385,13 @@ export const api = {
         body: JSON.stringify(payload),
       },
       token
-    ),
+    ).then((res) => ({
+      post: normalizeFeedPost(res.post),
+    })),
 
   updatePost: (
     token: string,
-    postId: number,
+    postId: number | string,
     payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private' }
   ) =>
     request<{ message: string; post: FeedPost }>(
@@ -281,25 +401,33 @@ export const api = {
         body: JSON.stringify(payload),
       },
       token
-    ),
+    ).then((res) => ({
+      ...res,
+      post: normalizeFeedPost(res.post),
+    })),
 
-  deletePost: (token: string, postId: number) =>
+  deletePost: (token: string, postId: number | string) =>
     request<{ message: string }>(`/social/posts/${postId}`, { method: 'DELETE' }, token),
 
-  getPost: (postId: number, token?: string) =>
-    request<{ post: FeedPost }>(`/social/posts/${postId}`, { method: 'GET' }, token),
+  getPost: (postId: number | string, token?: string) =>
+    request<{ post: FeedPost }>(`/social/posts/${postId}`, { method: 'GET' }, token).then((res) => ({
+      post: normalizeFeedPost(res.post),
+    })),
 
   uploadPostMediaBase64: (
     token: string,
     payload: { fileName: string; contentType: string; base64Data: string }
   ) =>
-    request<{ message: string; mediaUrl: string }>(
+    request<{ message?: string; mediaUrl?: string; fileUrl?: string }>(
       '/social/posts/upload-base64',
       { method: 'POST', body: JSON.stringify(payload) },
       token
-    ),
+    ).then((data) => ({
+      message: data.message || 'Uploaded',
+      mediaUrl: resolveApiAssetUrl(data.mediaUrl || data.fileUrl || '') || '',
+    })),
 
-  reactPost: (token: string, postId: number, type = 'like') =>
+  reactPost: (token: string, postId: number | string, type = 'like') =>
     request<{ post: FeedPost }>(
       `/social/posts/${postId}/reaction`,
       {
@@ -307,13 +435,25 @@ export const api = {
         body: JSON.stringify({ type }),
       },
       token
-    ),
+    ).then((res) => ({
+      post: normalizeFeedPost(res.post),
+    })),
 
-  unreactPost: (token: string, postId: number) =>
-    request<{ post: FeedPost }>(`/social/posts/${postId}/reaction`, { method: 'DELETE' }, token),
+  unreactPost: (token: string, postId: number | string) =>
+    request<{ post: FeedPost }>(`/social/posts/${postId}/reaction`, { method: 'DELETE' }, token).then((res) => ({
+      post: normalizeFeedPost(res.post),
+    })),
+
+  listPostReactions: (postId: number | string) =>
+    request<{ reactions: PostReactionViewer[] }>(`/social/posts/${postId}/reactions`, { method: 'GET' }).then((res) => ({
+      reactions: (res.reactions || []).map((item) => ({
+        ...item,
+        avatarUrl: resolveApiAssetUrl(item.avatarUrl),
+      })),
+    })),
 
   listComments: (
-    postId: number,
+    postId: number | string,
     token?: string,
     params?: {
       limit?: number
@@ -334,12 +474,15 @@ export const api = {
     }>(`/social/posts/${postId}/comments${suffix}`, { method: 'GET' }, token)
   },
 
-  addComment: (token: string, postId: number, content: string) =>
+  addComment: (token: string, postId: number | string, content: string) =>
     request<{ comment: FeedComment }>(
       `/social/posts/${postId}/comments`,
       { method: 'POST', body: JSON.stringify({ content }) },
       token
     ),
+
+  deleteComment: (token: string, commentId: number | string) =>
+    request<{ message: string }>(`/social/comments/${commentId}`, { method: 'DELETE' }, token),
 
   listConversations: (token: string) =>
     request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token).then((data) => ({
@@ -419,6 +562,34 @@ export const api = {
       token
     ),
 
+  pinConversation: (token: string, conversationId: string, pinned: boolean) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/pin`,
+      { method: pinned ? 'PATCH' : 'DELETE' },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
+  muteConversation: (token: string, conversationId: string, muted: boolean, mutedUntil?: string | null) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/mute`,
+      { method: 'PATCH', body: JSON.stringify({ muted, mutedUntil }) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
+  updateConversationNickname: (token: string, conversationId: string, userId: number, nickname: string | null) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/members/${userId}/nickname`,
+      { method: 'PATCH', body: JSON.stringify({ nickname }) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
+  updateGroupProfile: (token: string, conversationId: string, payload: { name: string; avatarUrl?: string | null }) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/profile`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
   dissolveGroupConversation: (token: string, conversationId: string) =>
     request<{ message: string }>(`/chat/conversations/${conversationId}`, { method: 'DELETE' }, token),
 
@@ -428,11 +599,19 @@ export const api = {
     params?: {
       limit?: number
       beforeId?: string
+      senderId?: number
+      type?: string
+      sentDate?: string
+      q?: string
     }
   ) => {
     const query = new URLSearchParams()
     if (params?.limit) query.set('limit', String(params.limit))
     if (params?.beforeId) query.set('beforeId', String(params.beforeId))
+    if (params?.senderId) query.set('senderId', String(params.senderId))
+    if (params?.type) query.set('type', params.type)
+    if (params?.sentDate) query.set('sentDate', params.sentDate)
+    if (params?.q) query.set('q', params.q)
     const suffix = query.toString() ? `?${query.toString()}` : ''
 
     return request<{
@@ -448,6 +627,24 @@ export const api = {
       messages: (data.messages || []).map(normalizeChatMessage),
     }))
   },
+
+  markConversationRead: (token: string, conversationId: string, lastReadMessageId?: string | null) =>
+    request<{ message: string }>(
+      `/chat/conversations/${conversationId}/messages/read`,
+      { method: 'PATCH', body: JSON.stringify({ lastReadMessageId }) },
+      token
+    ),
+
+  getConversationSharedContent: (token: string, conversationId: string) =>
+    request<{ photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }>(
+      `/chat/conversations/${conversationId}/shared`,
+      { method: 'GET' },
+      token
+    ).then((data) => ({
+      photosVideos: (data.photosVideos || []).map(normalizeChatMessage),
+      files: (data.files || []).map(normalizeChatMessage),
+      links: (data.links || []).map(normalizeChatMessage),
+    })),
 
   sendMessage: (token: string, conversationId: string, text: string) =>
     request<{ message: ChatMessage }>(
@@ -489,7 +686,7 @@ export const api = {
       mediaUrl: resolveApiAssetUrl(data.mediaUrl || data.fileUrl || '') || '',
     })),
 
-  reactMessage: (token: string, messageId: string, type: 'like' | 'love' | 'care') =>
+  reactMessage: (token: string, messageId: string, type: string) =>
     request<{ message: string; chatMessage: ChatMessage }>(
       `/chat/messages/${messageId}/reaction`,
       { method: 'POST', body: JSON.stringify({ type }) },
@@ -520,6 +717,9 @@ export const api = {
   clearConversationMessages: (token: string, conversationId: string) =>
     request<{ message: string }>(`/chat/conversations/${conversationId}/messages`, { method: 'DELETE' }, token),
 
+  blockUser: (token: string, userId: number) =>
+    request<{ message: string }>(`/social/users/${userId}/block`, { method: 'POST' }, token),
+
   forwardMessage: (token: string, messageId: string, targetConversationId: string) =>
     request<{ message: string; chatMessage: ChatMessage }>(
       `/chat/messages/${messageId}/forward`,
@@ -537,9 +737,11 @@ export const api = {
     request<Array<{ role: 'user' | 'model'; text: string }>>('/social/ai/history', { method: 'GET' }, token),
 
   notifications: (token: string) =>
-    request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token),
+    request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token).then((res) => ({
+      notifications: (res.notifications || []).map((item) => normalizeNotification(item as NotificationItem & Record<string, unknown>)),
+    })),
 
-  readNotification: (token: string, id: number) =>
+  readNotification: (token: string, id: number | string) =>
     request<{ message: string }>(`/social/notifications/${id}/read`, { method: 'PATCH' }, token),
 
   readAllNotifications: (token: string) =>
@@ -549,7 +751,7 @@ export const api = {
     token: string,
     payload: {
       targetType: 'post' | 'comment' | 'user' | 'message'
-      targetId: number
+      targetId: number | string
       reason: string
       details?: string
     }
@@ -605,7 +807,9 @@ export const api = {
     if (params?.visibility) query.set('visibility', params.visibility)
     if (params?.limit) query.set('limit', String(params.limit))
     const suffix = query.toString() ? `?${query.toString()}` : ''
-    return request<{ posts: FeedPost[] }>(`/social/admin/posts${suffix}`, { method: 'GET' }, token)
+    return request<{ posts: FeedPost[] }>(`/social/admin/posts${suffix}`, { method: 'GET' }, token).then((res) => ({
+      posts: (res.posts || []).map(normalizeFeedPost),
+    }))
   },
 
   updateAdminPost: (
@@ -622,7 +826,10 @@ export const api = {
       `/social/admin/posts/${postId}`,
       { method: 'PATCH', body: JSON.stringify(payload) },
       token
-    ),
+    ).then((res) => ({
+      ...res,
+      post: normalizeFeedPost(res.post),
+    })),
 
   deleteAdminPost: (token: string, postId: number) =>
     request<{ message: string }>(`/social/admin/posts/${postId}`, { method: 'DELETE' }, token),

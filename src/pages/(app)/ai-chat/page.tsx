@@ -1,9 +1,9 @@
-'use client'
+﻿'use client'
 
 import { useState, useRef, useEffect } from 'react'
 import { Bot, Send, Sparkles, Trash2, UserRound, AlertCircle } from 'lucide-react'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from './page.module.css'
 
 type ChatMessage = {
@@ -229,3 +229,4 @@ export default function AIChatPage() {
     </div>
   )
 }
+

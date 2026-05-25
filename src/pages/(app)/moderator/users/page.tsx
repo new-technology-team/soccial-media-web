@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { Ban, Undo2, UserRoundCheck } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { User } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { User } from '@/types'
 import styles from './page.module.css'
 
 export default function ModeratorUsersPage() {
@@ -81,3 +81,4 @@ export default function ModeratorUsersPage() {
     </div>
   )
 }
+

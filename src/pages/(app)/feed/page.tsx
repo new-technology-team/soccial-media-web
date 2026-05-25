@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -9,19 +9,23 @@ import {
   Dot,
   Ellipsis,
   Heart,
+  House,
   Image as ImageIcon,
   MessageCircle,
+  MessagesSquare,
   MoreHorizontal,
+  PenLine,
   Settings,
   Share2,
   Smile,
+  UserRound,
   UserPlus,
   X,
   MapPin,
 } from 'lucide-react'
-import { api, isAuthExpiredError } from '@/lib/api'
-import type { FeedComment, FeedPost } from '@/lib/types'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api, isAuthExpiredError } from '@/api/client'
+import type { FeedComment, FeedPost } from '@/types'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from './page.module.css'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
@@ -61,6 +65,18 @@ const VN_LOCATIONS = [
   'Kiên Giang',
 ]
 
+const POST_REACTIONS = [
+  { type: 'like', emoji: '👍', label: 'Thích' },
+  { type: 'love', emoji: '❤️', label: 'Yêu thích' },
+  { type: 'haha', emoji: '😆', label: 'Haha' },
+  { type: 'wow', emoji: '😮', label: 'Wow' },
+  { type: 'sad', emoji: '😢', label: 'Buồn' },
+  { type: 'angry', emoji: '😡', label: 'Phẫn nộ' },
+] as const
+
+const getPostReactionMeta = (type: string | null | undefined) =>
+  POST_REACTIONS.find((item) => item.type === type) || POST_REACTIONS[0]
+
 const dedupePostsById = (items: FeedPost[]) => {
   const seen = new Set<number>()
   const result: FeedPost[] = []
@@ -71,6 +87,9 @@ const dedupePostsById = (items: FeedPost[]) => {
   })
   return result
 }
+
+const isVideoMediaUrl = (url: string) =>
+  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
 
 type ComposerExtraPanel = 'tag' | 'location' | 'emoji' | null
 
@@ -102,6 +121,9 @@ export default function FeedPage() {
   const [locationKeyword, setLocationKeyword] = useState('')
   const [tagSuggestions, setTagSuggestions] = useState<Array<{ id: number; name: string }>>([])
   const [commentLists, setCommentLists] = useState<Record<number, FeedComment[]>>({})
+  const [reactionViewers, setReactionViewers] = useState<Record<number, Array<{ userId: number; fullName: string; avatarUrl: string | null; reaction: string }>>>({})
+  const [reactionViewerPostId, setReactionViewerPostId] = useState<number | null>(null)
+  const [busyCommentId, setBusyCommentId] = useState<number | string | null>(null)
   const [expandedComments, setExpandedComments] = useState<Record<number, boolean>>({})
   const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({})
   const [loadingMoreComments, setLoadingMoreComments] = useState<Record<number, boolean>>({})
@@ -122,6 +144,7 @@ export default function FeedPage() {
   const [activeComposerPanel, setActiveComposerPanel] = useState<ComposerExtraPanel>(null)
   const [timeTick, setTimeTick] = useState(0)
   const [uploadingMedia, setUploadingMedia] = useState(false)
+  const [openReactionPostId, setOpenReactionPostId] = useState<number | null>(null)
   const [visiblePostsCount, setVisiblePostsCount] = useState(FEED_BATCH_SIZE)
   const mediaInputRef = useRef<HTMLInputElement | null>(null)
   const feedBottomSentinelRef = useRef<HTMLDivElement | null>(null)
@@ -438,16 +461,17 @@ export default function FeedPage() {
     }
   }
 
-  const handleToggleLike = async (post: FeedPost) => {
+  const handlePostReaction = async (post: FeedPost, reactionType: string) => {
     if (!token) {
       navigate('/auth/login')
       return
     }
     try {
-      const response = post.viewerReaction
+      const response = post.viewerReaction === reactionType
         ? await api.unreactPost(token, post.id)
-        : await api.reactPost(token, post.id, 'like')
+        : await api.reactPost(token, post.id, reactionType)
       setPosts((prev) => prev.map((item) => (item.id === post.id ? response.post : item)))
+      setOpenReactionPostId(null)
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to react post', error)
@@ -493,6 +517,53 @@ export default function FeedPage() {
       console.error('Failed to add comment', error)
     } finally {
       setIsCommenting((prev) => ({ ...prev, [postId]: false }))
+    }
+  }
+
+  const handleOpenReactionViewers = async (post: FeedPost) => {
+    setReactionViewerPostId(post.id)
+    if (reactionViewers[post.id]) return
+    try {
+      const response = await api.listPostReactions(post.id)
+      setReactionViewers((prev) => ({ ...prev, [post.id]: response.reactions }))
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      console.error('Failed to load reaction viewers', error)
+    }
+  }
+
+  const handleDeleteComment = async (post: FeedPost, comment: FeedComment) => {
+    if (!token || Number(post.authorId) !== Number(me?.id)) return
+    if (!window.confirm('Xóa bình luận này khỏi bài viết?')) return
+    setBusyCommentId(comment.id)
+    try {
+      await api.deleteComment(token, comment.id)
+      setCommentLists((prev) => ({ ...prev, [post.id]: (prev[post.id] || []).filter((item) => item.id !== comment.id) }))
+      setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, commentCount: Math.max(0, item.commentCount - 1) } : item)))
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      console.error('Failed to delete comment', error)
+    } finally {
+      setBusyCommentId(null)
+    }
+  }
+
+  const handleReportComment = async (comment: FeedComment) => {
+    if (!token) {
+      navigate('/auth/login')
+      return
+    }
+    const reason = window.prompt('Lý do báo cáo bình luận', 'Nội dung không phù hợp')
+    if (!reason?.trim()) return
+    setBusyCommentId(comment.id)
+    try {
+      await api.submitReport(token, { targetType: 'comment', targetId: comment.id, reason: reason.trim() })
+      setErrorText('Đã gửi báo cáo bình luận.')
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      console.error('Failed to report comment', error)
+    } finally {
+      setBusyCommentId(null)
     }
   }
 
@@ -689,7 +760,15 @@ export default function FeedPage() {
     const file = event.target.files?.[0]
     if (!file || !token) return
 
+    const maxBytes = 15 * 1024 * 1024
+    if (file.size > maxBytes) {
+      setErrorText('Media quá lớn. Vui lòng chọn tệp nhỏ hơn 15MB.')
+      event.target.value = ''
+      return
+    }
+
     setUploadingMedia(true)
+    setErrorText('')
     try {
       const base64Data = await fileToBase64(file)
       const uploaded = await api.uploadPostMediaBase64(token, {
@@ -697,10 +776,14 @@ export default function FeedPage() {
         contentType: file.type || 'application/octet-stream',
         base64Data,
       })
+      if (!uploaded.mediaUrl) {
+        throw new Error('Upload media thất bại, không nhận được URL.')
+      }
       setModalMediaUrl(uploaded.mediaUrl)
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to upload post media', error)
+      setErrorText(error instanceof Error ? error.message : 'Không thể tải ảnh/video lên bài viết.')
     } finally {
       setUploadingMedia(false)
       event.target.value = ''
@@ -795,25 +878,35 @@ export default function FeedPage() {
       <div className={styles.layout}>
         <aside className={styles.leftRail}>
           <div className={styles.brandWrap}>
-            <div className={styles.brandIcon}>M</div>
+            <div className={styles.brandIcon}>
+              <MessageCircle size={21} />
+            </div>
             <div>
               <p className={styles.brandTitle}>ZChat</p>
               <p className={styles.brandSub}>Mạng xã hội chuyên nghiệp</p>
             </div>
           </div>
 
+          <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railProfile}>
+            <span className={styles.avatarBadge}>{(me?.fullName?.[0] || 'K').toUpperCase()}</span>
+            <span>
+              <b>{isGuestView ? 'Khách vãng lai' : me?.fullName || 'Người dùng'}</b>
+              <small>{isGuestView ? 'Đăng nhập để tương tác' : 'Xem hồ sơ của bạn'}</small>
+            </span>
+          </Link>
+
           <nav className={styles.railNav}>
             <Link to="/feed" className={`${styles.railItem} ${styles.railItemActive}`}>
-              Bảng tin
+              <House size={17} />
+              <span>Bảng tin</span>
             </Link>
-            <Link to={`/profile/${me?.id || 1}`} className={styles.railItem}>
-              Hồ sơ
-            </Link>
-            <Link to="/groups" className={styles.railItem}>
-              Nhóm
+            <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railItem}>
+              <UserRound size={17} />
+              <span>Hồ sơ</span>
             </Link>
             <Link to="/messages" className={styles.railItem}>
-              Trò chuyện
+              <MessagesSquare size={17} />
+              <span>Trò chuyện</span>
             </Link>
           </nav>
 
@@ -828,7 +921,8 @@ export default function FeedPage() {
               setIsModalOpen(true)
             }}
           >
-            + Tạo bài viết
+            <PenLine size={16} />
+            <span>Tạo bài viết</span>
           </button>
 
           <div className={styles.railBottom}>
@@ -845,6 +939,10 @@ export default function FeedPage() {
 
         <section className={styles.mainCol}>
           <header className={styles.topBar}>
+            <div className={styles.feedHeading}>
+              <h1>Bảng tin</h1>
+              <p>Cập nhật mới từ cộng đồng của bạn</p>
+            </div>
             <input className={styles.searchInput} placeholder="Tìm kiếm..." />
             <div className={styles.topActions}>
               <button type="button" className={styles.iconBtn}>
@@ -1061,19 +1159,50 @@ export default function FeedPage() {
                 ) : null}
 
                 <div className={styles.postStats}>
-                  <span>{post.reactionCount} lượt thích</span>
-                  <span>{post.commentCount} bình luận</span>
+                  <button type="button" onClick={() => void handleOpenReactionViewers(post)}>
+                    {post.reactionCount} lượt cảm xúc
+                  </button>
+                  <button type="button" onClick={() => handleToggleComments(post.id)} disabled={isGuestView}>
+                    {post.commentCount} bình luận
+                  </button>
                 </div>
 
                 <div className={styles.postActions}>
-                  <button
-                    type="button"
-                    className={`${styles.actionBtn} ${post.viewerReaction ? styles.actionBtnActive : ''}`}
-                    onClick={() => handleToggleLike(post)}
-                    disabled={isGuestView}
-                  >
-                    <Heart size={16} /> Thích
-                  </button>
+                  <div className={styles.reactionActionWrap}>
+                    <button
+                      type="button"
+                      className={`${styles.actionBtn} ${post.viewerReaction ? styles.actionBtnActive : ''}`}
+                      onClick={() => setOpenReactionPostId((current) => (current === post.id ? null : post.id))}
+                      disabled={isGuestView}
+                    >
+                      {post.viewerReaction ? (
+                        <>
+                          <span className={styles.reactionActionEmoji}>{getPostReactionMeta(post.viewerReaction).emoji}</span>
+                          {getPostReactionMeta(post.viewerReaction).label}
+                        </>
+                      ) : (
+                        <>
+                          <Heart size={16} /> Thả cảm xúc
+                        </>
+                      )}
+                    </button>
+                    {openReactionPostId === post.id ? (
+                      <div className={styles.postReactionPicker}>
+                        {POST_REACTIONS.map((reaction) => (
+                          <button
+                            key={reaction.type}
+                            type="button"
+                            className={post.viewerReaction === reaction.type ? styles.postReactionActive : ''}
+                            title={reaction.label}
+                            aria-label={reaction.label}
+                            onClick={() => void handlePostReaction(post, reaction.type)}
+                          >
+                            {reaction.emoji}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     className={styles.actionBtn}
@@ -1147,6 +1276,16 @@ export default function FeedPage() {
                             <b>{comment.authorName}</b>
                           </Link>
                           <p>{comment.content}</p>
+                          {Number(post.authorId) === Number(me?.id) ? (
+                            <div className={styles.commentActions}>
+                              <button type="button" onClick={() => void handleReportComment(comment)} disabled={busyCommentId === comment.id}>
+                                Báo cáo
+                              </button>
+                              <button type="button" onClick={() => void handleDeleteComment(post, comment)} disabled={busyCommentId === comment.id}>
+                                Xóa
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -1229,6 +1368,30 @@ export default function FeedPage() {
         </aside>
       </div>
 
+      {reactionViewerPostId ? (
+        <div className={styles.viewerBackdrop} role="presentation" onClick={() => setReactionViewerPostId(null)}>
+          <section className={styles.viewerDialog} role="dialog" aria-label="Người thả cảm xúc" onClick={(event) => event.stopPropagation()}>
+            <div className={styles.viewerHead}>
+              <h3>Người thả cảm xúc</h3>
+              <button type="button" onClick={() => setReactionViewerPostId(null)} aria-label="Đóng">
+                <X size={16} />
+              </button>
+            </div>
+            <div className={styles.viewerList}>
+              {(reactionViewers[reactionViewerPostId] || []).map((viewer) => (
+                <Link key={`${viewer.userId}-${viewer.reaction}`} to={`/profile/${viewer.userId}`} className={styles.viewerRow}>
+                  {viewer.avatarUrl ? <img src={viewer.avatarUrl} alt={viewer.fullName} /> : <span>{(viewer.fullName[0] || 'U').toUpperCase()}</span>}
+                  <b>{viewer.fullName}</b>
+                  <i>{getPostReactionMeta(viewer.reaction).emoji}</i>
+                </Link>
+              ))}
+              {reactionViewers[reactionViewerPostId]?.length === 0 ? <p>Chưa có lượt cảm xúc.</p> : null}
+              {!reactionViewers[reactionViewerPostId] ? <p>Đang tải danh sách...</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {isModalOpen ? (
         <div className={styles.modalOverlay}>
           <form className={styles.modal} onSubmit={handleModalCreate}>
@@ -1278,7 +1441,21 @@ export default function FeedPage() {
             ) : null}
 
             {modalMediaUrl ? (
-              <p className={styles.metaPreview}>Đã chọn media: {modalMediaUrl}</p>
+              <div className={styles.modalMediaPreview}>
+                {isVideoMediaUrl(modalMediaUrl) ? (
+                  <video src={modalMediaUrl} controls className={styles.modalMediaPreviewAsset} />
+                ) : (
+                  <img
+                    src={modalMediaUrl}
+                    alt="Media preview"
+                    className={styles.modalMediaPreviewAsset}
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none'
+                      setErrorText('Không thể hiển thị media đã tải lên. Vui lòng thử lại.')
+                    }}
+                  />
+                )}
+              </div>
             ) : null}
             {modalTaggedFriend ? (
               <p className={styles.metaPreview}>Đã gắn thẻ: {modalTaggedFriend}</p>

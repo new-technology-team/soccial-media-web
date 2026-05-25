@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -12,9 +12,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { FeedPost } from '@/lib/types'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
+import type { FeedPost } from '@/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
 
 interface PostCardProps {
   post: FeedPost
@@ -148,3 +148,4 @@ export default function PostCard({ post }: PostCardProps) {
     </Card>
   )
 }
+

@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCircle, CalendarDays, Lock, Phone, ShieldCheck, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { api } from '@/lib/api'
+import { api} from '@/api/client'
 import styles from '../auth.module.css'
 
 export default function SignupPage() {
@@ -34,7 +34,7 @@ export default function SignupPage() {
     setError('')
 
     // Validation
-    if (formData.password !== formData.confirmPassword) {
+    if(formData.password !== formData.confirmPassword) {
       setError('Mật khẩu không khớp')
       return
     }
@@ -46,14 +46,14 @@ export default function SignupPage() {
         fullName: formData.displayName,
         emailOrPhone: formData.emailOrPhone,
         dateOfBirth: formData.dateOfBirth || undefined,
-        gender: formData.gender || undefined,
-        password: formData.password,
+          gender: formData.gender || undefined,
+            password: formData.password,
       })
 
-      if (response.requiresVerification) {
-        const identifier = encodeURIComponent(response.emailOrPhone || formData.emailOrPhone)
-        const codeQuery = response.verificationCode ? `&code=${encodeURIComponent(response.verificationCode)}` : ''
-        navigate(`/auth/verify-otp?identifier=${identifier}${codeQuery}`)
+      if(response.requiresVerification) {
+      const identifier = encodeURIComponent(response.emailOrPhone || formData.emailOrPhone)
+      const codeQuery = response.verificationCode ? `&code=${encodeURIComponent(response.verificationCode)}` : ''
+        navigate(`/auth/verify-otp?identifier=${identifier}${ codeQuery } `)
       } else {
         navigate('/auth/login')
       }
@@ -135,7 +135,7 @@ export default function SignupPage() {
                 value={formData.dateOfBirth}
                 onChange={handleChange}
                 disabled={isLoading}
-                className={`${styles.input} ${styles.inputMuted}`}
+                className={`${ styles.input } ${ styles.inputMuted } `}
               />
             </div>
           </div>
@@ -150,7 +150,7 @@ export default function SignupPage() {
               value={formData.gender}
               onChange={handleChange}
               disabled={isLoading}
-              className={`${styles.select} ${styles.inputMuted}`}
+              className={`${ styles.select } ${ styles.inputMuted } `}
             >
               <option value="">Chọn giới tính</option>
               <option value="male">Nam</option>
@@ -230,3 +230,4 @@ export default function SignupPage() {
     </div>
   )
 }
+

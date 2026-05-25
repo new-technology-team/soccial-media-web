@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, ShieldAlert, UserCog, FileCheck2, ChevronRight } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
 import styles from './page.module.css'
 
 export default function ModeratorDashboard() {
@@ -66,8 +66,8 @@ export default function ModeratorDashboard() {
           <div className={styles.priorityList}>
             {pendingReports.slice(0, 5).map((report) => (
               <div key={String(report.id)}>
-                <b>#{String(report.id)} · {String(report.reason || 'Báo cáo nội dung')}</b>
-                <small>{String(report.targetType || 'unknown')} · {String(report.status || 'pending')}</small>
+                <b>#{String(report.id)} • {String(report.reason || 'Báo cáo nội dung')}</b>
+                <small>{String(report.targetType || 'unknown')} • {String(report.status || 'pending')}</small>
               </div>
             ))}
             {pendingReports.length === 0 ? <p>Chưa có báo cáo mới.</p> : null}
@@ -99,3 +99,4 @@ export default function ModeratorDashboard() {
     </div>
   )
 }
+

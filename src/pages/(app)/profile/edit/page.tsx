@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { ChangeEvent, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from './page.module.css'
 
 export default function EditProfilePage() {
@@ -204,3 +204,4 @@ export default function EditProfilePage() {
     </div>
   )
 }
+
