@@ -6,9 +6,12 @@ export interface User {
   phone: string | null
   fullName: string
   role: Role
-  accountStatus: 'active' | 'restricted' | 'hidden' | 'deleted'
+  accountStatus: 'active' | 'warning' | 'restricted' | 'temp_locked' | 'locked' | 'hidden' | 'deleted'
   avatarUrl: string | null
   isVerified: boolean
+  lockedUntil?: string | null
+  warningCount?: number
+  restrictionReason?: string | null
 }
 
 export interface AuthPayload {

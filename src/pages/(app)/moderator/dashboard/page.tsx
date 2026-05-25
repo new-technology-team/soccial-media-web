@@ -1,102 +1,49 @@
-﻿'use client'
-
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ShieldAlert, UserCog, FileCheck2, ChevronRight } from 'lucide-react'
-import { useAuthStore } from '@/contexts/auth-store'
+
 import { api } from '@/api/client'
-import styles from './page.module.css'
+import { useAuthStore } from '@/contexts/auth-store'
+import styles from '../../admin/admin-console.module.css'
 
 export default function ModeratorDashboard() {
   const token = useAuthStore((state) => state.accessToken)
-  const [pendingReports, setPendingReports] = useState<Array<Record<string, unknown>>>([])
-  const [moderationUsers, setModerationUsers] = useState<Array<Record<string, unknown>>>([])
+  const user = useAuthStore((state) => state.user)
+  const [stats, setStats] = useState<Record<string, number>>({})
 
   useEffect(() => {
     if (!token) return
-    api.moderationReports(token).then((r) => setPendingReports(r.reports)).catch(console.error)
-    api.moderationUsers(token).then((r) => setModerationUsers(r.users as unknown as Array<Record<string, unknown>>)).catch(console.error)
+    api.moderationDashboard(token).then((res) => setStats(res.stats || {})).catch(() => undefined)
   }, [token])
 
-  const stats = useMemo(
-    () => [
-      { label: 'Báo cáo đang chờ', value: pendingReports.length, icon: AlertCircle },
-      {
-        label: 'Người dùng bị hạn chế',
-        value: moderationUsers.filter((u) => String(u.accountStatus) === 'restricted').length,
-        icon: UserCog,
-      },
-      { label: 'Tác vụ kiểm duyệt', value: pendingReports.length + moderationUsers.length, icon: ShieldAlert },
-    ],
-    [moderationUsers, pendingReports]
-  )
-
-  const quickLinks = [
-    { href: '/moderator/reports', title: 'Quản lý báo cáo', subtitle: 'Lọc theo mức độ ưu tiên' },
-    { href: '/moderator/posts', title: 'Kiểm duyệt bài viết', subtitle: 'Ẩn hoặc duyệt nội dung' },
-    { href: '/moderator/users', title: 'Kiểm duyệt người dùng', subtitle: 'Hạn chế và khôi phục tài khoản' },
-  ]
+  if (user?.role !== 'admin' && user?.role !== 'moderator') return <div className={styles.denied}>Bạn không có quyền truy cập.</div>
 
   return (
-    <div className={styles.page}>
-      <header className={styles.hero}>
-        <p>Moderation hub</p>
-        <h1>Kiểm duyệt cộng đồng</h1>
-        <span>Luồng xử lý theo mô hình stitch4: báo cáo, bài viết, người dùng.</span>
+    <main className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}>Kiểm duyệt viên</p>
+          <h1>Tổng quan kiểm duyệt</h1>
+          <p>Không gian xử lý báo cáo, bài viết, tài khoản và tin nhắn vi phạm.</p>
+        </div>
       </header>
-
-      <section className={styles.statGrid}>
-        {stats.map((item) => {
-          const Icon = item.icon
-          return (
-            <article key={item.label} className={styles.statCard}>
-              <div>
-                <small>{item.label}</small>
-                <strong>{item.value.toLocaleString('vi-VN')}</strong>
-              </div>
-              <Icon size={18} />
-            </article>
-          )
-        })}
+      <section className={styles.grid}>
+        <Metric label="Báo cáo cần xử lý" value={stats.pendingReports} />
+        <Metric label="Đang xem xét" value={stats.inReviewReports} />
+        <Metric label="Đã xử lý" value={stats.resolvedReports} />
       </section>
-
-      <section className={styles.split}>
-        <article className={styles.panel}>
-          <h2>Danh sách ưu tiên</h2>
-          <div className={styles.priorityList}>
-            {pendingReports.slice(0, 5).map((report) => (
-              <div key={String(report.id)}>
-                <b>#{String(report.id)} • {String(report.reason || 'Báo cáo nội dung')}</b>
-                <small>{String(report.targetType || 'unknown')} • {String(report.status || 'pending')}</small>
-              </div>
-            ))}
-            {pendingReports.length === 0 ? <p>Chưa có báo cáo mới.</p> : null}
-          </div>
-        </article>
-
-        <article className={styles.panel}>
-          <h2>Điều hướng thao tác</h2>
-          <div className={styles.quickList}>
-            {quickLinks.map((item) => (
-              <Link key={item.href} to={item.href} className={styles.quickItem}>
-                <span>
-                  <b>{item.title}</b>
-                  <small>{item.subtitle}</small>
-                </span>
-                <ChevronRight size={16} />
-              </Link>
-            ))}
-            <Link to="/posts/1" className={styles.quickItem}>
-              <span>
-                <b>Chi tiết bình luận bài đăng</b>
-                <small>Route mẫu từ stitch4 detail</small>
-              </span>
-              <FileCheck2 size={16} />
-            </Link>
-          </div>
-        </article>
+      <section className={styles.grid}>
+        {[
+          ['Báo cáo cần xử lý', '/moderator/reports'],
+          ['Bài viết bị báo cáo', '/moderator/posts'],
+          ['Tài khoản bị báo cáo', '/moderator/users'],
+          ['Tin nhắn bị báo cáo', '/moderator/reports?type=message'],
+          ['Lịch sử xử lý vi phạm', '/moderator/reports?status=RESOLVED'],
+        ].map(([label, href]) => <Link key={href} className={styles.metric} to={href}><span>{label}</span><strong>→</strong></Link>)}
       </section>
-    </div>
+    </main>
   )
 }
 
+function Metric({ label, value }: { label: string; value?: number }) {
+  return <article className={styles.metric}><span>{label}</span><strong>{Number(value || 0).toLocaleString('vi-VN')}</strong></article>
+}

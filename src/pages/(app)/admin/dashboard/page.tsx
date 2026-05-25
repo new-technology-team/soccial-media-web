@@ -1,143 +1,76 @@
-﻿'use client'
-
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
-import { Users, FileText, AlertTriangle, CheckCircle2, Activity, ArrowUpRight } from 'lucide-react'
-import { useAuthStore } from '@/contexts/auth-store'
+
 import { api } from '@/api/client'
-import styles from './page.module.css'
+import { useAuthStore } from '@/contexts/auth-store'
+import styles from '../admin-console.module.css'
 
 export default function AdminDashboard() {
-  const user = useAuthStore((state) => state.user)
   const token = useAuthStore((state) => state.accessToken)
-  const [rawStats, setRawStats] = useState<Record<string, number>>({})
+  const user = useAuthStore((state) => state.user)
+  const [stats, setStats] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!token) return
-    api
-      .adminStats(token)
-      .then((r) => {
-        setRawStats(r.stats)
-        setError('')
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu admin dashboard')
-      })
+    setLoading(true)
+    api.adminDashboard(token)
+      .then((res) => setStats(res.stats || {}))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi'))
+      .finally(() => setLoading(false))
   }, [token])
 
-  const stats = useMemo(() => {
-    const totalUsers = Number(rawStats.totalUsers || 0)
-    const totalPosts = Number(rawStats.totalPosts || 0)
-    const totalComments = Number(rawStats.totalComments || 0)
-    const totalReactions = Number(rawStats.totalReactions || 0)
-    const pendingReports = Number(rawStats.pendingReports || 0)
-    const resolvedReports = Number(rawStats.resolvedReports || 0)
-
-    return {
-      totalUsers,
-      totalPosts,
-      totalComments,
-      totalReactions,
-      pendingReports,
-      resolvedReports,
-      engagementScore: totalPosts > 0 ? Math.round(((totalComments + totalReactions) / totalPosts) * 10) / 10 : 0,
-    }
-  }, [rawStats])
-
-  if (user?.role !== 'admin') {
-    return <div className={styles.denied}>Bạn không có quyền truy cập khu vực admin.</div>
-  }
+  if (user?.role !== 'admin') return <div className={styles.denied}>Bạn không có quyền truy cập.</div>
 
   return (
-    <div className={styles.page}>
-      <header className={styles.hero}>
-        <div className={styles.heroTop}>
-          <p className={styles.eyebrow}>Admin Control Room</p>
-          <h1>Dashboard vận hành hệ thống</h1>
-          <p>
-            Tổng quan realtime cho khu admin riêng: theo dõi user, nội dung, báo cáo và chuyển nhanh tới tác vụ quản trị.
-          </p>
+    <main className={styles.page}>
+      <header className={styles.header}>
+        <div>
+          <p className={styles.eyebrow}>Admin Dashboard</p>
+          <h1>Tổng quan hệ thống</h1>
+          <p>Theo dõi người dùng, nội dung, báo cáo và hoạt động quản trị của ZChat.</p>
         </div>
+        <Link className={styles.button} to="/admin/reports">Xem báo cáo</Link>
       </header>
 
-      <section className={styles.statGrid}>
+      {loading ? <p className={styles.empty}>Đang tải dữ liệu...</p> : null}
+      {error ? <p className={styles.empty}>{error}</p> : null}
+
+      <section className={styles.grid}>
+        <Metric label="Tổng người dùng" value={stats.totalUsers} />
+        <Metric label="Tổng bài viết" value={stats.totalPosts} />
+        <Metric label="Báo cáo chờ xử lý" value={stats.pendingReports} />
+        <Metric label="Báo cáo đã xử lý" value={stats.resolvedReports} />
+        <Metric label="Thống kê cuộc gọi" value={stats.totalCalls} />
+        <Metric label="Hoạt động hệ thống" value={stats.systemActivities} />
+      </section>
+
+      <section className={styles.grid}>
         {[
-          { label: 'Tổng người dùng', value: stats.totalUsers, icon: Users, tone: 'blue' },
-          { label: 'Tổng bài viết', value: stats.totalPosts, icon: FileText, tone: 'teal' },
-          { label: 'Báo cáo chờ xử lý', value: stats.pendingReports, icon: AlertTriangle, tone: 'amber' },
-          { label: 'Báo cáo đã xử lý', value: stats.resolvedReports, icon: CheckCircle2, tone: 'green' },
-        ].map((item) => {
-          const Icon = item.icon
-          return (
-            <article key={item.label} className={`${styles.statCard} ${styles[`tone${item.tone}`]}`}>
-              <div className={styles.statTop}>
-                <span>{item.label}</span>
-                <Icon size={18} />
-              </div>
-              <strong>{item.value.toLocaleString('vi-VN')}</strong>
-            </article>
-          )
-        })}
+          ['Quản lý người dùng', '/admin/users'],
+          ['Quản lý kiểm duyệt viên', '/admin/moderators'],
+          ['Quản lý báo cáo', '/admin/reports'],
+          ['Quản lý nội dung', '/admin/posts'],
+          ['Thống kê', '/admin/statistics'],
+          ['Nhật ký hệ thống', '/admin/audit-logs'],
+          ['Cấu hình hệ thống', '/admin/settings'],
+        ].map(([label, href]) => (
+          <Link key={href} className={styles.metric} to={href}>
+            <span>{label}</span>
+            <strong>→</strong>
+          </Link>
+        ))}
       </section>
-
-      {error ? <p className={styles.error}>{error}</p> : null}
-
-      <section className={styles.contentGrid}>
-        <article className={styles.panel}>
-          <h2>Nhịp vận hành nền tảng</h2>
-          <div className={styles.progressList}>
-            <div>
-              <span>Độ ổn định hệ thống</span>
-              <b>99.9%</b>
-            </div>
-            <div className={styles.progressTrack}>
-              <i style={{ width: '99.9%' }} />
-            </div>
-
-            <div>
-              <span>Chỉ số tương tác / bài viết</span>
-              <b>{stats.engagementScore}</b>
-            </div>
-            <div className={styles.progressTrack}>
-              <i style={{ width: `${Math.min(100, Math.max(10, stats.engagementScore * 9))}%` }} />
-            </div>
-
-            <div>
-              <span>Tổng tương tác (bình luận + cảm xúc)</span>
-              <b>{(stats.totalComments + stats.totalReactions).toLocaleString('vi-VN')}</b>
-            </div>
-          </div>
-        </article>
-
-        <article className={styles.panel}>
-          <h2>Điều phối quản trị</h2>
-          <div className={styles.linkList}>
-            <Link to="/admin/posts" className={styles.quickLink}>
-              <span>
-                <b>Quản lý bài viết</b>
-                <small>Vào CRM nội dung để lọc, sửa, ẩn/xóa bài viết hàng loạt</small>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-            <Link to="/admin/users" className={styles.quickLink}>
-              <span>
-                <b>Quản lý người dùng</b>
-                <small>Giám sát tăng trưởng user, vai trò và trạng thái tài khoản</small>
-              </span>
-              <ArrowUpRight size={16} />
-            </Link>
-            <Link to="/moderator/reports" className={styles.quickLink}>
-              <span>
-                <b>Bảng xử lý báo cáo</b>
-                <small>Phối hợp với moderator để xử lý vi phạm khẩn</small>
-              </span>
-              <Activity size={16} />
-            </Link>
-          </div>
-        </article>
-      </section>
-    </div>
+    </main>
   )
 }
 
+function Metric({ label, value }: { label: string; value?: number }) {
+  return (
+    <article className={styles.metric}>
+      <span>{label}</span>
+      <strong>{Number(value || 0).toLocaleString('vi-VN')}</strong>
+    </article>
+  )
+}

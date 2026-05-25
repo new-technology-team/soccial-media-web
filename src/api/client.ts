@@ -788,8 +788,57 @@ export const api = {
 
   adminStats: (token: string) => request<{ stats: Record<string, number> }>('/social/admin/stats', { method: 'GET' }, token),
 
-  moderationReports: (token: string) =>
-    request<{ reports: Array<Record<string, unknown>> }>('/social/moderation/reports', { method: 'GET' }, token),
+  adminDashboard: (token: string) =>
+    request<{ stats: Record<string, number>; recentUsers?: User[]; recentReports?: Array<Record<string, unknown>> }>('/admin/dashboard', { method: 'GET' }, token),
+
+  adminStatistics: (token: string) =>
+    request<{ stats: Record<string, number> }>('/admin/statistics', { method: 'GET' }, token),
+
+  adminAuditLogs: (token: string) =>
+    request<{ logs: Array<Record<string, unknown>> }>('/admin/audit-logs', { method: 'GET' }, token),
+
+  adminReports: (token: string, status?: string) => {
+    const suffix = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : ''
+    return request<{ reports: Array<Record<string, unknown>> }>(`/admin/reports${suffix}`, { method: 'GET' }, token)
+  },
+
+  assignAdminReport: (token: string, reportId: number, assignedTo: number | null) =>
+    request<{ message: string; report: Record<string, unknown> }>(
+      `/admin/reports/${reportId}/assign`,
+      { method: 'PATCH', body: JSON.stringify({ assignedTo }) },
+      token
+    ),
+
+  adminModerators: (token: string) =>
+    request<{ moderators: User[] }>('/admin/moderators', { method: 'GET' }, token),
+
+  createModerator: (token: string, payload: { username: string; password: string; displayName?: string; email?: string | null; phone?: string | null }) =>
+    request<{ message: string; moderator: User }>('/admin/moderators', { method: 'POST', body: JSON.stringify(payload) }, token),
+
+  deleteModerator: (token: string, userId: number) =>
+    request<{ message: string; user: User }>(`/admin/moderators/${userId}`, { method: 'DELETE' }, token),
+
+  updateModeratorPermissions: (
+    token: string,
+    userId: number,
+    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: User['accountStatus']; reason?: string }
+  ) =>
+    request<{ message: string; moderator: User }>(
+      `/admin/moderators/${userId}/permissions`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ),
+
+  deleteAdminUser: (token: string, userId: number) =>
+    request<{ message: string; user: User }>(`/admin/users/${userId}`, { method: 'DELETE' }, token),
+
+  moderationDashboard: (token: string) =>
+    request<{ stats: Record<string, number>; reports: Array<Record<string, unknown>>; reportedUsers: User[] }>('/moderator/dashboard', { method: 'GET' }, token),
+
+  moderationReports: (token: string, status?: string) => {
+    const suffix = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : ''
+    return request<{ reports: Array<Record<string, unknown>> }>(`/moderator/reports${suffix}`, { method: 'GET' }, token)
+  },
 
   moderationUsers: (token: string) =>
     request<{ users: User[] }>('/social/admin/users', { method: 'GET' }, token),
@@ -797,10 +846,10 @@ export const api = {
   reviewModerationReport: (
     token: string,
     reportId: number,
-    payload: { status: 'pending' | 'reviewed' | 'resolved'; resolutionNote?: string }
+    payload: { status: 'PENDING' | 'IN_REVIEW' | 'RESOLVED' | 'REJECTED' | 'pending' | 'reviewed' | 'resolved'; resolutionNote?: string }
   ) =>
     request<{ message: string; report: Record<string, unknown> }>(
-      `/social/moderation/reports/${reportId}`,
+      `/moderator/reports/${reportId}/status`,
       { method: 'PATCH', body: JSON.stringify(payload) },
       token
     ),
@@ -815,6 +864,15 @@ export const api = {
       { method: 'PATCH', body: JSON.stringify(payload) },
       token
     ),
+
+  warnModerationUser: (token: string, userId: number, reason?: string) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/warn`, { method: 'PATCH', body: JSON.stringify({ reason }) }, token),
+
+  restrictModerationUser: (token: string, userId: number, reason?: string) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/restrict`, { method: 'PATCH', body: JSON.stringify({ reason }) }, token),
+
+  tempLockModerationUser: (token: string, userId: number, reason?: string) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/temp-lock`, { method: 'PATCH', body: JSON.stringify({ reason }) }, token),
 
   adminPosts: (
     token: string,
@@ -859,7 +917,7 @@ export const api = {
   updateModerationUser: (
     token: string,
     userId: number,
-    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: 'active' | 'restricted' | 'hidden' | 'deleted' }
+    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: User['accountStatus']; reason?: string; restrictionReason?: string; lockedUntil?: string | null }
   ) =>
     request<{ message: string; user: User }>(
       `/social/admin/users/${userId}`,

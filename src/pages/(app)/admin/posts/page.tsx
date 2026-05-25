@@ -182,8 +182,8 @@ export default function AdminPostManagementPage() {
   return (
     <div className={styles.page}>
       <header className={styles.hero}>
-        <p className={styles.eyebrow}>Admin CRM / Content Ops</p>
-        <h1>Quản lý bài viết end-to-end</h1>
+        <p className={styles.eyebrow}>Admin / Quản lý nội dung</p>
+        <h1>Quản lý bài viết</h1>
         <p>Quản trị bài viết theo hướng duyệt nội dung: xem chi tiết, ẩn hoặc xóa bài vi phạm, không chỉnh sửa nội dung gốc.</p>
       </header>
 
