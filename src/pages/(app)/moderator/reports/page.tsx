@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, EyeOff, ShieldAlert, Search, ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { FeedPost } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { FeedPost } from '@/types'
 import styles from './page.module.css'
 
 type ReportStatus = 'all' | 'pending' | 'reviewed' | 'resolved'
@@ -182,7 +182,7 @@ export default function ModeratorReportsPage() {
                   <div>
                     <b>Báo cáo #{id}</b>
                     <small>
-                      {String(report.targetType || 'unknown')} · đối tượng #{String(report.targetId || '-')}
+                      {String(report.targetType || 'unknown')} • đối tượng #{String(report.targetId || '-')}
                     </small>
                   </div>
                   <span>{String(report.status || 'pending')}</span>
@@ -240,7 +240,7 @@ export default function ModeratorReportsPage() {
                 </button>
               </div>
               <div className={styles.sideBlock}>
-                <b>#{String(selectedReport.id)} · {String(selectedReport.status || 'pending')}</b>
+                <b>#{String(selectedReport.id)} • {String(selectedReport.status || 'pending')}</b>
                 <p><span>Loại:</span> {String(selectedReport.targetType || 'unknown')}</p>
                 <p><span>Đối tượng:</span> #{String(selectedReport.targetId || '-')}</p>
                 <p><span>Lý do:</span> {String(selectedReport.reason || 'Không có')}</p>
@@ -281,3 +281,4 @@ export default function ModeratorReportsPage() {
     </div>
   )
 }
+

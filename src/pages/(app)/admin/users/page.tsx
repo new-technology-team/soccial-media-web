@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { UserCheck2, UserX2, Users, ShieldCheck, UserRoundCog } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { User } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { User } from '@/types'
 import styles from './page.module.css'
 
 export default function AdminUserStatsPage() {
@@ -13,6 +13,7 @@ export default function AdminUserStatsPage() {
   const [rawStats, setRawStats] = useState<Record<string, number>>({})
   const [users, setUsers] = useState<User[]>([])
   const [error, setError] = useState('')
+  const [busyUserId, setBusyUserId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!token) return
@@ -48,6 +49,20 @@ export default function AdminUserStatsPage() {
   }, [rawStats, users])
 
   const newestUsers = useMemo(() => users.slice(0, 8), [users])
+
+  const updateUser = async (target: User, payload: { role?: User['role']; accountStatus?: User['accountStatus'] }) => {
+    if (!token || target.id === user?.id) return
+    setBusyUserId(target.id)
+    try {
+      const response = await api.updateModerationUser(token, target.id, payload)
+      setUsers((prev) => prev.map((item) => (item.id === target.id ? response.user : item)))
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể cập nhật người dùng')
+    } finally {
+      setBusyUserId(null)
+    }
+  }
 
   if (user?.role !== 'admin') {
     return <div className={styles.denied}>Bạn không có quyền truy cập khu vực admin.</div>
@@ -133,14 +148,33 @@ export default function AdminUserStatsPage() {
                   <th>Tên</th>
                   <th>Vai trò</th>
                   <th>Trạng thái</th>
+                  <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {newestUsers.map((item) => (
                   <tr key={item.id}>
                     <td>{item.fullName}</td>
-                    <td>{item.role}</td>
-                    <td>{item.accountStatus}</td>
+                    <td>
+                      <select value={item.role} disabled={busyUserId === item.id || item.id === user?.id} onChange={(event) => void updateUser(item, { role: event.target.value as User['role'] })}>
+                        <option value="user">user</option>
+                        <option value="moderator">moderator</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select value={item.accountStatus} disabled={busyUserId === item.id || item.id === user?.id} onChange={(event) => void updateUser(item, { accountStatus: event.target.value as User['accountStatus'] })}>
+                        <option value="active">active</option>
+                        <option value="restricted">restricted</option>
+                        <option value="hidden">hidden</option>
+                        <option value="deleted">deleted</option>
+                      </select>
+                    </td>
+                    <td>
+                      <button type="button" className={styles.restrictBtn} disabled={busyUserId === item.id || item.id === user?.id} onClick={() => void updateUser(item, { accountStatus: item.accountStatus === 'restricted' ? 'active' : 'restricted' })}>
+                        {item.accountStatus === 'restricted' ? 'Bỏ hạn chế' : 'Hạn chế'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

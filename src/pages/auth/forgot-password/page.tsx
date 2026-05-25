@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, KeyRound, Lock, ShieldCheck, Smartphone } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { api } from '@/lib/api'
+import { api } from '@/api/client'
 import styles from '../auth.module.css'
 
 type Step = 'request' | 'reset'
@@ -207,3 +207,4 @@ export default function ForgotPasswordPage() {
     </div>
   )
 }
+

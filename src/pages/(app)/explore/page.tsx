@@ -1,12 +1,12 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Heart, MessageCircle, Search, Share2, UserPlus } from 'lucide-react'
-import { api, isAuthExpiredError } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
-import type { FeedPost } from '@/lib/types'
+import { api, isAuthExpiredError } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
+import type { FeedPost } from '@/types'
 import styles from './page.module.css'
 
 export default function ExplorePage() {
@@ -201,3 +201,4 @@ export default function ExplorePage() {
     </div>
   )
 }
+

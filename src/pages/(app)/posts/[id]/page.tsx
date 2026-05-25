@@ -1,17 +1,17 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useParams } from 'react-router-dom'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { api } from '@/lib/api'
-import { useAuthStore } from '@/lib/store/auth-store'
-import type { FeedComment, FeedPost } from '@/lib/types'
+import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
+import type { FeedComment, FeedPost } from '@/types'
 import styles from './page.module.css'
 
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>()
-  const postId = Number(params.id)
+  const postId = String(params.id || '').trim()
   const token = useAuthStore((state) => state.accessToken)
 
   const [post, setPost] = useState<FeedPost | null>(null)
@@ -20,7 +20,12 @@ export default function PostDetailPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!postId || Number.isNaN(postId)) return
+    if (!postId) {
+      setLoading(false)
+      setPost(null)
+      setComments([])
+      return
+    }
 
     const loadData = async () => {
       setLoading(true)
@@ -141,3 +146,4 @@ export default function PostDetailPage() {
     </div>
   )
 }
+

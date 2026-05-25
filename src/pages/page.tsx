@@ -38,15 +38,16 @@ export default function Home() {
               </span>
 
               <h1 className={styles.heroTitle}>
-                Cùng nhau tạo nên
+                Kết nối tự nhiên,
                 <br />
-                <span className={styles.gradientText}>không gian kết nối</span>
+                <span className={styles.gradientText}>trò chuyện mượt mà</span>
                 <br />
-                chất lượng.
+                mỗi ngày.
               </h1>
 
               <p className={styles.heroDescription}>
-                Từ trò chuyện nhanh, xây nhóm riêng đến khám phá xu hướng, mọi thứ được thiết kế đồng nhất, trực quan và an toàn cho người dùng.
+                Từ trò chuyện nhanh, xây nhóm riêng đến khám phá xu hướng, mọi thứ được thiết kế trực quan,
+                an toàn và tạo cảm giác thân quen như các ứng dụng nhắn tin hiện đại.
               </p>
 
               <div className={styles.heroActions}>
@@ -82,13 +83,13 @@ export default function Home() {
                   <span>Bảng tin cộng đồng</span>
                 </div>
                 <h3>Tăng tương tác, giảm nhiễu.</h3>
-                <p>Thuật toán gợi ý nội dung theo mối quan tâm thực của bạn.</p>
+                <p>Gợi ý nội dung theo mối quan tâm thật của bạn, rõ ràng và dễ theo dõi.</p>
               </div>
 
               <div className={styles.miniCards}>
                 <div className={styles.miniCardBlue}>
                   <MessageSquareText size={20} />
-                  <p>Realtime Chat</p>
+                  <p>Chat realtime</p>
                 </div>
                 <div className={styles.miniCardOrange}>
                   <Users size={20} />

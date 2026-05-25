@@ -1,10 +1,10 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { Users, FileText, AlertTriangle, CheckCircle2, Activity, ArrowUpRight } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
 import styles from './page.module.css'
 
 export default function AdminDashboard() {
@@ -140,3 +140,4 @@ export default function AdminDashboard() {
     </div>
   )
 }
+

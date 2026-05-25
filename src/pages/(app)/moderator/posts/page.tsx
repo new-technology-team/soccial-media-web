@@ -1,11 +1,11 @@
-'use client'
+﻿'use client'
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, EyeOff } from 'lucide-react'
-import { useAuthStore } from '@/lib/store/auth-store'
-import { api } from '@/lib/api'
-import type { FeedPost } from '@/lib/types'
+import { useAuthStore } from '@/contexts/auth-store'
+import { api } from '@/api/client'
+import type { FeedPost } from '@/types'
 import styles from './page.module.css'
 
 export default function ModeratorPostsPage() {
@@ -42,10 +42,10 @@ export default function ModeratorPostsPage() {
           <article key={post.id} className={styles.card}>
             <div className={styles.head}>
               <div>
-                <b>Bài #{post.id} · {post.authorName}</b>
-                <small>{new Date(post.createdAt).toLocaleString('vi-VN')} · trạng thái {post.status}</small>
+                <b>Bài #{post.id} • {post.authorName}</b>
+                <small>{new Date(post.createdAt).toLocaleString('vi-VN')} • trạng thái {post.status}</small>
               </div>
-              <span>{post.reactionCount} ❤️ · {post.commentCount} 💬</span>
+              <span>{post.reactionCount} ❤️ • {post.commentCount} 💬</span>
             </div>
 
             <p className={styles.content}>{post.content || '(Không có nội dung)'}</p>
@@ -67,3 +67,4 @@ export default function ModeratorPostsPage() {
     </div>
   )
 }
+
