@@ -3,6 +3,7 @@
 import { useLocation } from 'react-router-dom'
 import Navbar from '@/components/navigation/navbar'
 import RouteGuard from '@/components/navigation/route-guard'
+import { Toaster } from '@/components/ui/toaster'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
@@ -14,6 +15,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main>
         <RouteGuard>{children}</RouteGuard>
       </main>
+      <Toaster />
     </>
   )
 }

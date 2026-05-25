@@ -20,7 +20,6 @@ import {
   PinOff,
   ShieldCheck,
   ShieldX,
-  Smile,
   Trash2,
   Type,
   UserMinus,
@@ -31,7 +30,7 @@ import {
   Wallpaper,
   X,
 } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 
 import { getAvatarInitial, getGroupRoleLabel } from '@/services/messages/formatters'
 import type { ChatMessage, Conversation, FriendConnection } from '@/types'
@@ -65,13 +64,38 @@ export type SettingsSidebarProps = {
   handleDissolveGroup: () => void | Promise<void>
   handleToggleConversationPin: () => void | Promise<void>
   handleToggleConversationMute: () => void | Promise<void>
+  handleUpdateConversationPreferences: (payload: {
+    backgroundUrl?: string | null
+    themeColor?: string | null
+    autoDeleteAfterSeconds?: number | null
+    hidden?: boolean
+    locked?: boolean
+    hiddenPassword?: string | null
+    lockedPassword?: string | null
+  }) => void | Promise<void>
+  largeText: boolean
+  roundBubbles: boolean
+  onLargeTextChange: (value: boolean) => void
+  onRoundBubblesChange: (value: boolean) => void
   handleUpdateNickname: (userId: number) => void | Promise<void>
   handleUpdateGroupProfile: () => void | Promise<void>
+  handleUpdateGroupAvatar: () => void | Promise<void>
   handleBlockPeer: () => void | Promise<void>
+  handleUnblockPeer: () => void | Promise<void>
+  handleOpenHideConversation: () => void
+  handleOpenLockConversation: () => void
+  handleOpenAutoDeleteSettings: () => void
+  handleOpenReportConversation: () => void
+  isDirectPeerBlocked: boolean
+  pinnedMessages: ChatMessage[]
   sharedContent: SharedContent
   loadingSharedContent: boolean
   onClose?: () => void
 }
+
+type ReminderItem = { id: string; title: string; dueAt: string }
+type PollItem = { id: string; question: string; options: Array<{ text: string; votes: number }> }
+type NoteItem = { id: string; text: string; createdAt: string }
 
 type AccordionSectionProps = {
   icon: ReactNode
@@ -137,9 +161,15 @@ export function ToggleSwitch({
         <b>{label}</b>
         {description ? <small>{description}</small> : null}
       </span>
-      <button type="button" role="switch" aria-checked={checked} disabled={disabled} className={cn(styles.toggleSwitch, checked && styles.toggleSwitchChecked)} onClick={() => onChange(!checked)}>
-        <span />
-      </button>
+      {checked ? (
+        <button type="button" role="switch" aria-checked="true" disabled={disabled} className={cn(styles.toggleSwitch, styles.toggleSwitchChecked)} onClick={() => onChange(!checked)}>
+          <span />
+        </button>
+      ) : (
+        <button type="button" role="switch" aria-checked="false" disabled={disabled} className={cn(styles.toggleSwitch)} onClick={() => onChange(!checked)}>
+          <span />
+        </button>
+      )}
     </label>
   )
 }
@@ -309,6 +339,36 @@ function SharedMediaSection({ content, loading }: { content: SharedContent; load
   )
 }
 
+function useLocalConversationState<T>(conversationId: string, key: string, fallback: T) {
+  const storageKey = `zzchat:${conversationId}:${key}`
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === 'undefined') return fallback
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      return raw ? (JSON.parse(raw) as T) : fallback
+    } catch {
+      return fallback
+    }
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      setValue(raw ? (JSON.parse(raw) as T) : fallback)
+    } catch {
+      setValue(fallback)
+    }
+  }, [storageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(storageKey, JSON.stringify(value))
+  }, [storageKey, value])
+
+  return [value, setValue] as const
+}
+
 export function SettingsSidebar({
   conversation,
   myGroupRole,
@@ -333,9 +393,22 @@ export function SettingsSidebar({
   handleDissolveGroup,
   handleToggleConversationPin,
   handleToggleConversationMute,
+  handleUpdateConversationPreferences,
+  largeText,
+  roundBubbles,
+  onLargeTextChange,
+  onRoundBubblesChange,
   handleUpdateNickname,
   handleUpdateGroupProfile,
+  handleUpdateGroupAvatar,
   handleBlockPeer,
+  handleUnblockPeer,
+  handleOpenHideConversation,
+  handleOpenLockConversation,
+  handleOpenAutoDeleteSettings,
+  handleOpenReportConversation,
+  isDirectPeerBlocked,
+  pinnedMessages,
   sharedContent,
   loadingSharedContent,
   onClose,
@@ -344,12 +417,57 @@ export function SettingsSidebar({
   const peer = conversation.members.find((member) => Number(member.userId) !== Number(userId))
   const title = isGroup ? conversation.name || 'Nhóm chat' : peer?.nickname || peer?.fullName || conversation.name || 'Cuộc trò chuyện'
   const onlineMembers = conversation.members.filter((member) => member.online)
-  const [autoDelete, setAutoDelete] = useState(false)
-  const [hiddenChat, setHiddenChat] = useState(false)
-  const [lockedChat, setLockedChat] = useState(false)
-  const [largeText, setLargeText] = useState(false)
-  const [roundBubbles, setRoundBubbles] = useState(true)
   const [showAllMembers, setShowAllMembers] = useState(false)
+  const [boardPanel, setBoardPanel] = useState<'reminders' | 'pinned' | 'polls' | 'notes' | null>(null)
+  const [reminderTitle, setReminderTitle] = useState('')
+  const [reminderDueAt, setReminderDueAt] = useState('')
+  const [pollQuestion, setPollQuestion] = useState('')
+  const [pollOptionsText, setPollOptionsText] = useState('')
+  const [noteDraft, setNoteDraft] = useState('')
+  const [reminders, setReminders] = useLocalConversationState<ReminderItem[]>(conversation.id, 'reminders', [])
+  const [polls, setPolls] = useLocalConversationState<PollItem[]>(conversation.id, 'polls', [])
+  const [notes, setNotes] = useLocalConversationState<NoteItem[]>(conversation.id, 'notes', [])
+  const backgroundInputRef = useRef<HTMLInputElement | null>(null)
+  const autoDeleteLabel = useMemo(() => {
+    const current = conversation.autoDeleteAfterSeconds ?? null
+    if (!current) return 'Tắt'
+    if (current === 3600) return '1 giờ'
+    if (current === 86400) return '1 ngày'
+    if (current === 604800) return '7 ngày'
+    if (current === 2592000) return '30 ngày'
+    return `${current} giây`
+  }, [conversation.autoDeleteAfterSeconds])
+  const isHiddenForMe = Boolean(conversation.isHidden)
+  const isLockedForMe = Boolean(conversation.isLocked)
+
+  const updatePreferences = (payload: Parameters<typeof handleUpdateConversationPreferences>[0]) => {
+    return void handleUpdateConversationPreferences(payload)
+  }
+
+  const handleBackgroundFilePicked = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null
+    event.target.value = ''
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const nextValue = typeof reader.result === 'string' ? reader.result : null
+      updatePreferences({ backgroundUrl: nextValue })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleBackgroundColorChange = (event: ChangeEvent<HTMLInputElement>) => {
+    updatePreferences({ themeColor: event.target.value })
+  }
+
+  const autoDeleteOptions = [
+    { label: 'Tắt', value: null },
+    { label: '1 giờ', value: 3600 },
+    { label: '1 ngày', value: 86400 },
+    { label: '7 ngày', value: 604800 },
+    { label: '30 ngày', value: 2592000 },
+  ] as const
 
   const description = useMemo(() => {
     if (!isGroup) return formatActivity(peer)
@@ -358,8 +476,55 @@ export function SettingsSidebar({
     return `${memberLabel}${onlineLabel}`
   }, [conversation.members.length, isGroup, onlineMembers.length, peer])
 
+  const addReminder = () => {
+    const title = reminderTitle.trim()
+    if (!title || !reminderDueAt) return
+    setReminders((prev) => [{ id: String(Date.now()), title, dueAt: reminderDueAt }, ...prev])
+    setReminderTitle('')
+    setReminderDueAt('')
+  }
+
+  const addPoll = () => {
+    const question = pollQuestion.trim()
+    const options = pollOptionsText
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 6)
+    if (!question || options.length < 2) return
+    setPolls((prev) => [
+      { id: String(Date.now()), question, options: options.map((text) => ({ text, votes: 0 })) },
+      ...prev,
+    ])
+    setPollQuestion('')
+    setPollOptionsText('')
+  }
+
+  const votePoll = (pollId: string, optionIndex: number) => {
+    setPolls((prev) =>
+      prev.map((poll) =>
+        poll.id === pollId
+          ? {
+              ...poll,
+              options: poll.options.map((option, index) =>
+                index === optionIndex ? { ...option, votes: option.votes + 1 } : option
+              ),
+            }
+          : poll
+      )
+    )
+  }
+
+  const addNote = () => {
+    const text = noteDraft.trim()
+    if (!text) return
+    setNotes((prev) => [{ id: String(Date.now()), text, createdAt: new Date().toISOString() }, ...prev])
+    setNoteDraft('')
+  }
+
   return (
     <div className={styles.settingsSidebar}>
+      <input ref={backgroundInputRef} type="file" accept="image/*" className={styles.hiddenFileInput} onChange={handleBackgroundFilePicked} aria-label="Chọn hình nền" title="Chọn hình nền" />
       <header className={styles.settingsHeader}>
         <button type="button" className={styles.settingsClose} onClick={onClose} aria-label="Đóng cài đặt">
           <X size={17} />
@@ -394,8 +559,16 @@ export function SettingsSidebar({
         <QuickActionButton icon={conversation.isPinned ? <PinOff size={18} /> : <Pin size={18} />} label={conversation.isPinned ? 'Bỏ ghim' : 'Ghim'} active={Boolean(conversation.isPinned)} onClick={() => void handleToggleConversationPin()} />
         {isGroup ? <QuickActionButton icon={<UserPlus size={18} />} label="Thêm" disabled={!canAddMembers} onClick={() => document.getElementById(`invite-${conversation.id}`)?.focus()} /> : null}
         {isGroup ? <QuickActionButton icon={<UsersRound size={18} />} label="Quản lý" onClick={() => document.getElementById(`members-${conversation.id}`)?.scrollIntoView({ block: 'nearest' })} /> : null}
-        <QuickActionButton icon={<Wallpaper size={18} />} label="Nền" />
-        {!isGroup ? <QuickActionButton icon={<ShieldX size={18} />} label="Chặn" onClick={() => void handleBlockPeer()} /> : null}
+        {isGroup ? <QuickActionButton icon={<Image size={18} />} label="Ảnh nhóm" disabled={!canAddMembers} onClick={() => void handleUpdateGroupAvatar()} /> : null}
+        <QuickActionButton icon={<Wallpaper size={18} />} label="Nền" onClick={() => backgroundInputRef.current?.click()} />
+        {!isGroup ? (
+          <QuickActionButton
+            icon={isDirectPeerBlocked ? <ShieldCheck size={18} /> : <ShieldX size={18} />}
+            label={isDirectPeerBlocked ? 'Bỏ chặn' : 'Chặn'}
+            active={isDirectPeerBlocked}
+            onClick={() => void (isDirectPeerBlocked ? handleUnblockPeer() : handleBlockPeer())}
+          />
+        ) : null}
       </div>
 
       <div className={styles.settingsSections}>
@@ -451,11 +624,37 @@ export function SettingsSidebar({
         {isGroup ? (
           <AccordionSection icon={<Blocks size={17} />} title="Bảng tin nhóm">
             <ActionRows rows={[
-              { icon: <CalendarClock size={16} />, label: 'Nhắc hẹn' },
-              { icon: <Pin size={16} />, label: 'Tin nhắn đã ghim' },
-              { icon: <Vote size={16} />, label: 'Bình chọn' },
-              { icon: <NotebookPen size={16} />, label: 'Ghi chú' },
+              { icon: <CalendarClock size={16} />, label: `Nhắc hẹn (${reminders.length})`, onClick: () => setBoardPanel((value) => value === 'reminders' ? null : 'reminders') },
+              { icon: <Pin size={16} />, label: `Tin nhắn đã ghim (${pinnedMessages.length})`, onClick: () => setBoardPanel((value) => value === 'pinned' ? null : 'pinned') },
+              { icon: <Vote size={16} />, label: `Bình chọn (${polls.length})`, onClick: () => setBoardPanel((value) => value === 'polls' ? null : 'polls') },
+              { icon: <NotebookPen size={16} />, label: `Ghi chú (${notes.length})`, onClick: () => setBoardPanel((value) => value === 'notes' ? null : 'notes') },
             ]} />
+            {boardPanel ? (
+              <GroupBoardPanel
+                active={boardPanel}
+                reminders={reminders}
+                reminderTitle={reminderTitle}
+                reminderDueAt={reminderDueAt}
+                setReminderTitle={setReminderTitle}
+                setReminderDueAt={setReminderDueAt}
+                addReminder={addReminder}
+                removeReminder={(id) => setReminders((prev) => prev.filter((item) => item.id !== id))}
+                pinnedMessages={pinnedMessages}
+                polls={polls}
+                pollQuestion={pollQuestion}
+                pollOptionsText={pollOptionsText}
+                setPollQuestion={setPollQuestion}
+                setPollOptionsText={setPollOptionsText}
+                addPoll={addPoll}
+                votePoll={votePoll}
+                removePoll={(id) => setPolls((prev) => prev.filter((item) => item.id !== id))}
+                notes={notes}
+                noteDraft={noteDraft}
+                setNoteDraft={setNoteDraft}
+                addNote={addNote}
+                removeNote={(id) => setNotes((prev) => prev.filter((item) => item.id !== id))}
+              />
+            ) : null}
           </AccordionSection>
         ) : null}
 
@@ -491,19 +690,67 @@ export function SettingsSidebar({
 
         <AccordionSection icon={<PaintBucket size={17} />} title="Tùy biến đoạn chat">
           <ActionRows rows={[
-            { icon: <Wallpaper size={16} />, label: 'Đổi hình nền' },
-            { icon: <Brush size={16} />, label: 'Đổi màu chủ đề' },
-            { icon: <Smile size={16} />, label: 'Emoji mặc định' },
+            { icon: <Wallpaper size={16} />, label: 'Chọn hình nền', onClick: () => backgroundInputRef.current?.click() },
           ]} />
-          <ToggleSwitch checked={largeText} label="Cỡ chữ lớn" description="Xem trước trên thiết bị này" onChange={setLargeText} />
-          <ToggleSwitch checked={roundBubbles} label="Bóng tin bo góc" description="Tùy biến kiểu bóng chat" onChange={setRoundBubbles} />
+          <div className={styles.settingsStats}>
+            {conversation.backgroundUrl ? <span><Wallpaper size={14} /> Đã chọn nền</span> : null}
+            {conversation.themeColor ? <span><Brush size={14} /> Màu chủ đề đang dùng</span> : null}
+          </div>
+          <div className={styles.settingsInlineControls}>
+            <label className={styles.settingsInlineControl}>
+              <span><Brush size={14} /> Màu chủ đề</span>
+              <input type="color" value={conversation.themeColor || '#0b5fff'} onChange={handleBackgroundColorChange} aria-label="Chọn màu chủ đề" title="Chọn màu chủ đề" />
+            </label>
+          </div>
+          <ToggleSwitch checked={largeText} label="Cỡ chữ lớn" description="Xem trước trên thiết bị này" onChange={onLargeTextChange} />
+          <ToggleSwitch checked={roundBubbles} label="Bóng tin bo góc" description="Tùy biến kiểu bóng chat" onChange={onRoundBubblesChange} />
           {largeText ? <p className={styles.settingsPreviewText}><Type size={14} /> Kích thước chữ xem trước đã tăng.</p> : null}
         </AccordionSection>
 
         <AccordionSection icon={<ShieldCheck size={17} />} title="Bảo mật và riêng tư">
-          <ToggleSwitch checked={autoDelete} label="Tự động xóa tin nhắn" description="UI tạm thời, chờ API thời hạn tin nhắn" onChange={setAutoDelete} />
-          <ToggleSwitch checked={hiddenChat} label="Ẩn hội thoại" description="Chỉ thay đổi trong panel hiện tại" onChange={setHiddenChat} />
-          <ToggleSwitch checked={lockedChat} label="Khóa hội thoại" description="Cần backend để khóa trên nhiều thiết bị" onChange={setLockedChat} />
+          <ToggleSwitch
+            checked={Boolean(conversation.autoDeleteAfterSeconds)}
+            label="Tự động xóa tin nhắn"
+            description={conversation.autoDeleteAfterSeconds ? `Đang bật: ${autoDeleteLabel}` : 'Bật để chọn thời gian xóa'}
+            onChange={() => handleOpenAutoDeleteSettings()}
+          />
+          {conversation.autoDeleteAfterSeconds ? (
+            <div className={styles.quickActionsRow}>
+              {autoDeleteOptions.slice(1).map((option) => (
+                <QuickActionButton
+                  key={option.label}
+                  icon={<CalendarClock size={16} />}
+                  label={option.label}
+                  active={(conversation.autoDeleteAfterSeconds ?? null) === option.value}
+                  onClick={() => handleOpenAutoDeleteSettings()}
+                />
+              ))}
+            </div>
+          ) : null}
+          <ToggleSwitch
+            checked={isHiddenForMe}
+            label="Ẩn hội thoại"
+            description="Cần mật khẩu ẩn để mở lại"
+            onChange={(checked) => {
+              if (checked) {
+                handleOpenHideConversation()
+                return
+              }
+              updatePreferences({ hidden: false })
+            }}
+          />
+          <ToggleSwitch
+            checked={isLockedForMe}
+            label="Khóa hội thoại"
+            description="Cần mật khẩu khóa để mở lại"
+            onChange={(checked) => {
+              if (checked) {
+                handleOpenLockConversation()
+                return
+              }
+              updatePreferences({ locked: false })
+            }}
+          />
           <InfoRow icon={<LockKeyhole size={16} />} label="Mã hóa đầu cuối" value="Trạng thái chưa được API cung cấp" />
           <DangerActionButton icon={<Trash2 size={17} />} label="Xóa lịch sử chat phía bạn" description="Không ảnh hưởng người khác" onClick={() => void handleClearChatForMe()} />
           {isGroup ? (
@@ -513,8 +760,13 @@ export function SettingsSidebar({
             </>
           ) : (
             <>
-              <DangerActionButton icon={<Flag size={17} />} label="Báo cáo hội thoại" description="Cần endpoint báo cáo" />
-              <DangerActionButton icon={<ShieldX size={17} />} label="Chặn người dùng" description="Ngừng nhận tin nhắn trực tiếp từ người này" onClick={() => void handleBlockPeer()} />
+              <DangerActionButton icon={<Flag size={17} />} label="Báo cáo hội thoại" description="Gửi báo cáo đến quản trị viên để xem xét" onClick={handleOpenReportConversation} />
+              <DangerActionButton
+                icon={isDirectPeerBlocked ? <ShieldCheck size={17} /> : <ShieldX size={17} />}
+                label={isDirectPeerBlocked ? 'Bỏ chặn người dùng' : 'Chặn người dùng'}
+                description={isDirectPeerBlocked ? 'Mở lại luồng nhắn tin trực tiếp' : 'Ngừng nhận tin nhắn trực tiếp từ người này'}
+                onClick={() => void (isDirectPeerBlocked ? handleUnblockPeer() : handleBlockPeer())}
+              />
             </>
           )}
         </AccordionSection>
@@ -544,16 +796,144 @@ function InfoRow({ icon, label, value }: { icon: ReactNode; label: string; value
   )
 }
 
-function ActionRows({ rows }: { rows: Array<{ icon: ReactNode; label: string }> }) {
+function ActionRows({ rows }: { rows: Array<{ icon: ReactNode; label: string; onClick?: () => void }> }) {
   return (
     <div className={styles.actionRows}>
       {rows.map((row) => (
-        <button type="button" key={row.label}>
+        <button type="button" key={row.label} onClick={row.onClick}>
           {row.icon}
           <span>{row.label}</span>
           <MessageSquareMore size={14} />
         </button>
       ))}
+    </div>
+  )
+}
+
+function GroupBoardPanel({
+  active,
+  reminders,
+  reminderTitle,
+  reminderDueAt,
+  setReminderTitle,
+  setReminderDueAt,
+  addReminder,
+  removeReminder,
+  pinnedMessages,
+  polls,
+  pollQuestion,
+  pollOptionsText,
+  setPollQuestion,
+  setPollOptionsText,
+  addPoll,
+  votePoll,
+  removePoll,
+  notes,
+  noteDraft,
+  setNoteDraft,
+  addNote,
+  removeNote,
+}: {
+  active: 'reminders' | 'pinned' | 'polls' | 'notes'
+  reminders: ReminderItem[]
+  reminderTitle: string
+  reminderDueAt: string
+  setReminderTitle: (value: string) => void
+  setReminderDueAt: (value: string) => void
+  addReminder: () => void
+  removeReminder: (id: string) => void
+  pinnedMessages: ChatMessage[]
+  polls: PollItem[]
+  pollQuestion: string
+  pollOptionsText: string
+  setPollQuestion: (value: string) => void
+  setPollOptionsText: (value: string) => void
+  addPoll: () => void
+  votePoll: (pollId: string, optionIndex: number) => void
+  removePoll: (id: string) => void
+  notes: NoteItem[]
+  noteDraft: string
+  setNoteDraft: (value: string) => void
+  addNote: () => void
+  removeNote: (id: string) => void
+}) {
+  if (active === 'reminders') {
+    return (
+      <div className={styles.groupBoardPanel}>
+        <div className={styles.boardForm}>
+          <input value={reminderTitle} onChange={(event) => setReminderTitle(event.target.value)} placeholder="Tên nhắc hẹn" />
+          <input type="datetime-local" value={reminderDueAt} onChange={(event) => setReminderDueAt(event.target.value)} />
+          <button type="button" onClick={addReminder}>Thêm</button>
+        </div>
+        {reminders.length ? reminders.map((item) => (
+          <article key={item.id} className={styles.boardItem}>
+            <span>
+              <b>{item.title}</b>
+              <small>{new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.dueAt))}</small>
+            </span>
+            <button type="button" onClick={() => removeReminder(item.id)}>Xóa</button>
+          </article>
+        )) : <EmptySetting label="Chưa có nhắc hẹn trong nhóm." />}
+      </div>
+    )
+  }
+
+  if (active === 'pinned') {
+    return (
+      <div className={styles.groupBoardPanel}>
+        {pinnedMessages.length ? pinnedMessages.map((item) => (
+          <article key={item.id} className={styles.boardItem}>
+            <span>
+              <b>{item.senderName}</b>
+              <small>{item.text || item.fileName || item.type}</small>
+            </span>
+          </article>
+        )) : <EmptySetting label="Chưa có tin nhắn đã ghim trong dữ liệu đang tải." />}
+      </div>
+    )
+  }
+
+  if (active === 'polls') {
+    return (
+      <div className={styles.groupBoardPanel}>
+        <div className={styles.boardForm}>
+          <input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Câu hỏi bình chọn" />
+          <textarea value={pollOptionsText} onChange={(event) => setPollOptionsText(event.target.value)} placeholder="Mỗi lựa chọn một dòng" />
+          <button type="button" onClick={addPoll}>Tạo</button>
+        </div>
+        {polls.length ? polls.map((poll) => (
+          <article key={poll.id} className={styles.pollItem}>
+            <div className={styles.pollHeader}>
+              <b>{poll.question}</b>
+              <button type="button" onClick={() => removePoll(poll.id)}>Xóa</button>
+            </div>
+            {poll.options.map((option, index) => (
+              <button key={`${poll.id}-${option.text}`} type="button" onClick={() => votePoll(poll.id, index)}>
+                <span>{option.text}</span>
+                <small>{option.votes} phiếu</small>
+              </button>
+            ))}
+          </article>
+        )) : <EmptySetting label="Chưa có bình chọn nào." />}
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.groupBoardPanel}>
+      <div className={styles.boardForm}>
+        <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} placeholder="Viết ghi chú nhóm" />
+        <button type="button" onClick={addNote}>Lưu</button>
+      </div>
+      {notes.length ? notes.map((item) => (
+        <article key={item.id} className={styles.boardItem}>
+          <span>
+            <b>{item.text}</b>
+            <small>{new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.createdAt))}</small>
+          </span>
+          <button type="button" onClick={() => removeNote(item.id)}>Xóa</button>
+        </article>
+      )) : <EmptySetting label="Chưa có ghi chú nhóm." />}
     </div>
   )
 }

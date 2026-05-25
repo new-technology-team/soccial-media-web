@@ -10,7 +10,7 @@
 
 .liveNotification {
   position: fixed;
-  top: 78px;
+  bottom: 1rem;
   right: 1rem;
   z-index: 120;
   width: min(360px, calc(100vw - 2rem));

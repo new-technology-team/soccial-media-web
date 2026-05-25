@@ -158,13 +158,15 @@
   color: #233748;
   padding: 0 0.45rem;
   font-size: 0.76rem;
+  font-family: inherit;
+  line-height: 1.1;
 }
 
 .restrictBtn {
   border: 0;
   background: #eaf1ff;
   color: #0052ce;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
 }

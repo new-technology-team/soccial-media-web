@@ -24,8 +24,10 @@ import {
   MapPin,
 } from 'lucide-react'
 import { api, isAuthExpiredError } from '@/api/client'
+import { ConfirmDialog, ReportDialog } from '@/components/dialogs'
 import type { FeedComment, FeedPost } from '@/types'
 import { useAuthStore } from '@/contexts/auth-store'
+import { toast } from '@/hooks/use-toast'
 import styles from './page.module.css'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
@@ -88,6 +90,13 @@ const dedupePostsById = (items: FeedPost[]) => {
   return result
 }
 
+type ConfirmModalState = {
+  title: string
+  description: string
+  confirmLabel: string
+  onConfirm: () => void | Promise<void>
+}
+
 const isVideoMediaUrl = (url: string) =>
   /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
 
@@ -129,7 +138,7 @@ export default function FeedPage() {
   const [loadingMoreComments, setLoadingMoreComments] = useState<Record<number, boolean>>({})
   const [commentPaging, setCommentPaging] = useState<Record<number, CommentPaging>>({})
   const [shareTargetPostId, setShareTargetPostId] = useState<number | null>(null)
-  const [shareConversations, setShareConversations] = useState<Array<{ id: number; name: string | null }>>([])
+  const [shareConversations, setShareConversations] = useState<Array<{ id: string; name: string | null }>>([])
   const [activePostMenuId, setActivePostMenuId] = useState<number | null>(null)
   const [hiddenPostIds, setHiddenPostIds] = useState<Record<number, boolean>>({})
   const [editingPostId, setEditingPostId] = useState<number | null>(null)
@@ -146,6 +155,8 @@ export default function FeedPage() {
   const [uploadingMedia, setUploadingMedia] = useState(false)
   const [openReactionPostId, setOpenReactionPostId] = useState<number | null>(null)
   const [visiblePostsCount, setVisiblePostsCount] = useState(FEED_BATCH_SIZE)
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
+  const [reportComment, setReportComment] = useState<FeedComment | null>(null)
   const mediaInputRef = useRef<HTMLInputElement | null>(null)
   const feedBottomSentinelRef = useRef<HTMLDivElement | null>(null)
   const isGuestView = !token
@@ -534,18 +545,27 @@ export default function FeedPage() {
 
   const handleDeleteComment = async (post: FeedPost, comment: FeedComment) => {
     if (!token || Number(post.authorId) !== Number(me?.id)) return
-    if (!window.confirm('Xóa bình luận này khỏi bài viết?')) return
-    setBusyCommentId(comment.id)
-    try {
-      await api.deleteComment(token, comment.id)
-      setCommentLists((prev) => ({ ...prev, [post.id]: (prev[post.id] || []).filter((item) => item.id !== comment.id) }))
-      setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, commentCount: Math.max(0, item.commentCount - 1) } : item)))
-    } catch (error) {
-      if (handleAuthExpired(error)) return
-      console.error('Failed to delete comment', error)
-    } finally {
-      setBusyCommentId(null)
-    }
+    setConfirmModal({
+      title: 'Xóa bình luận?',
+      description: 'Bình luận này sẽ bị xóa khỏi bài viết.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        setBusyCommentId(comment.id)
+        try {
+          await api.deleteComment(token, comment.id)
+          setCommentLists((prev) => ({ ...prev, [post.id]: (prev[post.id] || []).filter((item) => item.id !== comment.id) }))
+          setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, commentCount: Math.max(0, item.commentCount - 1) } : item)))
+          toast({ title: 'Đã xóa bình luận' })
+        } catch (error) {
+          if (handleAuthExpired(error)) return
+          const message = error instanceof Error ? error.message : 'Không thể xóa bình luận.'
+          toast({ title: 'Không thể xóa bình luận', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setBusyCommentId(null)
+        }
+      },
+    })
   }
 
   const handleReportComment = async (comment: FeedComment) => {
@@ -553,15 +573,27 @@ export default function FeedPage() {
       navigate('/auth/login')
       return
     }
-    const reason = window.prompt('Lý do báo cáo bình luận', 'Nội dung không phù hợp')
-    if (!reason?.trim()) return
-    setBusyCommentId(comment.id)
+    setReportComment(comment)
+  }
+
+  const submitReportComment = async (payload: { reason: string; details?: string }) => {
+    if (!token || !reportComment) return
+    setBusyCommentId(reportComment.id)
     try {
-      await api.submitReport(token, { targetType: 'comment', targetId: comment.id, reason: reason.trim() })
+      await api.submitReport(token, {
+        targetType: 'comment',
+        targetId: reportComment.id,
+        reason: payload.reason,
+        details: payload.details,
+      })
       setErrorText('Đã gửi báo cáo bình luận.')
+      toast({ title: 'Đã gửi báo cáo bình luận' })
     } catch (error) {
       if (handleAuthExpired(error)) return
+      const message = error instanceof Error ? error.message : 'Không thể gửi báo cáo bình luận.'
       console.error('Failed to report comment', error)
+      toast({ title: 'Không thể gửi báo cáo', description: message, variant: 'destructive' })
+      throw error
     } finally {
       setBusyCommentId(null)
     }
@@ -597,7 +629,7 @@ export default function FeedPage() {
     }
   }
 
-  const handleShareToConversation = async (post: FeedPost, conversationId: number) => {
+  const handleShareToConversation = async (post: FeedPost, conversationId: string) => {
     if (!token) {
       navigate('/auth/login')
       return
@@ -694,23 +726,31 @@ export default function FeedPage() {
       return
     }
 
-    const approved = window.confirm('Bạn có chắc muốn xóa bài viết này?')
-    if (!approved) return
-
-    try {
-      await api.deletePost(token, post.id)
-      setPosts((prev) => prev.filter((item) => item.id !== post.id))
-      setShareTargetPostId((prev) => (prev === post.id ? null : prev))
-      setActivePostMenuId(null)
-      if (editingPostId === post.id) {
-        handleCancelEditPost()
-      }
-      setErrorText('Đã xóa bài viết.')
-    } catch (error) {
-      if (handleAuthExpired(error)) return
-      console.error('Failed to delete post', error)
-      setErrorText('Không thể xóa bài viết. Vui lòng thử lại.')
-    }
+    setConfirmModal({
+      title: 'Xóa bài viết?',
+      description: 'Bài viết này sẽ bị xóa khỏi bảng tin của bạn.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        try {
+          await api.deletePost(token, post.id)
+          setPosts((prev) => prev.filter((item) => item.id !== post.id))
+          setShareTargetPostId((prev) => (prev === post.id ? null : prev))
+          setActivePostMenuId(null)
+          if (editingPostId === post.id) {
+            handleCancelEditPost()
+          }
+          setErrorText('Đã xóa bài viết.')
+          toast({ title: 'Đã xóa bài viết' })
+        } catch (error) {
+          if (handleAuthExpired(error)) return
+          console.error('Failed to delete post', error)
+          const message = 'Không thể xóa bài viết. Vui lòng thử lại.'
+          setErrorText(message)
+          toast({ title: 'Không thể xóa bài viết', description: message, variant: 'destructive' })
+          throw error
+        }
+      },
+    })
   }
 
   const handleHidePost = (postId: number) => {
@@ -1640,6 +1680,26 @@ export default function FeedPage() {
           </form>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={Boolean(confirmModal)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmModal(null)
+        }}
+        title={confirmModal?.title || ''}
+        description={confirmModal?.description || ''}
+        confirmLabel={confirmModal?.confirmLabel || 'Xác nhận'}
+        onConfirm={async () => {
+          await confirmModal?.onConfirm()
+        }}
+      />
+      <ReportDialog
+        open={Boolean(reportComment)}
+        onOpenChange={(open) => {
+          if (!open) setReportComment(null)
+        }}
+        title="Báo cáo bình luận"
+        onSubmit={submitReportComment}
+      />
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { useAuthStore } from '@/contexts/auth-store'
 import { useCallStore } from '@/contexts/call-store'
+import { IncomingCallModal } from '@/components/call'
 import { connectSocket, getSocket } from '@/services/socket'
 import styles from './app-layout.module.css'
 
@@ -68,22 +69,14 @@ export default function AppLayout({
     <div className={styles.page}>
       <main className={styles.main}>{children}</main>
       {incomingCall ? (
-        <aside className={styles.callBanner}>
-          <p className={styles.callTitle}>Cuộc gọi đến</p>
-          <p className={styles.callText}>
-            {incomingCall.callType === 'video' ? 'Video call' : 'Voice call'} từ người dùng #{incomingCall.fromUserId}
-          </p>
-          <div className={styles.callActions}>
-            <button type="button" className={styles.acceptBtn} onClick={handleOpenCall}>
-              Mở cuộc gọi
-            </button>
-            <button type="button" className={styles.declineBtn} onClick={handleDeclineCall}>
-              Từ chối
-            </button>
-          </div>
-        </aside>
+        <IncomingCallModal
+          name={`Người dùng #${incomingCall.fromUserId}`}
+          callType={incomingCall.callType}
+          state="incoming"
+          onAccept={handleOpenCall}
+          onDecline={handleDeclineCall}
+        />
       ) : null}
     </div>
   )
 }
-

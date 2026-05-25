@@ -9,6 +9,7 @@ type UseConversationRoutingParams = {
   selectedConversationId: string | null
   setConversations: (items: Conversation[]) => void
   selectConversation: (conversationId: string) => void
+  onLockedConversation?: (conversationId: string) => void
 }
 
 export function useConversationRouting({
@@ -17,6 +18,7 @@ export function useConversationRouting({
   selectedConversationId,
   setConversations,
   selectConversation,
+  onLockedConversation,
 }: UseConversationRoutingParams) {
   const navigate = useNavigate()
   const userSelectedConversationRef = useRef<string | null>(null)
@@ -56,16 +58,25 @@ export function useConversationRouting({
         const queryTarget =
           queryConversationId && conversations.find((item) => item.id === queryConversationId)
         if (queryTarget) {
+          if (queryTarget.isLocked || queryTarget.isHidden) {
+            onLockedConversation?.(queryTarget.id)
+            return
+          }
           selectConversation(queryTarget.id)
           return
         }
 
         if (!selectedConversationRef.current && conversations.length > 0) {
-          selectConversation(conversations[0].id)
+          const firstConversation = conversations.find((item) => !item.isHidden) || conversations[0]
+          if (firstConversation.isLocked) {
+            onLockedConversation?.(firstConversation.id)
+            return
+          }
+          selectConversation(firstConversation.id)
         }
       })
       .catch(console.error)
-  }, [queryConversationId, selectConversation, setConversations, token])
+  }, [onLockedConversation, queryConversationId, selectConversation, setConversations, token])
 
   useEffect(() => {
     if (!selectedConversationId || queryConversationId === selectedConversationId) return

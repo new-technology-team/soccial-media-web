@@ -49,6 +49,9 @@ export interface Conversation {
   type: 'direct' | 'group'
   name: string | null
   avatarUrl: string | null
+  backgroundUrl?: string | null
+  themeColor?: string | null
+  autoDeleteAfterSeconds?: number | null
   createdBy?: number
   createdAt?: string
   updatedAt?: string
@@ -67,6 +70,7 @@ export interface Conversation {
     meta?: Record<string, unknown> | null
     createdAt: string
     updatedAt?: string | null
+    expiresAt?: string | null
     isDeleted?: boolean
   } | null
   pinnedMessageIds?: string[]
@@ -75,7 +79,10 @@ export interface Conversation {
   onlineCount?: number
   isPinned?: boolean
   isMuted?: boolean
+  isHidden?: boolean
   mutedUntil?: string | null
+  isLocked?: boolean
+  lockedAt?: string | null
   notificationsEnabled?: boolean
   members: Array<{
     userId: number
@@ -89,6 +96,8 @@ export interface Conversation {
     isPinned?: boolean
     isMuted?: boolean
     mutedUntil?: string | null
+    isLocked?: boolean
+    lockedAt?: string | null
     deletedHistoryAt?: string | null
     online?: boolean
     lastActiveAt?: string | null
@@ -120,6 +129,7 @@ export interface ChatMessage {
   status?: 'sent' | 'delivered' | 'seen'
   readBy?: Array<{ userId: number; at?: string | null }>
   deliveredTo?: Array<{ userId: number; at?: string | null }>
+  expiresAt?: string | null
   isDeleted?: boolean
   reactionCount: number
   viewerReaction: string | null

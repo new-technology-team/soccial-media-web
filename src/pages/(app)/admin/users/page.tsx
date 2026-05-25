@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { UserCheck2, UserX2, Users, ShieldCheck, UserRoundCog } from 'lucide-react'
+import { AlertTriangle, UserCheck2, UserPlus, UserRoundCog, UserX2, Users, ShieldCheck } from 'lucide-react'
 import { useAuthStore } from '@/contexts/auth-store'
 import { api } from '@/api/client'
 import type { User } from '@/types'
@@ -12,17 +12,21 @@ export default function AdminUserStatsPage() {
   const token = useAuthStore((state) => state.accessToken)
   const [rawStats, setRawStats] = useState<Record<string, number>>({})
   const [users, setUsers] = useState<User[]>([])
+  const [reports, setReports] = useState<Array<Record<string, unknown>>>([])
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [busyUserId, setBusyUserId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!token) return
 
-    Promise.all([api.adminStats(token), api.moderationUsers(token)])
-      .then(([statsRes, usersRes]) => {
+    Promise.all([api.adminStats(token), api.moderationUsers(token), api.moderationReports(token)])
+      .then(([statsRes, usersRes, reportsRes]) => {
         setRawStats(statsRes.stats)
         setUsers(usersRes.users)
+        setReports(reportsRes.reports)
         setError('')
+        setNotice(`Đã tải ${usersRes.users.length} người dùng và ${reportsRes.reports.length} báo cáo liên quan.`)
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu người dùng admin')
@@ -45,10 +49,18 @@ export default function AdminUserStatsPage() {
       moderators,
       admins,
       activeRate: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0,
+      userReports: reports.filter((item) => String(item.targetType || '').toLowerCase() === 'user').length,
+      pendingReports: reports.filter((item) => String(item.status || '').toLowerCase() === 'pending').length,
     }
-  }, [rawStats, users])
+  }, [rawStats, users, reports])
 
   const newestUsers = useMemo(() => users.slice(0, 8), [users])
+
+  const userReports = useMemo(() => {
+    return reports
+      .filter((item) => String(item.targetType || '').toLowerCase() === 'user')
+      .slice(0, 8)
+  }, [reports])
 
   const updateUser = async (target: User, payload: { role?: User['role']; accountStatus?: User['accountStatus'] }) => {
     if (!token || target.id === user?.id) return
@@ -57,6 +69,7 @@ export default function AdminUserStatsPage() {
       const response = await api.updateModerationUser(token, target.id, payload)
       setUsers((prev) => prev.map((item) => (item.id === target.id ? response.user : item)))
       setError('')
+      setNotice(`Đã cập nhật ${target.fullName} (#${target.id}) thành công.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể cập nhật người dùng')
     } finally {
@@ -73,7 +86,7 @@ export default function AdminUserStatsPage() {
       <header className={styles.hero}>
         <p className={styles.eyebrow}>Admin CRM / Users</p>
         <h1>Quản lý người dùng</h1>
-        <p>Theo dõi vai trò, trạng thái tài khoản và biến động user trong cùng giao diện điều hành admin.</p>
+        <p>Theo dõi vai trò, trạng thái, ID tài khoản và các báo cáo nhắm vào người dùng ngay trong một màn hình.</p>
       </header>
 
       <section className={styles.grid}>
@@ -108,9 +121,26 @@ export default function AdminUserStatsPage() {
           </div>
           <strong>{analytics.moderators.toLocaleString('vi-VN')}</strong>
         </article>
+
+        <article className={styles.card}>
+          <div className={styles.cardTop}>
+            <span>Báo cáo người dùng</span>
+            <AlertTriangle size={18} />
+          </div>
+          <strong>{analytics.userReports.toLocaleString('vi-VN')}</strong>
+        </article>
+
+        <article className={styles.card}>
+          <div className={styles.cardTop}>
+            <span>Báo cáo chờ xử lý</span>
+            <UserPlus size={18} />
+          </div>
+          <strong>{analytics.pendingReports.toLocaleString('vi-VN')}</strong>
+        </article>
       </section>
 
       {error ? <p className={styles.error}>{error}</p> : null}
+      {notice ? <p className={styles.notice}>{notice}</p> : null}
 
       <section className={styles.split}>
         <article className={styles.panel}>
@@ -119,16 +149,10 @@ export default function AdminUserStatsPage() {
             <span>Tỷ lệ user active</span>
             <b>{analytics.activeRate}%</b>
           </div>
-          <div className={styles.track}>
-            <i style={{ width: `${analytics.activeRate}%` }} />
-          </div>
 
           <div className={styles.metricRow}>
             <span>Tài khoản hidden</span>
             <b>{analytics.hiddenUsers}</b>
-          </div>
-          <div className={styles.track}>
-            <i style={{ width: `${analytics.totalUsers ? (analytics.hiddenUsers / analytics.totalUsers) * 100 : 0}%` }} />
           </div>
 
           <div className={styles.metricRow}>
@@ -145,6 +169,7 @@ export default function AdminUserStatsPage() {
             <table className={styles.table}>
               <thead>
                 <tr>
+                  <th>ID</th>
                   <th>Tên</th>
                   <th>Vai trò</th>
                   <th>Trạng thái</th>
@@ -154,16 +179,29 @@ export default function AdminUserStatsPage() {
               <tbody>
                 {newestUsers.map((item) => (
                   <tr key={item.id}>
+                    <td>#{item.id}</td>
                     <td>{item.fullName}</td>
                     <td>
-                      <select value={item.role} disabled={busyUserId === item.id || item.id === user?.id} onChange={(event) => void updateUser(item, { role: event.target.value as User['role'] })}>
+                      <select
+                        title={`Đổi vai trò cho ${item.fullName}`}
+                        aria-label={`Đổi vai trò cho ${item.fullName}`}
+                        value={item.role}
+                        disabled={busyUserId === item.id || item.id === user?.id}
+                        onChange={(event) => void updateUser(item, { role: event.target.value as User['role'] })}
+                      >
                         <option value="user">user</option>
                         <option value="moderator">moderator</option>
                         <option value="admin">admin</option>
                       </select>
                     </td>
                     <td>
-                      <select value={item.accountStatus} disabled={busyUserId === item.id || item.id === user?.id} onChange={(event) => void updateUser(item, { accountStatus: event.target.value as User['accountStatus'] })}>
+                      <select
+                        title={`Đổi trạng thái cho ${item.fullName}`}
+                        aria-label={`Đổi trạng thái cho ${item.fullName}`}
+                        value={item.accountStatus}
+                        disabled={busyUserId === item.id || item.id === user?.id}
+                        onChange={(event) => void updateUser(item, { accountStatus: event.target.value as User['accountStatus'] })}
+                      >
                         <option value="active">active</option>
                         <option value="restricted">restricted</option>
                         <option value="hidden">hidden</option>
@@ -180,6 +218,33 @@ export default function AdminUserStatsPage() {
               </tbody>
             </table>
             {newestUsers.length === 0 ? <p className={styles.empty}>Chưa có dữ liệu người dùng.</p> : null}
+          </div>
+        </article>
+
+        <article className={styles.panel}>
+          <h2>Báo cáo nhắm vào người dùng</h2>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Report</th>
+                  <th>Người bị báo cáo</th>
+                  <th>Trạng thái</th>
+                  <th>Lý do</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userReports.map((report) => (
+                  <tr key={String(report.id)}>
+                    <td>#{String(report.id)}</td>
+                    <td>#{String(report.targetId || '-')}</td>
+                    <td>{String(report.status || 'pending')}</td>
+                    <td>{String(report.reason || 'Không có lý do')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {userReports.length === 0 ? <p className={styles.empty}>Chưa có báo cáo nào nhắm vào người dùng.</p> : null}
           </div>
         </article>
       </section>

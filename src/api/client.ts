@@ -45,6 +45,7 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
   id: String(conversation.id),
   pinnedMessageIds: (conversation.pinnedMessageIds || []).map((item) => String(item)),
   avatarUrl: resolveApiAssetUrl(conversation.avatarUrl),
+  backgroundUrl: resolveApiAssetUrl(conversation.backgroundUrl),
   lastMessage: conversation.lastMessage
     ? {
         ...conversation.lastMessage,
@@ -52,6 +53,7 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
         senderId: Number(conversation.lastMessage.senderId || 0),
         senderAvatar: resolveApiAssetUrl(conversation.lastMessage.senderAvatar),
         mediaUrl: resolveApiAssetUrl(conversation.lastMessage.mediaUrl),
+        expiresAt: conversation.lastMessage.expiresAt || null,
       }
     : conversation.lastMessage,
   members: (conversation.members || []).map((member) => ({
@@ -576,6 +578,25 @@ export const api = {
       token
     ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
 
+  updateConversationPreferences: (
+    token: string,
+    conversationId: string,
+    payload: {
+      backgroundUrl?: string | null
+      themeColor?: string | null
+      autoDeleteAfterSeconds?: number | null
+      hidden?: boolean
+      locked?: boolean
+      hiddenPassword?: string | null
+      lockedPassword?: string | null
+    }
+  ) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/preferences`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
   updateConversationNickname: (token: string, conversationId: string, userId: number, nickname: string | null) =>
     request<{ message: string; conversation: Conversation }>(
       `/chat/conversations/${conversationId}/members/${userId}/nickname`,
@@ -720,6 +741,12 @@ export const api = {
   blockUser: (token: string, userId: number) =>
     request<{ message: string }>(`/social/users/${userId}/block`, { method: 'POST' }, token),
 
+  unblockUser: (token: string, userId: number) =>
+    request<{ message: string }>(`/social/users/${userId}/block`, { method: 'DELETE' }, token),
+
+  isUserBlocked: (token: string, userId: number) =>
+    request<{ blocked: boolean }>(`/social/users/${userId}/block`, { method: 'GET' }, token),
+
   forwardMessage: (token: string, messageId: string, targetConversationId: string) =>
     request<{ message: string; chatMessage: ChatMessage }>(
       `/chat/messages/${messageId}/forward`,
@@ -813,8 +840,6 @@ export const api = {
     token: string,
     postId: number,
     payload: {
-      content?: string
-      mediaUrl?: string | null
       visibility?: 'public' | 'private'
       status?: 'published' | 'hidden' | 'deleted'
     }

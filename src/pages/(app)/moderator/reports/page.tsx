@@ -91,6 +91,11 @@ export default function ModeratorReportsPage() {
   const resolve = async (id: number, nextStatus: 'reviewed' | 'resolved') => {
     if (!token) return
     await api.reviewModerationReport(token, id, { status: nextStatus })
+    setSelectedReportId(id)
+    setStatus(nextStatus)
+    setKeyword('')
+    setTargetType('all')
+    setCurrentPage(1)
     await loadReports()
   }
 
@@ -127,6 +132,7 @@ export default function ModeratorReportsPage() {
       <header className={styles.hero}>
         <p>Stitch4 / Reports</p>
         <h1>Quản lý báo cáo khiếu nại</h1>
+        <p>Xử lý báo cáo theo từng đối tượng: bài viết, bình luận, người dùng và tin nhắn.</p>
       </header>
 
       <section className={styles.filters}>
@@ -152,7 +158,12 @@ export default function ModeratorReportsPage() {
           />
         </label>
 
-        <select value={targetType} onChange={(event) => setTargetType(event.target.value as TargetFilter)}>
+        <select
+          title="Lọc theo loại đối tượng"
+          aria-label="Lọc theo loại đối tượng"
+          value={targetType}
+          onChange={(event) => setTargetType(event.target.value as TargetFilter)}
+        >
           <option value="all">Tất cả đối tượng</option>
           <option value="post">Bài viết</option>
           <option value="comment">Bình luận</option>
@@ -235,7 +246,7 @@ export default function ModeratorReportsPage() {
             <>
               <div className={styles.sideHead}>
                 <h2>Chi tiết report</h2>
-                <button type="button" onClick={() => setSelectedReportId(null)}>
+                <button type="button" title="Đóng chi tiết report" aria-label="Đóng chi tiết report" onClick={() => setSelectedReportId(null)}>
                   <X size={15} />
                 </button>
               </div>

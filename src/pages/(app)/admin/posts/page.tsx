@@ -1,14 +1,21 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { EyeOff, FileText, Globe, Heart, Lock, PencilLine, RefreshCcw, Save, Search, Trash2 } from 'lucide-react'
+import { EyeOff, FileText, Globe, Heart, Lock, RefreshCcw, Search, Trash2 } from 'lucide-react'
 import { useAuthStore } from '@/contexts/auth-store'
+import { ConfirmDialog } from '@/components/dialogs'
 import { api } from '@/api/client'
 import type { FeedPost } from '@/types'
 import styles from './page.module.css'
 
 type PostStatus = 'published' | 'hidden' | 'deleted'
 type PostVisibility = 'public' | 'private'
+type ConfirmModalState = {
+  title: string
+  description: string
+  confirmLabel: string
+  onConfirm: () => void | Promise<void>
+}
 
 export default function AdminPostManagementPage() {
   const user = useAuthStore((state) => state.user)
@@ -19,16 +26,11 @@ export default function AdminPostManagementPage() {
   const [notice, setNotice] = useState('')
   const [selectedPostIds, setSelectedPostIds] = useState<number[]>([])
   const [bulkWorking, setBulkWorking] = useState(false)
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
 
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | PostStatus>('all')
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | PostVisibility>('all')
-
-  const [editingPostId, setEditingPostId] = useState<number | null>(null)
-  const [editContent, setEditContent] = useState('')
-  const [editMediaUrl, setEditMediaUrl] = useState('')
-  const [editStatus, setEditStatus] = useState<PostStatus>('published')
-  const [editVisibility, setEditVisibility] = useState<PostVisibility>('public')
 
   const loadPosts = async () => {
     if (!token) return
@@ -47,6 +49,7 @@ export default function AdminPostManagementPage() {
       setPosts(res.posts)
       const visibleIds = new Set(res.posts.map((item) => item.id))
       setSelectedPostIds((prev) => prev.filter((id) => visibleIds.has(id)))
+      setNotice(`Đã tải ${res.posts.length} bài viết để kiểm tra.`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Không thể tải danh sách bài viết'
       setError(message)
@@ -83,48 +86,13 @@ export default function AdminPostManagementPage() {
     }
   }, [posts])
 
-  const openEdit = (post: FeedPost) => {
-    setEditingPostId(post.id)
-    setEditContent(post.content || '')
-    setEditMediaUrl(post.mediaUrl || '')
-    setEditStatus(post.status)
-    setEditVisibility(post.visibility)
-  }
-
-  const closeEdit = () => {
-    setEditingPostId(null)
-    setEditContent('')
-    setEditMediaUrl('')
-    setEditStatus('published')
-    setEditVisibility('public')
-  }
-
-  const saveEdit = async () => {
-    if (!token || !editingPostId) return
-    try {
-      setError('')
-      setNotice('')
-      await api.updateAdminPost(token, editingPostId, {
-        content: editContent.trim(),
-        mediaUrl: editMediaUrl.trim() || null,
-        status: editStatus,
-        visibility: editVisibility,
-      })
-      closeEdit()
-      setNotice('Đã cập nhật bài viết thành công')
-      await loadPosts()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể cập nhật bài viết')
-    }
-  }
-
   const quickUpdateStatus = async (postId: number, status: PostStatus) => {
     if (!token) return
     try {
       setError('')
       setNotice('')
       await api.updateAdminPost(token, postId, { status })
-      setNotice(`Đã cập nhật trạng thái bài viết #${postId}`)
+      setNotice(status === 'hidden' ? `Đã ẩn bài viết #${postId}` : `Đã khôi phục bài viết #${postId}`)
       await loadPosts()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể cập nhật trạng thái bài viết')
@@ -133,18 +101,23 @@ export default function AdminPostManagementPage() {
 
   const deletePost = async (postId: number) => {
     if (!token) return
-    const ok = window.confirm('Xóa bài viết này khỏi feed? Hành động này sẽ chuyển trạng thái sang deleted.')
-    if (!ok) return
-
-    try {
-      setError('')
-      setNotice('')
-      await api.deleteAdminPost(token, postId)
-      setNotice(`Đã xóa bài viết #${postId}`)
-      await loadPosts()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể xóa bài viết')
-    }
+    setConfirmModal({
+      title: 'Xóa bài viết?',
+      description: 'Hành động này sẽ chuyển trạng thái bài viết sang deleted.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        try {
+          setError('')
+          setNotice('')
+          await api.deleteAdminPost(token, postId)
+          setNotice(`Đã chuyển bài viết #${postId} sang trạng thái deleted.`)
+          await loadPosts()
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Không thể xóa bài viết')
+          throw err
+        }
+      },
+    })
   }
 
   const toggleSelectPost = (postId: number) => {
@@ -165,37 +138,41 @@ export default function AdminPostManagementPage() {
     if (!token || selectedPostIds.length === 0 || bulkWorking) return
 
     const actionLabel = action === 'hide' ? 'ẩn' : 'xóa'
-    const ok = window.confirm(`Xác nhận ${actionLabel} ${selectedPostIds.length} bài viết đã chọn?`)
-    if (!ok) return
+    setConfirmModal({
+      title: `Xác nhận ${actionLabel} bài viết?`,
+      description: `Bạn đang chọn ${selectedPostIds.length} bài viết. Hành động này sẽ áp dụng cho tất cả bài viết đã chọn.`,
+      confirmLabel: action === 'hide' ? 'Ẩn' : 'Xóa',
+      onConfirm: async () => {
+        setBulkWorking(true)
+        setError('')
+        setNotice('')
 
-    setBulkWorking(true)
-    setError('')
-    setNotice('')
+        try {
+          const results = await Promise.allSettled(
+            selectedPostIds.map((postId) => {
+              if (action === 'hide') {
+                return api.updateAdminPost(token, postId, { status: 'hidden' })
+              }
+              return api.deleteAdminPost(token, postId)
+            })
+          )
 
-    try {
-      const results = await Promise.allSettled(
-        selectedPostIds.map((postId) => {
-          if (action === 'hide') {
-            return api.updateAdminPost(token, postId, { status: 'hidden' })
+          const failed = results.filter((item) => item.status === 'rejected').length
+          const success = results.length - failed
+
+          if (failed > 0) {
+            setError(`Bulk ${actionLabel}: thành công ${success}, thất bại ${failed}. Vui lòng thử lại các mục lỗi.`)
+          } else {
+            setNotice(`Đã ${actionLabel} thành công ${success} bài viết đã chọn.`)
           }
-          return api.deleteAdminPost(token, postId)
-        })
-      )
 
-      const failed = results.filter((item) => item.status === 'rejected').length
-      const success = results.length - failed
-
-      if (failed > 0) {
-        setError(`Bulk ${actionLabel}: thành công ${success}, thất bại ${failed}. Vui lòng thử lại các mục lỗi.`)
-      } else {
-        setNotice(`Đã ${actionLabel} thành công ${success} bài viết.`)
-      }
-
-      setSelectedPostIds([])
-      await loadPosts()
-    } finally {
-      setBulkWorking(false)
-    }
+          setSelectedPostIds([])
+          await loadPosts()
+        } finally {
+          setBulkWorking(false)
+        }
+      },
+    })
   }
 
   if (user?.role !== 'admin') {
@@ -207,7 +184,7 @@ export default function AdminPostManagementPage() {
       <header className={styles.hero}>
         <p className={styles.eyebrow}>Admin CRM / Content Ops</p>
         <h1>Quản lý bài viết end-to-end</h1>
-        <p>Quản trị toàn bộ bài viết: lọc, sửa nội dung, đổi trạng thái hiển thị và xóa nội dung vi phạm.</p>
+        <p>Quản trị bài viết theo hướng duyệt nội dung: xem chi tiết, ẩn hoặc xóa bài vi phạm, không chỉnh sửa nội dung gốc.</p>
       </header>
 
       <section className={styles.grid}>
@@ -263,7 +240,12 @@ export default function AdminPostManagementPage() {
             />
           </label>
 
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | PostStatus)}>
+          <select
+            title="Lọc theo trạng thái"
+            aria-label="Lọc theo trạng thái"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as 'all' | PostStatus)}
+          >
             <option value="all">Tất cả trạng thái</option>
             <option value="published">published</option>
             <option value="hidden">hidden</option>
@@ -271,6 +253,8 @@ export default function AdminPostManagementPage() {
           </select>
 
           <select
+            title="Lọc theo quyền xem"
+            aria-label="Lọc theo quyền xem"
             value={visibilityFilter}
             onChange={(event) => setVisibilityFilter(event.target.value as 'all' | PostVisibility)}
           >
@@ -344,6 +328,7 @@ export default function AdminPostManagementPage() {
                 <th>ID</th>
                 <th>Tác giả</th>
                 <th>Nội dung</th>
+                <th>Chi tiết</th>
                 <th>Hiển thị</th>
                 <th>Trạng thái</th>
                 <th>Tương tác</th>
@@ -352,7 +337,8 @@ export default function AdminPostManagementPage() {
             </thead>
             <tbody>
               {posts.map((post) => {
-                const isEditing = editingPostId === post.id
+                const hasMedia = Boolean(post.mediaUrl)
+                const createdAt = post.createdAt ? new Date(post.createdAt).toLocaleString('vi-VN') : '-'
                 return (
                   <tr key={post.id}>
                     <td>
@@ -366,77 +352,30 @@ export default function AdminPostManagementPage() {
                     <td>#{post.id}</td>
                     <td>{post.authorName}</td>
                     <td>
-                      {isEditing ? (
-                        <div className={styles.inlineEdit}>
-                          <textarea
-                            value={editContent}
-                            onChange={(event) => setEditContent(event.target.value)}
-                            placeholder="Nội dung bài viết"
-                          />
-                          <input
-                            value={editMediaUrl}
-                            onChange={(event) => setEditMediaUrl(event.target.value)}
-                            placeholder="Media URL (optional)"
-                          />
-                        </div>
-                      ) : (
-                        <p className={styles.content}>{post.content || '(media only)'}</p>
-                      )}
+                      <p className={styles.content}>{post.content || '(bài viết chỉ có media)'}</p>
                     </td>
                     <td>
-                      {isEditing ? (
-                        <select
-                          value={editVisibility}
-                          onChange={(event) => setEditVisibility(event.target.value as PostVisibility)}
-                        >
-                          <option value="public">public</option>
-                          <option value="private">private</option>
-                        </select>
-                      ) : (
-                        post.visibility
-                      )}
+                      <div className={styles.postMeta}>
+                        <div><b>Post ID:</b> #{post.id}</div>
+                        <div><b>Media:</b> {hasMedia ? 'Có' : 'Không'}</div>
+                        <div><b>Tạo lúc:</b> {createdAt}</div>
+                        <div><b>Tác giả:</b> {post.authorName}</div>
+                      </div>
                     </td>
                     <td>
-                      {isEditing ? (
-                        <select value={editStatus} onChange={(event) => setEditStatus(event.target.value as PostStatus)}>
-                          <option value="published">published</option>
-                          <option value="hidden">hidden</option>
-                          <option value="deleted">deleted</option>
-                        </select>
-                      ) : (
-                        post.status
-                      )}
+                      <span className={`${styles.badge} ${styles[`status${post.status}`]}`}>{post.status}</span>
                     </td>
                     <td>
                       {post.reactionCount} react / {post.commentCount} comment
                     </td>
                     <td>
                       <div className={styles.actions}>
-                        {isEditing ? (
-                          <>
-                            <button type="button" onClick={saveEdit}>
-                              <Save size={14} /> Lưu
-                            </button>
-                            <button type="button" onClick={closeEdit}>
-                              Hủy
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button type="button" onClick={() => openEdit(post)}>
-                              <PencilLine size={14} /> Sửa
-                            </button>
-                            <button type="button" onClick={() => quickUpdateStatus(post.id, 'hidden')}>
-                              Ẩn
-                            </button>
-                            <button type="button" onClick={() => quickUpdateStatus(post.id, 'published')}>
-                              Hiện
-                            </button>
-                            <button type="button" className={styles.danger} onClick={() => deletePost(post.id)}>
-                              <Trash2 size={14} /> Xóa
-                            </button>
-                          </>
-                        )}
+                        <button type="button" onClick={() => quickUpdateStatus(post.id, 'hidden')}>
+                          <EyeOff size={14} /> Ẩn
+                        </button>
+                        <button type="button" className={styles.danger} onClick={() => deletePost(post.id)}>
+                          <Trash2 size={14} /> Xóa
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -445,7 +384,7 @@ export default function AdminPostManagementPage() {
 
               {!loading && posts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className={styles.empty}>Không có bài viết phù hợp bộ lọc.</td>
+                  <td colSpan={9} className={styles.empty}>Không có bài viết phù hợp bộ lọc.</td>
                 </tr>
               ) : null}
             </tbody>
@@ -454,7 +393,18 @@ export default function AdminPostManagementPage() {
 
         {loading ? <p className={styles.empty}>Đang tải dữ liệu...</p> : null}
       </section>
+      <ConfirmDialog
+        open={Boolean(confirmModal)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmModal(null)
+        }}
+        title={confirmModal?.title || ''}
+        description={confirmModal?.description || ''}
+        confirmLabel={confirmModal?.confirmLabel || 'Xác nhận'}
+        onConfirm={async () => {
+          await confirmModal?.onConfirm()
+        }}
+      />
     </div>
   )
 }
-

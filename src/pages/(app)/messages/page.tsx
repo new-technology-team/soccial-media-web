@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -34,9 +34,31 @@ import {
 } from 'lucide-react'
 import styles from './page.module.css'
 import { ApiError, api } from '@/api/client'
+import {
+  ActiveCallWindow,
+  CallHistoryMessage,
+  CallSettingsPanel,
+  IncomingCallModal,
+  MinimizedCallPill,
+  OutgoingCallModal,
+  type CallParticipant,
+  type CallSettings,
+  type CallState,
+} from '@/components/call'
+import {
+  AppDialog,
+  AutoDeleteMessageDialog,
+  ConfirmDialog,
+  InputDialog,
+  NotificationMuteDialog,
+  ReportDialog,
+  UploadImageDialog,
+  type MuteOptionValue,
+} from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
 import { useChatStore } from '@/contexts/chat-store'
 import { useCallStore, type IncomingCallState } from '@/contexts/call-store'
+import { toast } from '@/hooks/use-toast'
 import { connectSocket, getSocket } from '@/services/socket'
 import { useConversationRouting } from '@/hooks/use-conversation-routing'
 import { fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
@@ -65,12 +87,43 @@ type ActiveCall = {
   type: 'voice' | 'video'
   withName: string
   startedAt: number
+  mode: 'private' | 'group'
+  avatarUrl?: string | null
 }
 
 type AttachmentDraft = {
   file: File
   type: 'image' | 'video' | 'audio' | 'file'
   previewUrl: string | null
+}
+
+type ConfirmModalState = {
+  title: string
+  description: string
+  confirmLabel: string
+  destructive?: boolean
+  icon?: 'warning' | 'lock'
+  onConfirm: () => void | Promise<void>
+}
+
+type NicknameDialogState = {
+  memberId: number
+  name: string
+  avatarUrl?: string | null
+  currentValue: string
+}
+
+type ReportDialogState = {
+  targetType: 'user' | 'message' | 'group'
+  targetId: number | string
+  title: string
+}
+
+type ConversationUiPrefs = {
+  largeText: boolean
+  roundBubbles: boolean
+  themeColor?: string | null
+  backgroundUrl?: string | null
 }
 
 const RTC_CONFIG: RTCConfiguration = {
@@ -87,6 +140,25 @@ const RTC_CONFIG: RTCConfiguration = {
         ]
       : []),
   ],
+}
+
+const CALL_RING_TIMEOUT_MS = 60_000
+const GROUP_CALL_RING_TIMEOUT_MS = 60_000
+
+const DEFAULT_CALL_SETTINGS: CallSettings = {
+  sound: true,
+  vibration: true,
+  floatingWindow: true,
+  autoTimeout: true,
+  allowVoice: true,
+  allowVideo: true,
+  allowGroup: true,
+  ringGroup: true,
+  missedNotifications: true,
+  showSpeaker: true,
+  autoMuteOnJoin: false,
+  autoCameraOffOnJoin: false,
+  blockStrangers: false,
 }
 
 const MESSAGE_ICON_TOKENS: Record<string, { label: string; Icon: LucideIcon }> = {
@@ -159,10 +231,24 @@ export default function MessagesPage() {
   } = useChatStore()
   const [message, setMessage] = useState('')
   const [callStatus, setCallStatus] = useState<string | null>(null)
+  const [callState, setCallState] = useState<CallState>('idle')
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null)
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
   const [joinedCallUserIds, setJoinedCallUserIds] = useState<number[]>([])
   const [callSeconds, setCallSeconds] = useState(0)
+  const [callMinimized, setCallMinimized] = useState(false)
+  const [callSettingsOpen, setCallSettingsOpen] = useState(false)
+  const [cameraAvailable, setCameraAvailable] = useState(true)
+  const [localStreamState, setLocalStreamState] = useState<MediaStream | null>(null)
+  const [callSettings, setCallSettings] = useState<CallSettings>(() => {
+    if (typeof window === 'undefined') return DEFAULT_CALL_SETTINGS
+    try {
+      const raw = window.localStorage.getItem('zchat:call-settings')
+      return raw ? { ...DEFAULT_CALL_SETTINGS, ...JSON.parse(raw) } : DEFAULT_CALL_SETTINGS
+    } catch {
+      return DEFAULT_CALL_SETTINGS
+    }
+  })
   const [busyUploading, setBusyUploading] = useState(false)
   const [busyActionId, setBusyActionId] = useState<string | null>(null)
   const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null)
@@ -178,6 +264,18 @@ export default function MessagesPage() {
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false)
+  const [pendingLockedConversationId, setPendingLockedConversationId] = useState<string | null>(null)
+  const [pendingUnlockPassword, setPendingUnlockPassword] = useState('')
+  const [pendingUnlockError, setPendingUnlockError] = useState<string | null>(null)
+  const [isDirectPeerBlocked, setIsDirectPeerBlocked] = useState(false)
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
+  const [nicknameDialog, setNicknameDialog] = useState<NicknameDialogState | null>(null)
+  const [groupNameDialogOpen, setGroupNameDialogOpen] = useState(false)
+  const [groupAvatarDialogOpen, setGroupAvatarDialogOpen] = useState(false)
+  const [reportDialog, setReportDialog] = useState<ReportDialogState | null>(null)
+  const [muteDialogOpen, setMuteDialogOpen] = useState(false)
+  const [autoDeleteDialogOpen, setAutoDeleteDialogOpen] = useState(false)
+  const [lockDialogOpen, setLockDialogOpen] = useState(false)
   const [rightPanelSection, setRightPanelSection] = useState<'overview' | 'members' | 'manage'>('overview')
   const [groupName, setGroupName] = useState('')
   const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
@@ -211,6 +309,15 @@ export default function MessagesPage() {
     links: [],
   })
   const [loadingSharedContent, setLoadingSharedContent] = useState(false)
+  const [conversationUiPrefs, setConversationUiPrefs] = useState<Record<string, Partial<ConversationUiPrefs>>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = window.localStorage.getItem('zchat:conversation-ui-prefs')
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
   const typingTimeoutRef = useRef<number | null>(null)
   const sendingMessageRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -221,6 +328,7 @@ export default function MessagesPage() {
   const localStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
+  const ringtoneRef = useRef<{ context: AudioContext; intervalId: number } | null>(null)
 
   const scrollConversationToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     window.setTimeout(() => {
@@ -229,6 +337,22 @@ export default function MessagesPage() {
       node.scrollTo({ top: node.scrollHeight, behavior })
     }, 0)
   }, [])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('zchat:conversation-ui-prefs', JSON.stringify(conversationUiPrefs))
+    } catch {
+      // Local display preferences are optional.
+    }
+  }, [conversationUiPrefs])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('zchat:call-settings', JSON.stringify(callSettings))
+    } catch {
+      // Local call settings are optional.
+    }
+  }, [callSettings])
 
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
@@ -245,24 +369,99 @@ export default function MessagesPage() {
   }, [messagesByConversation, selectedConversationId])
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
+  const selectedConversationUiPrefs = useMemo<ConversationUiPrefs>(
+    () => ({
+      largeText: false,
+      roundBubbles: true,
+      ...(selectedConversation?.id ? conversationUiPrefs[selectedConversation.id] : {}),
+    }),
+    [conversationUiPrefs, selectedConversation?.id]
+  )
   const queryConversationId = searchParams.get('conversation') || ''
   const globalIncomingCall = useCallStore((state) => state.incomingCall)
   const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
-  const { openConversation } = useConversationRouting({
+  const { openConversation: routeOpenConversation } = useConversationRouting({
     token,
     queryConversationId,
     selectedConversationId,
     setConversations,
     selectConversation,
+    onLockedConversation: setPendingLockedConversationId,
   })
+
+  const refreshConversations = useCallback(async () => {
+    if (!token) return
+    setConversations(await loadChatConversations(token))
+  }, [token, setConversations])
+
+  const requestConversationAccess = useCallback(
+    async (conversationId: string) => {
+      if (!token) return false
+      const targetConversation = conversations.find((item) => item.id === conversationId) || null
+      if (!targetConversation) return false
+
+      if (targetConversation.isHidden || targetConversation.isLocked) {
+        setPendingLockedConversationId(conversationId)
+        setPendingUnlockError(null)
+        setPendingUnlockPassword('')
+        return false
+      }
+
+      return true
+    },
+    [conversations, refreshConversations, token]
+  )
 
   const handleOpenConversation = useCallback(
     (conversationId: string) => {
-      openConversation(conversationId)
-      markConversationRead(conversationId)
+      void (async () => {
+        const allowed = await requestConversationAccess(conversationId)
+        if (!allowed) return
+        routeOpenConversation(conversationId)
+        markConversationRead(conversationId)
+      })()
     },
-    [markConversationRead, openConversation]
+    [markConversationRead, requestConversationAccess, routeOpenConversation]
   )
+
+  const handleUnlockPendingConversation = async () => {
+    if (!pendingLockedConversationId) return
+    try {
+      const allowed = await requestConversationAccess(pendingLockedConversationId)
+      if (!allowed) return
+      routeOpenConversation(pendingLockedConversationId)
+      markConversationRead(pendingLockedConversationId)
+      setPendingLockedConversationId(null)
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : 'Không thể mở khóa hội thoại.')
+    }
+  }
+
+  const handleSubmitPendingUnlock = async () => {
+    if (!token || !pendingLockedConversationId) return
+    const password = pendingUnlockPassword.trim()
+    if (!password) {
+      setPendingUnlockError('Nhập mật khẩu để mở khóa hội thoại.')
+      return
+    }
+
+    try {
+      setPendingUnlockError(null)
+      await api.updateConversationPreferences(token, pendingLockedConversationId, {
+        hidden: false,
+        locked: false,
+        hiddenPassword: password,
+        lockedPassword: password,
+      })
+      await refreshConversations()
+      routeOpenConversation(pendingLockedConversationId)
+      markConversationRead(pendingLockedConversationId)
+      setPendingLockedConversationId(null)
+      setPendingUnlockPassword('')
+    } catch (error) {
+      setPendingUnlockError(error instanceof Error ? error.message : 'Không thể mở khóa hội thoại.')
+    }
+  }
 
   const reloadNotifications = useCallback(async () => {
     if (!token) return
@@ -282,10 +481,56 @@ export default function MessagesPage() {
     }
   }, [token, user?.id])
 
-  const refreshConversations = useCallback(async () => {
-    if (!token) return
-    setConversations(await loadChatConversations(token))
-  }, [token, setConversations])
+  function stopRingtone() {
+    const ringtone = ringtoneRef.current
+    if (!ringtone) return
+    window.clearInterval(ringtone.intervalId)
+    ringtone.context.close().catch(() => undefined)
+    ringtoneRef.current = null
+  }
+
+  function startRingtone(tone: 'incoming' | 'outgoing') {
+    if (!callSettings.sound || ringtoneRef.current) return
+    const AudioContextClass = window.AudioContext
+    if (!AudioContextClass) return
+    const context = new AudioContextClass()
+    const playPulse = () => {
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.type = tone === 'incoming' ? 'sine' : 'triangle'
+      oscillator.frequency.value = tone === 'incoming' ? 880 : 520
+      gain.gain.setValueAtTime(0.0001, context.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.09, context.currentTime + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34)
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      oscillator.start()
+      oscillator.stop(context.currentTime + 0.36)
+    }
+    playPulse()
+    const intervalId = window.setInterval(playPulse, tone === 'incoming' ? 1450 : 1900)
+    ringtoneRef.current = { context, intervalId }
+  }
+
+  function addLocalCallHistory(text: string, conversationId = selectedConversationId || '') {
+    if (!conversationId || !user?.id) return
+    const systemMessage: ChatMessage = {
+      id: `local-call-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      conversationId,
+      senderId: user.id,
+      senderName: user.fullName || 'Bạn',
+      senderAvatar: user.avatarUrl || null,
+      type: 'call-history',
+      text,
+      mediaUrl: null,
+      meta: { system: true, callHistory: true },
+      reactionCount: 0,
+      viewerReaction: null,
+      createdAt: new Date().toISOString(),
+    }
+    appendMessage(conversationId, systemMessage)
+    scrollConversationToBottom('smooth')
+  }
 
   useEffect(() => {
     if (!token || !selectedConversationId) return
@@ -442,6 +687,9 @@ export default function MessagesPage() {
       setIncomingCall(incomingPayload)
       setGlobalIncomingCall(incomingPayload)
       setCallStatus(`Cuộc gọi ${payload.callType === 'video' ? 'video' : 'thoại'} đến`)
+      setCallState('incoming')
+      startRingtone('incoming')
+      if (callSettings.vibration && navigator.vibrate) navigator.vibrate([180, 90, 180])
     })
 
     socket.on('call:answer', async (payload) => {
@@ -455,7 +703,9 @@ export default function MessagesPage() {
       setRingingStartedAt(null)
       setCallSeconds(0)
       setActiveCall((prev) => (prev ? { ...prev, startedAt: answeredAt } : prev))
-      setCallStatus('Người nhận đã tham gia cuộc gọi')
+      setCallState('connected')
+      stopRingtone()
+      setCallStatus('Đã kết nối')
     })
 
     socket.on('call:join', (payload) => {
@@ -510,6 +760,9 @@ export default function MessagesPage() {
           setCallSeconds(0)
           setCallAnswered(false)
           setRingingStartedAt(null)
+          setLocalStreamState(null)
+          setCallState('ended')
+          stopRingtone()
           setCallStatus('Mọi người đã rời cuộc gọi')
         } else {
           setCallStatus('Một người đã rời cuộc gọi')
@@ -517,6 +770,8 @@ export default function MessagesPage() {
         return
       }
 
+      setCallState('ended')
+      stopRingtone()
       setCallStatus('Cuộc gọi đã kết thúc')
       setIncomingCall(null)
       setGlobalIncomingCall(null)
@@ -524,6 +779,7 @@ export default function MessagesPage() {
       peersRef.current.clear()
       localStreamRef.current?.getTracks().forEach((track) => track.stop())
       localStreamRef.current = null
+      setLocalStreamState(null)
       setRemoteStreams([])
       setJoinedCallUserIds([])
       setActiveCall(null)
@@ -538,6 +794,38 @@ export default function MessagesPage() {
         setJoinedCallUserIds(payload.participantIds)
         setCallStatus(`Cuộc gọi đang có ${payload.participantCount} người tham gia`)
       }
+    })
+
+    socket.on('group_call_joined', (payload) => {
+      const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
+      if (fromUserId > 0) {
+        setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
+        setCallStatus('Cuộc gọi nhóm đang diễn ra')
+      }
+    })
+
+    socket.on('group_call_left', (payload) => {
+      const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
+      if (fromUserId > 0) {
+        setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
+      }
+    })
+
+    socket.on('group_call_ended', () => {
+      setCallState('ended')
+      setCallStatus('Cuộc gọi nhóm đã kết thúc')
+      closeCallResources()
+      setActiveCall(null)
+      setCallAnswered(false)
+      setCallSeconds(0)
+    })
+
+    socket.on('participant_updated', (payload) => {
+      if (payload?.participantIds) setJoinedCallUserIds(payload.participantIds)
+    })
+
+    socket.on('participant_speaking', () => {
+      setCallStatus('Có người đang nói')
     })
 
     return () => {
@@ -559,6 +847,11 @@ export default function MessagesPage() {
       socket.off('call:ice-candidate')
       socket.off('call:end')
       socket.off('call:participants')
+      socket.off('group_call_joined')
+      socket.off('group_call_left')
+      socket.off('group_call_ended')
+      socket.off('participant_updated')
+      socket.off('participant_speaking')
     }
   }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
@@ -566,7 +859,9 @@ export default function MessagesPage() {
     if (!globalIncomingCall || incomingCall) return
     setIncomingCall(globalIncomingCall)
     setCallStatus(`Cuộc gọi ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
-  }, [globalIncomingCall, incomingCall])
+    setCallState('incoming')
+    startRingtone('incoming')
+  }, [globalIncomingCall, incomingCall, startRingtone])
 
   useEffect(() => {
     if (!selectedConversationId) return
@@ -731,7 +1026,8 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!activeCall || callAnswered || !ringingStartedAt) return
 
-    const timeoutMs = 60_000 - (Date.now() - ringingStartedAt)
+    const timeoutLimit = activeCall.mode === 'group' ? GROUP_CALL_RING_TIMEOUT_MS : CALL_RING_TIMEOUT_MS
+    const timeoutMs = timeoutLimit - (Date.now() - ringingStartedAt)
     const conversationId = selectedConversationId
     const targets = [...callTargets]
 
@@ -746,7 +1042,9 @@ export default function MessagesPage() {
         })
       }
       closeCallResources()
-      setCallStatus('Không có phản hồi sau 1 phút. Cuộc gọi đã tự kết thúc.')
+      setCallState('no_answer')
+      addLocalCallHistory(activeCall.mode === 'group' ? 'Cuộc gọi nhóm đã bị hủy' : 'Không có phản hồi')
+      setCallStatus('Không có phản hồi')
       setIncomingCall(null)
       setActiveCall(null)
       setCallSeconds(0)
@@ -761,7 +1059,7 @@ export default function MessagesPage() {
 
     const timer = window.setTimeout(autoEnd, timeoutMs)
     return () => window.clearTimeout(timer)
-  }, [activeCall, callAnswered, callTargets, ringingStartedAt, selectedConversationId])
+  }, [activeCall, addLocalCallHistory, callAnswered, callTargets, ringingStartedAt, selectedConversationId])
 
   const directPeer = useMemo(() => {
     if (!selectedConversation || !user?.id) return null
@@ -846,6 +1144,24 @@ export default function MessagesPage() {
   }, [createGroupInviteCandidates, groupSearchKeyword])
 
   const pinnedMessageIds = useMemo(() => new Set((selectedConversation?.pinnedMessageIds || []).map((item) => String(item))), [selectedConversation])
+  const pinnedMessages = useMemo(() => {
+    if (!selectedConversationId || pinnedMessageIds.size === 0) return []
+    return (messagesByConversation[selectedConversationId] || []).filter((item) => pinnedMessageIds.has(item.id))
+  }, [messagesByConversation, pinnedMessageIds, selectedConversationId])
+
+  const chatPanelStyle = useMemo(() => {
+    const style: CSSProperties & Record<string, string> = {}
+    const themeColor = selectedConversationUiPrefs.themeColor ?? selectedConversation?.themeColor
+    const backgroundUrl = selectedConversationUiPrefs.backgroundUrl ?? selectedConversation?.backgroundUrl
+    if (themeColor) {
+      style['--chat-primary'] = themeColor
+      style['--chat-mine'] = `linear-gradient(135deg, color-mix(in srgb, ${themeColor} 88%, #ffffff) 0%, ${themeColor} 100%)`
+    }
+    if (backgroundUrl) {
+      style['--conversation-bg-image'] = `url("${backgroundUrl.replace(/"/g, '\\"')}")`
+    }
+    return style
+  }, [selectedConversation?.backgroundUrl, selectedConversation?.themeColor, selectedConversationUiPrefs.backgroundUrl, selectedConversationUiPrefs.themeColor])
 
   const directPeerFriendship = directPeer ? friendMap[directPeer.id] : null
   const isDirectPeerFriend = Boolean(directPeerFriendship && directPeerFriendship.status === 'accepted')
@@ -855,6 +1171,8 @@ export default function MessagesPage() {
   useEffect(() => {
     setRightPanelSection('overview')
     setMessageSearchKeyword('')
+    setPendingUnlockError(null)
+    setPendingUnlockPassword('')
   }, [selectedConversationId])
 
   const handleToggleConversationPin = async () => {
@@ -862,70 +1180,383 @@ export default function MessagesPage() {
     try {
       await api.pinConversation(token, selectedConversation.id, !selectedConversation.isPinned)
       await refreshConversations()
-      setChatNotice(selectedConversation.isPinned ? 'Đã bỏ ghim hội thoại.' : 'Đã ghim hội thoại.')
+      const title = selectedConversation.isPinned ? 'Đã bỏ ghim hội thoại' : 'Đã ghim hội thoại'
+      setChatNotice(title)
+      toast({ title })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật ghim hội thoại.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật ghim hội thoại.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật ghim hội thoại', description: message, variant: 'destructive' })
     }
   }
 
   const handleToggleConversationMute = async () => {
     if (!token || !selectedConversation) return
+    if (!selectedConversation.isMuted) {
+      setMuteDialogOpen(true)
+      return
+    }
+
     try {
-      await api.muteConversation(token, selectedConversation.id, !selectedConversation.isMuted)
+      await api.muteConversation(token, selectedConversation.id, false)
       await refreshConversations()
-      setChatNotice(selectedConversation.isMuted ? 'Đã bật thông báo.' : 'Đã tắt thông báo.')
+      setChatNotice('Đã bật thông báo.')
+      toast({ title: 'Đã bật thông báo' })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật thông báo.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật thông báo.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật thông báo', description: message, variant: 'destructive' })
+    }
+  }
+
+  const handleApplyConversationMute = async (durationSeconds: MuteOptionValue) => {
+    if (!token || !selectedConversation) return
+    const mutedUntil = durationSeconds ? new Date(Date.now() + durationSeconds * 1000).toISOString() : null
+    await api.muteConversation(token, selectedConversation.id, true, mutedUntil)
+    await refreshConversations()
+    setChatNotice('Đã tắt thông báo hội thoại.')
+    toast({ title: 'Đã tắt thông báo hội thoại' })
+  }
+
+  const updateLocalConversationUiPrefs = useCallback((conversationId: string, prefs: Partial<ConversationUiPrefs>) => {
+    setConversationUiPrefs((current) => ({
+      ...current,
+      [conversationId]: {
+        ...current[conversationId],
+        ...prefs,
+      },
+    }))
+  }, [])
+
+  const handleSetLargeText = useCallback(
+    (largeText: boolean) => {
+      if (!selectedConversation) return
+      updateLocalConversationUiPrefs(selectedConversation.id, { largeText })
+    },
+    [selectedConversation, updateLocalConversationUiPrefs]
+  )
+
+  const handleSetRoundBubbles = useCallback(
+    (roundBubbles: boolean) => {
+      if (!selectedConversation) return
+      updateLocalConversationUiPrefs(selectedConversation.id, { roundBubbles })
+    },
+    [selectedConversation, updateLocalConversationUiPrefs]
+  )
+
+  const handleUpdateConversationPreferences = async (payload: {
+    backgroundUrl?: string | null
+    themeColor?: string | null
+    autoDeleteAfterSeconds?: number | null
+    hidden?: boolean
+    locked?: boolean
+    hiddenPassword?: string | null
+    lockedPassword?: string | null
+  }) => {
+    if (!token || !selectedConversation) return
+    try {
+      await api.updateConversationPreferences(token, selectedConversation.id, payload)
+      if (payload.backgroundUrl !== undefined || payload.themeColor !== undefined) {
+        updateLocalConversationUiPrefs(selectedConversation.id, {
+          ...(payload.backgroundUrl !== undefined ? { backgroundUrl: payload.backgroundUrl } : {}),
+          ...(payload.themeColor !== undefined ? { themeColor: payload.themeColor } : {}),
+        })
+      }
+      await refreshConversations()
+      let successMessage = 'Đã cập nhật thiết lập hội thoại.'
+      if (payload.hidden) {
+        successMessage = 'Đã ẩn hội thoại.'
+      } else if (payload.locked === false) {
+        setPendingLockedConversationId((current) => (current === selectedConversation.id ? null : current))
+        successMessage = 'Đã mở khóa hội thoại.'
+      } else if (payload.locked) {
+        successMessage = 'Đã khóa hội thoại.'
+      } else if (payload.autoDeleteAfterSeconds !== undefined) {
+        successMessage = 'Đã cập nhật thời hạn tự động xóa tin nhắn.'
+      } else if (payload.backgroundUrl !== undefined || payload.themeColor !== undefined) {
+        successMessage = 'Đã cập nhật tùy biến hội thoại.'
+      }
+      setChatNotice(successMessage)
+      toast({ title: successMessage })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật thiết lập hội thoại.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật thiết lập hội thoại', description: message, variant: 'destructive' })
     }
   }
 
   const handleUpdateNickname = async (memberId: number) => {
-    if (!token || !selectedConversation) return
+    if (!selectedConversation) return
     const member = selectedConversation.members.find((item) => item.userId === memberId)
-    const nextNickname = window.prompt('Nhập biệt danh. Để trống để xóa biệt danh.', member?.nickname || '')
-    if (nextNickname === null) return
+    if (!member) return
+    setNicknameDialog({
+      memberId,
+      name: member.fullName,
+      avatarUrl: member.avatarUrl,
+      currentValue: member.nickname || '',
+    })
+  }
+
+  const handleSubmitNickname = async (nextNickname: string) => {
+    if (!token || !selectedConversation || !nicknameDialog) return
     try {
-      await api.updateConversationNickname(token, selectedConversation.id, memberId, nextNickname.trim() || null)
+      await api.updateConversationNickname(token, selectedConversation.id, nicknameDialog.memberId, nextNickname.trim() || null)
       await refreshConversations()
-      setChatNotice(nextNickname.trim() ? 'Đã cập nhật biệt danh.' : 'Đã xóa biệt danh.')
+      const message = nextNickname.trim() ? 'Đã cập nhật biệt danh.' : 'Đã xóa biệt danh.'
+      setChatNotice(message)
+      toast({ title: message })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật biệt danh.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật biệt danh.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật biệt danh', description: message, variant: 'destructive' })
+      throw error
     }
   }
 
   const handleUpdateGroupProfile = async () => {
+    if (!selectedGroup || !canAddMembers) return
+    setGroupNameDialogOpen(true)
+  }
+
+  const handleSubmitGroupName = async (nextName: string) => {
     if (!token || !selectedGroup || !canAddMembers) return
-    const nextName = window.prompt('Tên nhóm mới', selectedGroup.name || '')
-    if (nextName === null || !nextName.trim()) return
-    const nextAvatar = window.prompt('URL ảnh đại diện nhóm (có thể để trống)', selectedGroup.avatarUrl || '')
-    if (nextAvatar === null) return
     try {
-      await api.updateGroupProfile(token, selectedGroup.id, { name: nextName.trim(), avatarUrl: nextAvatar.trim() || null })
+      await api.updateGroupProfile(token, selectedGroup.id, {
+        name: nextName.trim(),
+        avatarUrl: selectedGroup.avatarUrl || null,
+      })
       await refreshConversations()
-      setChatNotice('Đã cập nhật thông tin nhóm.')
+      setChatNotice('Đã cập nhật tên nhóm.')
+      toast({ title: 'Đã cập nhật tên nhóm' })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật nhóm.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật tên nhóm.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật tên nhóm', description: message, variant: 'destructive' })
+      throw error
     }
+  }
+
+  const handleUpdateGroupAvatar = () => {
+    if (!selectedGroup || !canAddMembers) return
+    setGroupAvatarDialogOpen(true)
+  }
+
+  const handleSubmitGroupAvatar = async ({ dataUrl }: { dataUrl: string }) => {
+    if (!token || !selectedGroup || !canAddMembers) return
+    try {
+      await api.updateGroupProfile(token, selectedGroup.id, {
+        name: selectedGroup.name || 'Nhóm chat',
+        avatarUrl: dataUrl,
+      })
+      await refreshConversations()
+      setChatNotice('Đã cập nhật ảnh nhóm.')
+      toast({ title: 'Đã cập nhật ảnh nhóm' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật ảnh nhóm.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật ảnh nhóm', description: message, variant: 'destructive' })
+      throw error
+    }
+  }
+
+  const handleOpenHideConversation = () => {
+    if (!selectedConversation) return
+    setConfirmModal({
+      title: 'Ẩn hội thoại?',
+      description: 'Hội thoại sẽ bị ẩn khỏi danh sách trò chuyện của bạn.',
+      confirmLabel: 'Ẩn',
+      destructive: false,
+      onConfirm: async () => {
+        await handleUpdateConversationPreferences({ hidden: true })
+      },
+    })
+  }
+
+  const handleOpenLockConversation = () => {
+    if (!selectedConversation) return
+    setLockDialogOpen(true)
+  }
+
+  const handleSubmitLockConversation = async (pin: string) => {
+    if (!pin.trim()) {
+      throw new Error('Vui lòng nhập mã PIN để khóa hội thoại.')
+    }
+    await handleUpdateConversationPreferences({
+      locked: true,
+      lockedPassword: pin.trim(),
+    })
+  }
+
+  const handleSubmitAutoDelete = async (seconds: number | null) => {
+    await handleUpdateConversationPreferences({ autoDeleteAfterSeconds: seconds })
+  }
+
+  const handleOpenReportConversation = () => {
+    if (!selectedConversation) return
+    const targetType = selectedConversation.type === 'group' ? 'group' : 'user'
+    const targetId = selectedConversation.type === 'group' ? selectedConversation.id : directPeer?.id
+    if (!targetId) return
+    setReportDialog({
+      targetType,
+      targetId,
+      title: selectedConversation.type === 'group' ? 'Báo cáo nhóm' : 'Báo cáo người dùng',
+    })
+  }
+
+  const handleSubmitReport = async (payload: { reason: string; details?: string }) => {
+    if (!token || !reportDialog) return
+    await api.submitReport(token, {
+      targetType: reportDialog.targetType === 'group' ? 'message' : reportDialog.targetType,
+      targetId: reportDialog.targetId,
+      reason: payload.reason,
+      details: payload.details,
+    })
+    toast({ title: 'Đã gửi báo cáo', description: 'Báo cáo sẽ được gửi đến quản trị viên để xem xét.' })
   }
 
   const handleBlockPeer = async () => {
     if (!token || !directPeer) return
-    if (!window.confirm(`Chặn ${directPeer.name}? Hai bên sẽ không thể gửi tin nhắn trực tiếp trong hội thoại này.`)) return
-    try {
-      await api.blockUser(token, directPeer.id)
-      setChatNotice(`Đã chặn ${directPeer.name}.`)
-    } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể chặn người dùng.')
-    }
+    setConfirmModal({
+      title: `Chặn ${directPeer.name}?`,
+      description: 'Hai bên sẽ không thể gửi tin nhắn trực tiếp trong hội thoại này.',
+      confirmLabel: 'Chặn',
+      onConfirm: async () => {
+        try {
+          await api.blockUser(token, directPeer.id)
+          setIsDirectPeerBlocked(true)
+          setChatNotice(`Đã chặn ${directPeer.name}.`)
+          toast({ title: `Đã chặn ${directPeer.name}` })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể chặn người dùng.'
+          setChatNotice(message)
+          toast({ title: 'Không thể chặn người dùng', description: message, variant: 'destructive' })
+          throw error
+        }
+      },
+    })
   }
+
+  const handleUnblockPeer = async () => {
+    if (!token || !directPeer) return
+    setConfirmModal({
+      title: `Bỏ chặn ${directPeer.name}?`,
+      description: 'Hai bên sẽ có thể nhắn tin lại trong hội thoại trực tiếp.',
+      confirmLabel: 'Bỏ chặn',
+      destructive: false,
+      onConfirm: async () => {
+        try {
+          await api.unblockUser(token, directPeer.id)
+          setIsDirectPeerBlocked(false)
+          setChatNotice(`Đã bỏ chặn ${directPeer.name}.`)
+          toast({ title: `Đã bỏ chặn ${directPeer.name}` })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể bỏ chặn người dùng.'
+          setChatNotice(message)
+          toast({ title: 'Không thể bỏ chặn người dùng', description: message, variant: 'destructive' })
+          throw error
+        }
+      },
+    })
+  }
+
+  useEffect(() => {
+    if (!token || !directPeer) {
+      setIsDirectPeerBlocked(false)
+      return
+    }
+
+    api.isUserBlocked(token, directPeer.id)
+      .then((result) => setIsDirectPeerBlocked(Boolean(result.blocked)))
+      .catch(() => setIsDirectPeerBlocked(false))
+  }, [directPeer, token])
+
+  const stopRingtoneLegacy = useCallback(() => {
+    const ringtone = ringtoneRef.current
+    if (!ringtone) return
+    window.clearInterval(ringtone.intervalId)
+    ringtone.context.close().catch(() => undefined)
+    ringtoneRef.current = null
+  }, [])
+
+  const startRingtoneLegacy = useCallback(
+    (tone: 'incoming' | 'outgoing') => {
+      if (!callSettings.sound || ringtoneRef.current) return
+      const AudioContextClass = window.AudioContext
+      if (!AudioContextClass) return
+      const context = new AudioContextClass()
+      const playPulse = () => {
+        const oscillator = context.createOscillator()
+        const gain = context.createGain()
+        oscillator.type = tone === 'incoming' ? 'sine' : 'triangle'
+        oscillator.frequency.value = tone === 'incoming' ? 880 : 520
+        gain.gain.setValueAtTime(0.0001, context.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.09, context.currentTime + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34)
+        oscillator.connect(gain)
+        gain.connect(context.destination)
+        oscillator.start()
+        oscillator.stop(context.currentTime + 0.36)
+      }
+      playPulse()
+      const intervalId = window.setInterval(playPulse, tone === 'incoming' ? 1450 : 1900)
+      ringtoneRef.current = { context, intervalId }
+    },
+    [callSettings.sound]
+  )
+
+  const addLocalCallHistoryLegacy = useCallback(
+    (text: string, conversationId = selectedConversationId || '') => {
+      if (!conversationId || !user?.id) return
+      const systemMessage: ChatMessage = {
+        id: `local-call-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        conversationId,
+        senderId: user.id,
+        senderName: user.fullName || 'Bạn',
+        senderAvatar: user.avatarUrl || null,
+        type: 'call-history',
+        text,
+        mediaUrl: null,
+        meta: { system: true, callHistory: true },
+        reactionCount: 0,
+        viewerReaction: null,
+        createdAt: new Date().toISOString(),
+      }
+      appendMessage(conversationId, systemMessage)
+      scrollConversationToBottom('smooth')
+    },
+    [appendMessage, scrollConversationToBottom, selectedConversationId, user?.avatarUrl, user?.fullName, user?.id]
+  )
 
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
     if (localStreamRef.current) return localStreamRef.current
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: callType === 'video',
-    })
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'video',
+      })
+      setCameraAvailable(callType === 'video' ? stream.getVideoTracks().length > 0 : true)
+    } catch (error) {
+      if (callType !== 'video') throw error
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      setCameraAvailable(false)
+      setChatNotice('Không tìm thấy camera trên thiết bị này. Bạn vẫn có thể tham gia bằng âm thanh.')
+      toast({ title: 'Không tìm thấy camera trên thiết bị này', description: 'Bạn vẫn có thể tham gia bằng âm thanh.' })
+    }
+    if (callSettings.autoMuteOnJoin) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = false
+      })
+      setMutedMic(true)
+    }
+    if (callSettings.autoCameraOffOnJoin || callType === 'voice') {
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = false
+      })
+      setMutedCam(callType === 'video' && callSettings.autoCameraOffOnJoin)
+    }
     localStreamRef.current = stream
+    setLocalStreamState(stream)
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream
     }
@@ -974,10 +1605,12 @@ export default function MessagesPage() {
     peersRef.current.clear()
     localStreamRef.current?.getTracks().forEach((track) => track.stop())
     localStreamRef.current = null
+    setLocalStreamState(null)
     setRemoteStreams([])
     setJoinedCallUserIds([])
     setMutedCam(false)
     setMutedMic(false)
+    stopRingtone()
   }
 
   const handleRequestFriend = async () => {
@@ -1058,7 +1691,7 @@ export default function MessagesPage() {
     try {
       const created = await api.createDirectConversation(token, targetUserId)
       await refreshConversations()
-      openConversation(created.conversation.id)
+      handleOpenConversation(created.conversation.id)
       setShowNewMessageModal(false)
       setNewMessageKeyword('')
       setSearchUsersResult([])
@@ -1071,7 +1704,7 @@ export default function MessagesPage() {
 
   const handleOpenNotificationConversation = (conversationId: string | null | undefined) => {
     if (!conversationId) return
-    openConversation(String(conversationId))
+    handleOpenConversation(String(conversationId))
     setShowNotificationsDrawer(false)
   }
 
@@ -1121,7 +1754,7 @@ export default function MessagesPage() {
         memberIds: groupMemberIds,
       })
       await refreshConversations()
-      openConversation(created.conversation.id)
+      handleOpenConversation(created.conversation.id)
       setShowCreateGroupModal(false)
       setGroupName('')
       setGroupSearchKeyword('')
@@ -1212,26 +1845,31 @@ export default function MessagesPage() {
 
   const handleDissolveGroup = async () => {
     if (!token || !selectedGroup || !canDissolveSelectedGroup) return
-    const confirmed = window.confirm('Bạn chắc chắn muốn giải tán nhóm này? Hành động này không thể hoàn tác.')
-    if (!confirmed) return
-    setGroupActionBusyId('dissolve-group')
-    try {
-      await api.dissolveGroupConversation(token, selectedGroup.id)
-      await refreshConversations()
-      setChatNotice('Đã giải tán nhóm chat.')
-      const fallback = conversations.find((item) => item.id !== selectedGroup.id)
-      if (fallback) {
-        openConversation(fallback.id)
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể giải tán nhóm.')
-      }
-    } finally {
-      setGroupActionBusyId(null)
-    }
+    setConfirmModal({
+      title: 'Giải tán nhóm?',
+      description: 'Hành động này sẽ xóa nhóm chat và không thể hoàn tác.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        setGroupActionBusyId('dissolve-group')
+        try {
+          await api.dissolveGroupConversation(token, selectedGroup.id)
+          await refreshConversations()
+          setChatNotice('Đã giải tán nhóm chat.')
+          toast({ title: 'Đã giải tán nhóm chat' })
+          const fallback = conversations.find((item) => item.id !== selectedGroup.id)
+          if (fallback) {
+            handleOpenConversation(fallback.id)
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể giải tán nhóm.'
+          setChatNotice(message)
+          toast({ title: 'Không thể giải tán nhóm', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setGroupActionBusyId(null)
+        }
+      },
+    })
   }
 
   const handleLeaveGroup = async () => {
@@ -1242,38 +1880,42 @@ export default function MessagesPage() {
       return
     }
 
-    const confirmed = window.confirm('Bạn có chắc muốn rời nhóm này không?')
-    if (!confirmed) return
+    setConfirmModal({
+      title: 'Rời nhóm?',
+      description: 'Bạn sẽ không còn nhận tin nhắn mới từ nhóm này sau khi rời đi.',
+      confirmLabel: 'Rời nhóm',
+      onConfirm: async () => {
+        setGroupActionBusyId('leave-group')
+        try {
+          await api.leaveGroupConversation(token, selectedGroup.id)
+          await refreshConversations()
+          const message =
+            myGroupRole === 'leader'
+              ? 'Bạn đã rời nhóm. Quyền trưởng nhóm đã tự động chuyển cho phó nhóm.'
+              : 'Bạn đã rời nhóm chat.'
+          setChatNotice(message)
+          toast({ title: message })
 
-    setGroupActionBusyId('leave-group')
-    try {
-      await api.leaveGroupConversation(token, selectedGroup.id)
-      await refreshConversations()
-      setChatNotice(
-        myGroupRole === 'leader'
-          ? 'Bạn đã rời nhóm. Quyền trưởng nhóm đã tự động chuyển cho phó nhóm.'
-          : 'Bạn đã rời nhóm chat.'
-      )
-
-      const fallback = conversations.find((item) => item.id !== selectedGroup.id)
-      if (fallback) {
-        openConversation(fallback.id)
-      } else {
-        await refreshConversations()
-        const refreshed = useChatStore.getState().conversations
-        if (refreshed.length > 0) {
-          openConversation(refreshed[0].id)
+          const fallback = conversations.find((item) => item.id !== selectedGroup.id)
+          if (fallback) {
+            handleOpenConversation(fallback.id)
+          } else {
+            await refreshConversations()
+            const refreshed = useChatStore.getState().conversations
+            if (refreshed.length > 0) {
+              handleOpenConversation(refreshed[0].id)
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể rời nhóm lúc này.'
+          setChatNotice(message)
+          toast({ title: 'Không thể rời nhóm', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setGroupActionBusyId(null)
         }
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể rời nhóm lúc này.')
-      }
-    } finally {
-      setGroupActionBusyId(null)
-    }
+      },
+    })
   }
 
   const loadOlderMessages = async () => {
@@ -1577,24 +2219,29 @@ export default function MessagesPage() {
 
   const handleClearChatForMe = async () => {
     if (!token || !selectedConversationId) return
-    const confirmed = window.confirm('Xóa toàn bộ đoạn chat ở phía bạn? Hành động này không ảnh hưởng người khác.')
-    if (!confirmed) return
-    setBusyActionId(`clear-${selectedConversationId}`)
-    try {
-      await api.clearConversationMessages(token, selectedConversationId)
-      const refreshed = await loadChatMessages(token, selectedConversationId, 25)
-      setMessages(selectedConversationId, refreshed.messages)
-      setChatNotice('Đã xóa đoạn chat ở phía bạn.')
-    } catch (error) {
-      console.error('Không thể xóa đoạn chat:', error)
-      if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể xóa đoạn chat.')
-      }
-    } finally {
-      setBusyActionId(null)
-    }
+    setConfirmModal({
+      title: 'Xóa đoạn chat?',
+      description: 'Toàn bộ tin nhắn sẽ bị xóa ở phía bạn. Hành động này không ảnh hưởng người khác.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        setBusyActionId(`clear-${selectedConversationId}`)
+        try {
+          await api.clearConversationMessages(token, selectedConversationId)
+          const refreshed = await loadChatMessages(token, selectedConversationId, 25)
+          setMessages(selectedConversationId, refreshed.messages)
+          setChatNotice('Đã xóa đoạn chat ở phía bạn.')
+          toast({ title: 'Đã xóa đoạn chat ở phía bạn' })
+        } catch (error) {
+          console.error('Không thể xóa đoạn chat:', error)
+          const message = error instanceof Error ? error.message : 'Không thể xóa đoạn chat.'
+          setChatNotice(message)
+          toast({ title: 'Không thể xóa đoạn chat', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setBusyActionId(null)
+        }
+      },
+    })
   }
 
   const openMessageActions = (event: React.MouseEvent<HTMLElement>, messageId: string) => {
@@ -1614,6 +2261,18 @@ export default function MessagesPage() {
   const handleStartCall = async (callType: 'voice' | 'video') => {
     const socket = getSocket()
     if (!socket || !selectedConversationId || callTargets.length === 0) return
+    if (callType === 'voice' && !callSettings.allowVoice) {
+      toast({ title: 'Cuộc gọi thoại đang bị tắt trong cài đặt.', variant: 'destructive' })
+      return
+    }
+    if (callType === 'video' && !callSettings.allowVideo) {
+      toast({ title: 'Cuộc gọi video đang bị tắt trong cài đặt.', variant: 'destructive' })
+      return
+    }
+    if (selectedConversation?.type === 'group' && !callSettings.allowGroup) {
+      toast({ title: 'Cuộc gọi nhóm đang bị tắt trong cài đặt.', variant: 'destructive' })
+      return
+    }
 
     try {
       await ensureLocalStream(callType)
@@ -1629,13 +2288,22 @@ export default function MessagesPage() {
           callType,
           offer,
         })
+        socket.emit(selectedConversation?.type === 'group' ? 'group_call_started' : 'call_started', {
+          targetUserId,
+          conversationId: selectedConversationId,
+          callType,
+        })
       }
     } catch (error) {
       console.error('Không thể bắt đầu cuộc gọi:', error)
+      setCallState('failed')
+      setCallStatus('Cuộc gọi thất bại')
       return
     }
 
-    setCallStatus(`Đang gọi ${callType === 'video' ? 'video' : 'thoại'} tới ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'người nhận'}`)
+    setCallState(selectedConversation?.type === 'group' ? 'ringing' : 'calling')
+    startRingtone('outgoing')
+    setCallStatus(selectedConversation?.type === 'group' ? 'Đang gọi nhóm...' : 'Đang gọi...')
     setCallAnswered(false)
     setRingingStartedAt(Date.now())
     setCallSeconds(0)
@@ -1646,17 +2314,19 @@ export default function MessagesPage() {
         ? getConversationDisplayName(selectedConversation, user?.id)
         : `Người dùng #${callTargetId}`,
       startedAt: Date.now(),
+      mode: selectedConversation?.type === 'group' ? 'group' : 'private',
+      avatarUrl: selectedConversation?.avatarUrl || selectedConversation?.members.find((member) => member.userId === directPeer?.id)?.avatarUrl || null,
     })
+    setCallMinimized(false)
     setJoinedCallUserIds(initialParticipants)
     socket.emit('call:join', {
       conversationId: selectedConversationId,
     })
     
-    // Broadcast initial participant count for group calls
     if (callTargets.length > 1) {
       socket.emit('call:participants', {
         conversationId: selectedConversationId,
-        participantCount: 1 + callTargets.length, // Me + all targets (even if not answered yet)
+        participantCount: 1 + callTargets.length,
         participantIds: [...initialParticipants, ...callTargets],
       })
     }
@@ -1685,10 +2355,14 @@ export default function MessagesPage() {
       })
     } catch (error) {
       console.error('Không thể chấp nhận cuộc gọi:', error)
+      setCallState('failed')
+      setCallStatus('Cuộc gọi thất bại')
       return
     }
 
-    setCallStatus('Đã chấp nhận cuộc gọi')
+    stopRingtone()
+    setCallState('connected')
+    setCallStatus('Đã kết nối')
     setCallAnswered(true)
     setRingingStartedAt(null)
     setCallSeconds(0)
@@ -1698,14 +2372,20 @@ export default function MessagesPage() {
         ? getConversationDisplayName(selectedConversation, user?.id)
         : `Người dùng #${incomingCall.fromUserId}`,
       startedAt: answeredAt,
+      mode: selectedConversation?.type === 'group' ? 'group' : 'private',
+      avatarUrl: selectedConversation?.avatarUrl || null,
     })
+    setCallMinimized(false)
     const newJoinedIds = user?.id ? [user.id, incomingCall.fromUserId] : [incomingCall.fromUserId]
     setJoinedCallUserIds(newJoinedIds)
     socket.emit('call:join', {
       conversationId: activeConversationId,
     })
+    socket.emit(selectedConversation?.type === 'group' ? 'group_call_joined' : 'call_joined', {
+      conversationId: activeConversationId,
+      callType: incomingCall.callType,
+    })
     
-    // Broadcast updated participant count
     socket.emit('call:participants', {
       conversationId: activeConversationId,
       participantCount: newJoinedIds.length,
@@ -1737,28 +2417,33 @@ export default function MessagesPage() {
 
     setIncomingCall(null)
     setGlobalIncomingCall(null)
-    setCallStatus('Đã từ chối cuộc gọi')
+    stopRingtone()
+    setCallState('rejected')
+    addLocalCallHistory(selectedConversation?.type === 'group' ? 'Bạn đã bỏ lỡ cuộc gọi nhóm' : 'Cuộc gọi đã bị từ chối', activeConversationId || undefined)
+    setCallStatus('Đã từ chối')
   }
 
   const handleEndCall = () => {
     const socket = getSocket()
     if (!socket || !selectedConversationId) return
     
-    // Get current participant count before leaving
-    const remainingCount = Math.max(0, joinedCallUserIds.length - 1) // -1 because we're leaving
+    const endingCall = activeCall
+    const remainingCount = Math.max(0, joinedCallUserIds.length - 1)
     
     socket.emit('call:leave', {
       conversationId: selectedConversationId,
     })
     
-    // Notify other participants about the count update
     socket.emit('call:participants', {
       conversationId: selectedConversationId,
       participantCount: remainingCount,
       participantIds: joinedCallUserIds.filter(id => id !== user?.id),
     })
+    socket.emit(endingCall?.mode === 'group' ? 'group_call_left' : 'call_ended', {
+      conversationId: selectedConversationId,
+      callType: endingCall?.type,
+    })
     
-    // End call for each peer
     callTargets.forEach((targetUserId) => {
       socket.emit('call:end', {
         targetUserId,
@@ -1767,13 +2452,53 @@ export default function MessagesPage() {
     })
     
     closeCallResources()
-    setCallStatus('Bạn đã kết thúc cuộc gọi')
+    const historyText = endingCall?.mode === 'group'
+      ? `Cuộc gọi nhóm đã kết thúc • ${formattedCallTime}`
+      : callAnswered
+        ? `Cuộc gọi đã kết thúc • ${formattedCallTime}`
+        : 'Bạn đã hủy cuộc gọi'
+    addLocalCallHistory(historyText)
+    setCallState(callAnswered ? 'ended' : 'cancelled')
+    setCallStatus(callAnswered ? 'Cuộc gọi đã kết thúc' : 'Đã hủy cuộc gọi')
     setIncomingCall(null)
     setGlobalIncomingCall(null)
     setActiveCall(null)
     setCallSeconds(0)
     setCallAnswered(false)
     setRingingStartedAt(null)
+  }
+
+  const handleToggleMic = () => {
+    const nextMuted = !mutedMic
+    localStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = !nextMuted
+    })
+    setMutedMic(nextMuted)
+    const socket = getSocket()
+    if (socket && selectedConversationId) {
+      socket.emit(nextMuted ? 'participant_muted' : 'participant_updated', {
+        conversationId: selectedConversationId,
+        micMuted: nextMuted,
+      })
+    }
+  }
+
+  const handleToggleCamera = () => {
+    if (!cameraAvailable || activeCall?.type === 'voice') {
+      toast({ title: 'Không tìm thấy camera trên thiết bị này.', variant: 'destructive' })
+      return
+    }
+    const nextMuted = !mutedCam
+    localStreamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = !nextMuted
+    })
+    setMutedCam(nextMuted)
+    const socket = getSocket()
+    if (socket && selectedConversationId) {
+      socket.emit(nextMuted ? 'participant_camera_off' : 'participant_camera_on', {
+        conversationId: selectedConversationId,
+      })
+    }
   }
 
   useEffect(() => {
@@ -1793,9 +2518,19 @@ export default function MessagesPage() {
     : 'Chọn cuộc trò chuyện'
   const initials = (user?.fullName?.[0] || 'U').toUpperCase()
   const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
+  const incomingConversation = incomingCall?.conversationId
+    ? conversations.find((conversation) => conversation.id === incomingCall.conversationId) || selectedConversation
+    : selectedConversation
+  const incomingCaller = incomingConversation?.members.find((member) => member.userId === incomingCall?.fromUserId)
+  const incomingCallName = incomingConversation?.type === 'group'
+    ? getConversationDisplayName(incomingConversation, user?.id)
+    : incomingCaller?.fullName || `Người dùng #${incomingCall?.fromUserId || ''}`
+  const incomingCallAvatar = incomingConversation?.type === 'group'
+    ? incomingConversation.avatarUrl
+    : incomingCaller?.avatarUrl || null
 
   const callParticipantProfiles = useMemo(() => {
-    if (!activeCall) return [] as Array<{ userId: number; name: string; avatarUrl: string | null }>
+    if (!activeCall) return [] as CallParticipant[]
 
     const ids = new Set<number>()
     if (user?.id) ids.add(user.id)
@@ -1806,11 +2541,18 @@ export default function MessagesPage() {
       .filter((id) => id > 0)
       .map((id) => {
         const member = selectedConversation?.members.find((item) => item.userId === id)
+        const stream = remoteStreams.find((item) => item.userId === id)?.stream || (id === user?.id ? localStreamState : null)
         if (member) {
           return {
             userId: id,
             name: member.fullName,
             avatarUrl: member.avatarUrl,
+            role: member.role,
+            status: joinedCallUserIds.includes(id) ? 'joined' as const : 'ringing' as const,
+            micMuted: id === user?.id ? mutedMic : false,
+            cameraOff: activeCall.type === 'voice' || (id === user?.id ? mutedCam : false),
+            stream,
+            isLocal: id === user?.id,
           }
         }
         if (id === user?.id) {
@@ -1818,15 +2560,26 @@ export default function MessagesPage() {
             userId: id,
             name: user.fullName || 'Bạn',
             avatarUrl: user.avatarUrl || null,
+            role: 'Bạn',
+            status: 'joined' as const,
+            micMuted: mutedMic,
+            cameraOff: activeCall.type === 'voice' || mutedCam,
+            stream: localStreamState,
+            isLocal: true,
           }
         }
         return {
           userId: id,
           name: `Người dùng #${id}`,
           avatarUrl: null,
+          status: joinedCallUserIds.includes(id) ? 'joined' as const : 'ringing' as const,
+          micMuted: false,
+          cameraOff: activeCall.type === 'voice',
+          stream,
+          isLocal: false,
         }
       })
-  }, [activeCall, joinedCallUserIds, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
+  }, [activeCall, joinedCallUserIds, localStreamState, mutedCam, mutedMic, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
 
   const renderMessagePreview = (msg: ChatMessage) => {
     const renderRichMessageText = (text: string) => {
@@ -1978,7 +2731,14 @@ export default function MessagesPage() {
           }}
         />
 
-        <section className={styles.chatPanel}>
+        <section
+          className={[
+            styles.chatPanel,
+            selectedConversationUiPrefs.largeText ? styles.chatPanelLargeText : '',
+            selectedConversationUiPrefs.roundBubbles ? '' : styles.chatPanelSquareBubbles,
+          ].filter(Boolean).join(' ')}
+          style={chatPanelStyle}
+        >
           <header className={styles.chatHeader}>
             <div className={styles.chatIdentity}>
               <div className={styles.chatHeaderAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
@@ -2002,12 +2762,14 @@ export default function MessagesPage() {
               <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gọi thoại" aria-label="Gọi thoại">
                 <Phone size={16} />
               </button>
+              <button type="button" onClick={() => setCallSettingsOpen(true)} title="Cài đặt cuộc gọi" aria-label="Cài đặt cuộc gọi">
+                <Info size={16} />
+              </button>
               <button
                 type="button"
                 className={showMessageFilters || messageSearchKeyword ? styles.chatActionActive : undefined}
                 title="Tìm tin nhắn"
                 aria-label="Tìm tin nhắn"
-                aria-expanded={showMessageFilters}
                 disabled={!selectedConversation}
                 onClick={() => setShowMessageFilters((value) => !value)}
               >
@@ -2117,26 +2879,6 @@ export default function MessagesPage() {
           ) : null}
 
           {chatNotice ? <p className={styles.chatNotice}>{chatNotice}</p> : null}
-
-          {(callStatus || incomingCall) && (
-            <div className={styles.callBanner}>
-              {callStatus ? <p>{callStatus}</p> : null}
-              {incomingCall ? (
-                <div className={styles.callBannerActions}>
-                  <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
-                    Chấp nhận
-                  </button>
-                  <button type="button" onClick={handleDeclineIncomingCall} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
-                    Từ chối
-                  </button>
-                </div>
-              ) : null}
-              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
-                <PhoneOff size={14} />
-                Kết thúc
-              </button>
-            </div>
-          )}
 
           <MessageThread
             userId={user?.id}
@@ -2269,15 +3011,218 @@ export default function MessagesPage() {
             handleDissolveGroup={handleDissolveGroup}
             handleToggleConversationPin={handleToggleConversationPin}
             handleToggleConversationMute={handleToggleConversationMute}
+            handleUpdateConversationPreferences={handleUpdateConversationPreferences}
+            largeText={selectedConversationUiPrefs.largeText}
+            roundBubbles={selectedConversationUiPrefs.roundBubbles}
+            onLargeTextChange={handleSetLargeText}
+            onRoundBubblesChange={handleSetRoundBubbles}
             handleUpdateNickname={handleUpdateNickname}
             handleUpdateGroupProfile={handleUpdateGroupProfile}
+            handleUpdateGroupAvatar={handleUpdateGroupAvatar}
             handleBlockPeer={handleBlockPeer}
+            handleUnblockPeer={handleUnblockPeer}
+            handleOpenHideConversation={handleOpenHideConversation}
+            handleOpenLockConversation={handleOpenLockConversation}
+            handleOpenAutoDeleteSettings={() => setAutoDeleteDialogOpen(true)}
+            handleOpenReportConversation={handleOpenReportConversation}
+            isDirectPeerBlocked={isDirectPeerBlocked}
+            pinnedMessages={pinnedMessages}
             sharedContent={sharedContent}
             loadingSharedContent={loadingSharedContent}
             onClose={() => setShowSettingsDrawer(false)}
           />
           </div>
         </aside>
+        {incomingCall ? (
+          <IncomingCallModal
+            name={incomingCallName}
+            avatarUrl={incomingCallAvatar}
+            callType={incomingCall.callType}
+            mode={incomingConversation?.type === 'group' ? 'group' : 'private'}
+            callerName={incomingConversation?.type === 'group' ? incomingCaller?.fullName : undefined}
+            onAccept={handleAcceptIncomingCall}
+            onDecline={handleDeclineIncomingCall}
+          />
+        ) : null}
+        {activeCall && !callAnswered && !callMinimized ? (
+          <OutgoingCallModal
+            name={activeCall.withName}
+            avatarUrl={activeCall.avatarUrl}
+            callType={activeCall.type}
+            mode={activeCall.mode}
+            state={callState === 'idle' ? 'calling' : callState}
+            timer={formattedCallTime}
+            onEnd={handleEndCall}
+          />
+        ) : null}
+        {activeCall && callAnswered && !callMinimized ? (
+          <ActiveCallWindow
+            name={activeCall.withName}
+            avatarUrl={activeCall.avatarUrl}
+            callType={activeCall.type}
+            mode={activeCall.mode}
+            state={callState === 'idle' ? 'connected' : callState}
+            duration={formattedCallTime}
+            participants={callParticipantProfiles}
+            localStream={localStreamState}
+            remoteStreams={remoteStreams}
+            mutedMic={mutedMic}
+            mutedCam={mutedCam}
+            cameraAvailable={cameraAvailable}
+            onToggleMic={handleToggleMic}
+            onToggleCamera={handleToggleCamera}
+            onMinimize={() => setCallMinimized(true)}
+            onEnd={handleEndCall}
+          />
+        ) : null}
+        {activeCall && callMinimized ? (
+          <MinimizedCallPill
+            name={activeCall.withName}
+            avatarUrl={activeCall.avatarUrl}
+            duration={formattedCallTime}
+            participantCount={activeCall.mode === 'group' ? callParticipantProfiles.filter((item) => item.status === 'joined').length : undefined}
+            onOpen={() => setCallMinimized(false)}
+            onEnd={handleEndCall}
+          />
+        ) : null}
+        <AppDialog
+          open={callSettingsOpen}
+          onOpenChange={setCallSettingsOpen}
+          title="Cài đặt cuộc gọi"
+          description="Tùy chỉnh âm thanh, thông báo và quyền tham gia cuộc gọi trên thiết bị này."
+        >
+          <CallSettingsPanel settings={callSettings} onChange={setCallSettings} />
+        </AppDialog>
+        {pendingLockedConversationId ? (
+          <div className={styles.lockGateOverlay} role="dialog" aria-modal="true" aria-labelledby="unlock-conversation-title">
+            <form
+              className={styles.lockGateCard}
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleSubmitPendingUnlock()
+              }}
+            >
+              <h3 id="unlock-conversation-title">Mở khóa hội thoại</h3>
+              <p>
+                Hội thoại này đang bị khóa trên thiết bị của bạn. Mở khóa để tiếp tục xem nội dung và nhận tin nhắn.
+              </p>
+              <label className={styles.lockGateField}>
+                <span>Mật khẩu khóa</span>
+                <input
+                  type="password"
+                  value={pendingUnlockPassword}
+                  onChange={(event) => {
+                    setPendingUnlockPassword(event.target.value)
+                    setPendingUnlockError(null)
+                  }}
+                  autoFocus
+                  placeholder="Nhập mật khẩu"
+                />
+              </label>
+              {pendingUnlockError ? <small className={styles.lockGateError}>{pendingUnlockError}</small> : null}
+              <div className={styles.lockGateActions}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingLockedConversationId(null)
+                    setPendingUnlockPassword('')
+                    setPendingUnlockError(null)
+                  }}
+                >
+                  Đóng
+                </button>
+                <button type="submit">
+                  Mở khóa
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
+        <ConfirmDialog
+          open={Boolean(confirmModal)}
+          onOpenChange={(open) => {
+            if (!open) setConfirmModal(null)
+          }}
+          title={confirmModal?.title || ''}
+          description={confirmModal?.description || ''}
+          confirmLabel={confirmModal?.confirmLabel || 'Xác nhận'}
+          destructive={confirmModal?.destructive ?? true}
+          icon={confirmModal?.icon || 'warning'}
+          onConfirm={async () => {
+            await confirmModal?.onConfirm()
+          }}
+        />
+        <InputDialog
+          open={Boolean(nicknameDialog)}
+          onOpenChange={(open) => {
+            if (!open) setNicknameDialog(null)
+          }}
+          title="Đổi biệt danh"
+          description="Biệt danh chỉ hiển thị trong hội thoại này."
+          label="Biệt danh"
+          placeholder="Nhập biệt danh..."
+          hint="Để trống để xóa biệt danh"
+          initialValue={nicknameDialog?.currentValue || ''}
+          maxLength={30}
+          identity={nicknameDialog ? { name: nicknameDialog.name, avatarUrl: nicknameDialog.avatarUrl } : undefined}
+          submitLabel="Lưu"
+          onSubmit={handleSubmitNickname}
+        />
+        <InputDialog
+          open={groupNameDialogOpen}
+          onOpenChange={setGroupNameDialogOpen}
+          title="Đổi tên nhóm"
+          description="Tên nhóm giúp mọi người nhận ra cuộc trò chuyện nhanh hơn."
+          label="Tên nhóm"
+          placeholder="Nhập tên nhóm..."
+          initialValue={selectedGroup?.name || ''}
+          maxLength={50}
+          required
+          identity={selectedGroup ? { name: selectedGroup.name || 'Nhóm chat', avatarUrl: selectedGroup.avatarUrl } : undefined}
+          submitLabel="Lưu"
+          validate={(value) => (!value.trim() ? 'Tên nhóm không được để trống.' : null)}
+          onSubmit={handleSubmitGroupName}
+        />
+        <InputDialog
+          open={lockDialogOpen}
+          onOpenChange={setLockDialogOpen}
+          title="Khóa hội thoại"
+          description="Bạn cần xác thực để mở lại hội thoại này."
+          label="Mã PIN"
+          placeholder="Nhập mã PIN..."
+          hint="Mã PIN tạm thời sẽ được dùng làm mật khẩu khóa hội thoại."
+          maxLength={12}
+          required
+          submitLabel="Khóa"
+          validate={(value) => (!value.trim() ? 'Vui lòng nhập mã PIN.' : null)}
+          onSubmit={handleSubmitLockConversation}
+        />
+        <UploadImageDialog
+          open={groupAvatarDialogOpen}
+          onOpenChange={setGroupAvatarDialogOpen}
+          title="Cập nhật ảnh nhóm"
+          description="Chọn ảnh đại diện mới cho nhóm. Ảnh cần nhỏ hơn 5MB."
+          onSubmit={handleSubmitGroupAvatar}
+        />
+        <ReportDialog
+          open={Boolean(reportDialog)}
+          onOpenChange={(open) => {
+            if (!open) setReportDialog(null)
+          }}
+          title={reportDialog?.title || 'Báo cáo'}
+          onSubmit={handleSubmitReport}
+        />
+        <NotificationMuteDialog
+          open={muteDialogOpen}
+          onOpenChange={setMuteDialogOpen}
+          onSubmit={handleApplyConversationMute}
+        />
+        <AutoDeleteMessageDialog
+          open={autoDeleteDialogOpen}
+          onOpenChange={setAutoDeleteDialogOpen}
+          value={selectedConversation?.autoDeleteAfterSeconds ?? null}
+          onSubmit={handleSubmitAutoDelete}
+        />
       </div>
     </div>
   )

@@ -26,7 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/contexts/auth-store'
-import { api } from '@/api/client'
+import { api, isAuthExpiredError } from '@/api/client'
 import type { NotificationItem } from '@/types'
 import { connectSocket } from '@/services/socket'
 import styles from './navbar.module.css'
@@ -81,15 +81,12 @@ export default function Navbar() {
         }
       } catch (error) {
         if (canceled) return
-        if (error instanceof Error) {
-          const msg = error.message.toLowerCase()
-          if (msg.includes('invalid') || msg.includes('expired') || msg.includes('token')) {
-            clearAuth()
-            if (pathname !== '/auth/login') {
-              navigate('/auth/login')
-            }
-            return
+        if (isAuthExpiredError(error)) {
+          clearAuth()
+          if (pathname !== '/auth/login') {
+            navigate('/auth/login')
           }
+          return
         }
         console.warn('Failed to load notifications preview', error)
       }
@@ -266,10 +263,23 @@ export default function Navbar() {
 
   const hasSearchResults = searchUsers.length > 0 || searchPosts.length > 0
 
+  const getNotificationHref = (item: NotificationItem) => {
+    const meta = item.meta || {}
+    const conversationId = meta.conversationId || meta.conversation_id || meta.chatId || meta.chat_id
+    const postId = meta.postId || meta.post_id || meta.targetPostId || meta.target_post_id
+    const requesterId = meta.requesterId || meta.requester_id || meta.fromUserId || meta.from_user_id
+
+    if (conversationId) return `/messages?conversation=${encodeURIComponent(String(conversationId))}`
+    if (postId) return `/posts/${postId}`
+    if (requesterId || item.type === 'friend-request') return '/friends'
+    if (item.type.includes('report') || item.type.includes('moderation')) return '/moderator/reports'
+    return '/notifications'
+  }
+
   return (
     <nav className={styles.navbar}>
       {liveNotification ? (
-        <Link to="/notifications" className={styles.liveNotification} onClick={() => setLiveNotification(null)}>
+        <Link to={getNotificationHref(liveNotification)} className={styles.liveNotification} onClick={() => setLiveNotification(null)}>
           <Bell size={16} />
           <span>
             <b>{liveNotification.title}</b>
@@ -386,7 +396,7 @@ export default function Navbar() {
                       <p className={styles.dropdownEmpty}>Chưa có thông báo</p>
                     ) : (
                       notificationPreviews.map((item) => (
-                        <Link key={item.id} to="/notifications" className={styles.dropdownItem}>
+                        <Link key={item.id} to={getNotificationHref(item)} className={styles.dropdownItem}>
                           <span className={styles.dropdownAvatar}>
                             <Bell size={14} />
                           </span>
