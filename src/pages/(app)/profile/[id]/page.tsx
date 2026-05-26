@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
@@ -7,7 +7,17 @@ import { Rss, Settings } from 'lucide-react'
 import { useAuthStore } from '@/contexts/auth-store'
 import { api } from '@/api/client'
 import type { FeedPost, FriendConnection } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
+
+type ProfileUser = {
+  userId: number
+  displayName: string
+  avatarUrl: string | null
+  role: string
+  isVerified: boolean
+  lastActiveAt?: string | null
+}
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -15,41 +25,52 @@ export default function ProfilePage() {
   const profileId = params?.id || ''
   const token = useAuthStore((state) => state.accessToken)
   const me = useAuthStore((state) => state.user)
+  const [profileUser, setProfileUser] = useState<ProfileUser | null>(null)
   const [posts, setPosts] = useState<FeedPost[]>([])
   const [friends, setFriends] = useState<FriendConnection[]>([])
   const [friendStatus, setFriendStatus] = useState<'none' | 'pending' | 'accepted'>('none')
   const [socialActionBusy, setSocialActionBusy] = useState(false)
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+  const [isLoadingPosts, setIsLoadingPosts] = useState(true)
   const [profileAvatarBroken, setProfileAvatarBroken] = useState(false)
   const [activeTab, setActiveTab] = useState<'posts' | 'about' | 'friends' | 'photos' | 'videos'>('posts')
   const [mediaOnly, setMediaOnly] = useState(false)
 
+  const isOwnProfile = Boolean(me?.id && String(me.id) === profileId)
+
   useEffect(() => {
-    api.listFeed(token || undefined).then((r) => setPosts(r.posts)).catch(console.error)
-  }, [token])
+    if (!profileId || !token) return
+    setIsLoadingProfile(true)
+    api.getUserProfile(token, Number(profileId))
+      .then((r) => setProfileUser(r.user as ProfileUser | null))
+      .catch(console.error)
+      .finally(() => setIsLoadingProfile(false))
+  }, [profileId, token])
+
+  useEffect(() => {
+    if (!profileId || !token) return
+    setIsLoadingPosts(true)
+    api.getUserPosts(token, Number(profileId))
+      .then((r) => setPosts(r.posts))
+      .catch(console.error)
+      .finally(() => setIsLoadingPosts(false))
+  }, [profileId, token])
 
   useEffect(() => {
     if (!token) return
-
     api
       .listFriends(token)
       .then((response) => {
         setFriends(response.friends)
-
-        if (!profileId || (me?.id && String(me.id) === profileId)) {
+        if (!profileId || isOwnProfile) {
           setFriendStatus('none')
           return
         }
-
         const matched = response.friends.find((friend) => String(friend.id) === profileId)
         setFriendStatus(matched?.status || 'none')
       })
       .catch(console.error)
-  }, [me?.id, profileId, token])
-
-  const userPosts = useMemo(
-    () => posts.filter((post) => String(post.authorId) === profileId),
-    [posts, profileId]
-  )
+  }, [isOwnProfile, profileId, token])
 
   const acceptedFriends = useMemo(
     () => friends.filter((friend) => friend.status === 'accepted'),
@@ -62,66 +83,60 @@ export default function ProfilePage() {
   )
 
   const profileMedia = useMemo(
-    () => userPosts.filter((post) => Boolean(post.mediaUrl)).slice(0, 6),
-    [userPosts]
+    () => posts.filter((post) => Boolean(post.mediaUrl)).slice(0, 6),
+    [posts]
   )
 
   const isVideoPost = (post: FeedPost) => Boolean(post.mediaUrl && /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(post.mediaUrl))
 
-  const visibleProfilePosts = useMemo(() => {
-    if (activeTab === 'photos') return userPosts.filter((post) => post.mediaUrl && !isVideoPost(post))
-    if (activeTab === 'videos') return userPosts.filter(isVideoPost)
-    if (mediaOnly) return userPosts.filter((post) => Boolean(post.mediaUrl))
-    return userPosts
-  }, [activeTab, mediaOnly, userPosts])
+  const visiblePosts = useMemo(() => {
+    if (activeTab === 'photos') return posts.filter((post) => post.mediaUrl && !isVideoPost(post))
+    if (activeTab === 'videos') return posts.filter(isVideoPost)
+    if (mediaOnly) return posts.filter((post) => Boolean(post.mediaUrl))
+    return posts
+  }, [activeTab, mediaOnly, posts])
 
   const totalInteractions = useMemo(
-    () => userPosts.reduce((sum, post) => sum + post.reactionCount + post.commentCount, 0),
-    [userPosts]
+    () => posts.reduce((sum, post) => sum + post.reactionCount + post.commentCount, 0),
+    [posts]
   )
 
-  const profileName =
-    me?.id && String(me.id) === profileId
-      ? me.fullName
-      : userPosts[0]?.authorName || profileFriend?.fullName || `Người dùng #${profileId}`
-  const profileAvatar =
-    me?.id && String(me.id) === profileId
-      ? me.avatarUrl
-      : userPosts[0]?.authorAvatar || profileFriend?.avatarUrl || null
+  const profileName = isOwnProfile && me
+    ? me.fullName
+    : profileUser?.displayName || profileFriend?.fullName || `Người dùng #${profileId}`
+
+  const profileAvatar = isOwnProfile && me
+    ? me.avatarUrl
+    : profileUser?.avatarUrl || profileFriend?.avatarUrl || null
+
   const initials = (profileName[0] || 'U').toUpperCase()
-  const isOwnProfile = Boolean(me?.id && String(me.id) === profileId)
+
+  const isOnline = useMemo(() => {
+    if (isOwnProfile) return true
+    const lastActive = profileUser?.lastActiveAt
+    if (!lastActive) return false
+    return Date.now() - new Date(lastActive).getTime() < 5 * 60 * 1000
+  }, [isOwnProfile, profileUser?.lastActiveAt])
 
   useEffect(() => {
     setProfileAvatarBroken(false)
   }, [profileAvatar])
 
-  const roleText =
-    isOwnProfile && me
-      ? me.role === 'admin'
-        ? 'Quản trị viên hệ thống'
-        : me.role === 'moderator'
-          ? 'Kiểm duyệt viên cộng đồng'
-          : 'Thành viên ZChat'
-      : profileFriend?.role === 'admin'
-        ? 'Quản trị viên hệ thống'
-        : profileFriend?.role === 'moderator'
-          ? 'Kiểm duyệt viên cộng đồng'
-          : 'Thành viên ZChat'
+  const roleSource = isOwnProfile ? me?.role : (profileUser?.role || profileFriend?.role)
+  const roleText = roleSource === 'admin'
+    ? 'Quản trị viên hệ thống'
+    : roleSource === 'moderator'
+      ? 'Kiểm duyệt viên cộng đồng'
+      : 'Thành viên ZChat'
 
-  const accountText =
-    isOwnProfile && me
-      ? me.accountStatus === 'active'
-        ? 'Tài khoản hoạt động'
-        : me.accountStatus === 'restricted'
-          ? 'Tài khoản bị hạn chế'
-          : me.accountStatus === 'hidden'
-            ? 'Tài khoản đang ẩn'
-            : 'Tài khoản đã xóa'
-      : friendStatus === 'accepted'
-        ? 'Đã kết bạn'
-        : friendStatus === 'pending'
-          ? 'Đang chờ xác nhận'
-          : 'Chưa kết nối'
+  const accountText = isOwnProfile && me
+    ? me.accountStatus === 'active' ? 'Tài khoản hoạt động'
+      : me.accountStatus === 'restricted' ? 'Tài khoản bị hạn chế'
+        : me.accountStatus === 'hidden' ? 'Tài khoản đang ẩn'
+          : 'Tài khoản đã xóa'
+    : friendStatus === 'accepted' ? 'Đã kết bạn'
+      : friendStatus === 'pending' ? 'Đang chờ xác nhận'
+        : 'Chưa kết nối'
 
   const handleRequestFriend = async () => {
     if (!token || isOwnProfile || !Number(profileId)) return
@@ -131,6 +146,21 @@ export default function ProfilePage() {
       setFriendStatus('pending')
     } catch (error) {
       console.error('Không thể gửi lời mời kết bạn', error)
+    } finally {
+      setSocialActionBusy(false)
+    }
+  }
+
+  const handleUnfriend = async () => {
+    if (!token || isOwnProfile || !Number(profileId)) return
+    if (!window.confirm('Bạn có chắc muốn hủy kết bạn?')) return
+    setSocialActionBusy(true)
+    try {
+      await api.deleteFriend(token, Number(profileId))
+      setFriendStatus('none')
+      setFriends((prev) => prev.filter((f) => String(f.id) !== profileId))
+    } catch (error) {
+      console.error('Không thể hủy kết bạn', error)
     } finally {
       setSocialActionBusy(false)
     }
@@ -146,12 +176,10 @@ export default function ProfilePage() {
           conversation.type === 'direct' &&
           conversation.members.some((member) => member.userId === Number(profileId))
       )
-
       if (existing) {
         navigate(`/messages?conversation=${existing.id}`)
         return
       }
-
       const created = await api.createDirectConversation(token, Number(profileId))
       navigate(`/messages?conversation=${created.conversation.id}`)
     } catch (error) {
@@ -159,6 +187,40 @@ export default function ProfilePage() {
     } finally {
       setSocialActionBusy(false)
     }
+  }
+
+  if (isLoadingProfile && !profileUser) {
+    return (
+      <div className={styles.page}>
+        <section className={styles.cover}>
+          <div className={styles.coverGlow}></div>
+        </section>
+        <div className={styles.shell}>
+          <header className={styles.profileHeader}>
+            <Skeleton style={{ width: 96, height: 96, borderRadius: '50%', flexShrink: 0 }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+              <Skeleton style={{ width: 180, height: 22 }} />
+              <Skeleton style={{ width: 120, height: 16 }} />
+            </div>
+          </header>
+          <div className={styles.grid}>
+            <aside className={styles.leftCol}>
+              <section className={styles.card}>
+                <Skeleton style={{ height: 16, width: '55%', marginBottom: 14 }} />
+                <Skeleton style={{ height: 13, marginBottom: 10 }} />
+                <Skeleton style={{ height: 13, marginBottom: 10 }} />
+                <Skeleton style={{ height: 13, marginBottom: 10 }} />
+                <Skeleton style={{ height: 13 }} />
+              </section>
+            </aside>
+            <section className={styles.rightCol}>
+              <Skeleton style={{ height: 176, borderRadius: 16, marginBottom: 12 }} />
+              <Skeleton style={{ height: 176, borderRadius: 16 }} />
+            </section>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -181,7 +243,7 @@ export default function ProfilePage() {
             ) : (
               <div className={styles.avatar}>{initials}</div>
             )}
-            <span className={styles.onlineDot}></span>
+            {isOnline ? <span className={styles.onlineDot} title="Đang hoạt động" /> : null}
           </div>
           <div className={styles.titleBlock}>
             <h1>{profileName}</h1>
@@ -196,34 +258,35 @@ export default function ProfilePage() {
               <button type="button" className={styles.editBtn} onClick={handleMessageUser} disabled={socialActionBusy}>
                 {socialActionBusy ? 'Đang mở...' : 'Nhắn tin'}
               </button>
-              <button
-                type="button"
-                className={styles.followBtn}
-                onClick={handleRequestFriend}
-                disabled={socialActionBusy || friendStatus !== 'none'}
-              >
-                {friendStatus === 'accepted' ? 'Bạn bè' : friendStatus === 'pending' ? 'Đã gửi lời mời' : 'Kết bạn'}
-              </button>
+              {friendStatus === 'accepted' ? (
+                <button type="button" className={styles.followBtn} onClick={handleUnfriend} disabled={socialActionBusy}>
+                  Hủy kết bạn
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.followBtn}
+                  onClick={handleRequestFriend}
+                  disabled={socialActionBusy || friendStatus !== 'none'}
+                >
+                  {friendStatus === 'pending' ? 'Đã gửi lời mời' : 'Kết bạn'}
+                </button>
+              )}
             </div>
           )}
         </header>
 
         <nav className={styles.tabs}>
-          <button type="button" className={`${styles.tab} ${activeTab === 'posts' ? styles.tabActive : ''}`} onClick={() => setActiveTab('posts')}>
-            Bài viết
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'about' ? styles.tabActive : ''}`} onClick={() => setActiveTab('about')}>
-            Giới thiệu
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'friends' ? styles.tabActive : ''}`} onClick={() => setActiveTab('friends')}>
-            Bạn bè
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'photos' ? styles.tabActive : ''}`} onClick={() => setActiveTab('photos')}>
-            Ảnh
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'videos' ? styles.tabActive : ''}`} onClick={() => setActiveTab('videos')}>
-            Video
-          </button>
+          {(['posts', 'about', 'friends', 'photos', 'videos'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === 'posts' ? 'Bài viết' : tab === 'about' ? 'Giới thiệu' : tab === 'friends' ? 'Bạn bè' : tab === 'photos' ? 'Ảnh' : 'Video'}
+            </button>
+          ))}
         </nav>
 
         <div className={styles.grid}>
@@ -231,18 +294,10 @@ export default function ProfilePage() {
             <section className={styles.card}>
               <h3>Giới thiệu</h3>
               <ul className={styles.infoList}>
-                <li>
-                  <Settings size={16} /> Vai trò: <strong>{roleText}</strong>
-                </li>
-                <li>
-                  <Rss size={16} /> Trạng thái: <strong>{accountText}</strong>
-                </li>
-                <li>
-                  <Rss size={16} /> Bài viết công khai: <strong>{userPosts.length}</strong>
-                </li>
-                <li>
-                  <Rss size={16} /> Tổng tương tác: <strong>{totalInteractions}</strong>
-                </li>
+                <li><Settings size={16} /> Vai trò: <strong>{roleText}</strong></li>
+                <li><Rss size={16} /> Trạng thái: <strong>{accountText}</strong></li>
+                <li><Rss size={16} /> Bài viết: <strong>{isLoadingPosts ? '...' : posts.length}</strong></li>
+                <li><Rss size={16} /> Tổng tương tác: <strong>{isLoadingPosts ? '...' : totalInteractions}</strong></li>
               </ul>
               {isOwnProfile ? (
                 <Link to="/profile/edit" className={styles.lightBtn}>
@@ -264,12 +319,10 @@ export default function ProfilePage() {
                     alt={`Media ${post.id}`}
                     className={styles.photoImage}
                     loading="lazy"
-                    onError={(event) => {
-                      event.currentTarget.style.display = 'none'
-                    }}
+                    onError={(event) => { event.currentTarget.style.display = 'none' }}
                   />
                 ))}
-                {profileMedia.length === 0 ? <p className={styles.empty}>Chưa có ảnh/video.</p> : null}
+                {!isLoadingPosts && profileMedia.length === 0 ? <p className={styles.empty}>Chưa có ảnh/video.</p> : null}
               </div>
             </section>
 
@@ -289,9 +342,7 @@ export default function ProfilePage() {
                           alt={friend.fullName}
                           className={styles.friendAvatarImage}
                           loading="lazy"
-                          onError={(event) => {
-                            event.currentTarget.style.display = 'none'
-                          }}
+                          onError={(event) => { event.currentTarget.style.display = 'none' }}
                         />
                       ) : (
                         <div className={styles.friendAvatar}>{(friend.fullName[0] || 'U').toUpperCase()}</div>
@@ -324,7 +375,7 @@ export default function ProfilePage() {
               <div className={styles.postsHead}>
                 <h3>Bài viết</h3>
                 <div className={styles.headActions}>
-                  <button type="button" onClick={() => setMediaOnly((current) => !current)}>{mediaOnly ? 'Tất cả' : 'Chỉ media'}</button>
+                  <button type="button" onClick={() => setMediaOnly((c) => !c)}>{mediaOnly ? 'Tất cả' : 'Chỉ media'}</button>
                   <button type="button" onClick={() => navigate(isOwnProfile ? '/feed?compose=1' : `/profile/${profileId}`)}>
                     {isOwnProfile ? 'Tạo bài viết' : 'Làm mới'}
                   </button>
@@ -332,7 +383,11 @@ export default function ProfilePage() {
               </div>
 
               <div className={styles.postsList}>
-                {visibleProfilePosts.map((post) => (
+                {isLoadingPosts ? (
+                  <p className={styles.empty}>Đang tải bài viết...</p>
+                ) : visiblePosts.length === 0 ? (
+                  <p className={styles.empty}>Chưa có nội dung phù hợp.</p>
+                ) : visiblePosts.map((post) => (
                   <article key={post.id} className={styles.postItem}>
                     <div className={styles.postAuthor}>
                       <div className={styles.avatarMini}>{(post.authorName[0] || 'U').toUpperCase()}</div>
@@ -350,9 +405,7 @@ export default function ProfilePage() {
                         alt="Post media"
                         className={styles.postMedia}
                         loading="lazy"
-                        onError={(event) => {
-                          event.currentTarget.style.display = 'none'
-                        }}
+                        onError={(event) => { event.currentTarget.style.display = 'none' }}
                       />
                     ) : null}
                     <div className={styles.postFoot}>
@@ -361,7 +414,6 @@ export default function ProfilePage() {
                     </div>
                   </article>
                 ))}
-                {visibleProfilePosts.length === 0 ? <p className={styles.empty}>Chưa có nội dung phù hợp mục đang chọn.</p> : null}
               </div>
             </section>
           </section>

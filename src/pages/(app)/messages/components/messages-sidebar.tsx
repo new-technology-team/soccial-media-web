@@ -13,6 +13,7 @@ type MessagesSidebarProps = {
   notifications: NotificationItem[]
   searchTerm: string
   setSearchTerm: (value: string) => void
+  isLoadingConversations?: boolean
   onOpenConversation: (conversationId: string) => void
   onShowNotifications: () => void
   onShowNewMessage: () => void
@@ -27,6 +28,7 @@ export function MessagesSidebar({
   notifications,
   searchTerm,
   setSearchTerm,
+  isLoadingConversations = false,
   onOpenConversation,
   onShowNotifications,
   onShowNewMessage,
@@ -80,6 +82,14 @@ export function MessagesSidebar({
         </div>
 
         <div className={styles.convList}>
+          {isLoadingConversations ? (
+            <>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className={styles.convSkeleton} aria-hidden="true" />
+              ))}
+            </>
+          ) : null}
+
           {conversations.map((conv) => {
             const isActive = conv.id === selectedConversationId
             const name = getConversationDisplayName(conv, userId)

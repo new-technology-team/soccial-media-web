@@ -129,10 +129,10 @@ export default function LoginPage() {
           </div>
 
           <div className={styles.socialGrid}>
-            <Button variant="outline" className={styles.socialBtn} disabled={isLoading}>
+            <Button variant="outline" className={styles.socialBtn} disabled={isLoading} title="Đang phát triển" onClick={() => alert('Tính năng đang phát triển')}>
               Google
             </Button>
-            <Button variant="outline" className={styles.socialBtn} disabled={isLoading}>
+            <Button variant="outline" className={styles.socialBtn} disabled={isLoading} title="Đang phát triển" onClick={() => alert('Tính năng đang phát triển')}>
               Apple
             </Button>
           </div>

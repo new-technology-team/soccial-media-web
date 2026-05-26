@@ -13,6 +13,7 @@ export default function SignupPage() {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [passwordMismatch, setPasswordMismatch] = useState(false)
   const [formData, setFormData] = useState({
     displayName: '',
     emailOrPhone: '',
@@ -23,10 +24,13 @@ export default function SignupPage() {
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
+    const updated = { ...formData, [e.target.name]: e.target.value }
+    setFormData(updated)
+    if (e.target.name === 'confirmPassword' || e.target.name === 'password') {
+      const password = e.target.name === 'password' ? e.target.value : updated.password
+      const confirm = e.target.name === 'confirmPassword' ? e.target.value : updated.confirmPassword
+      setPasswordMismatch(Boolean(confirm) && password !== confirm)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -200,6 +204,7 @@ export default function SignupPage() {
                 required
               />
             </div>
+            {passwordMismatch ? <p className={styles.fieldError}>Mật khẩu không khớp</p> : null}
           </div>
         </div>
 
@@ -212,10 +217,10 @@ export default function SignupPage() {
         </div>
 
         <div className={styles.socialGrid}>
-          <Button variant="outline" className={styles.socialBtn} disabled={isLoading}>
+          <Button variant="outline" className={styles.socialBtn} disabled={isLoading} title="Đang phát triển" onClick={() => alert('Tính năng đang phát triển')}>
             Google
           </Button>
-          <Button variant="outline" className={styles.socialBtn} disabled={isLoading}>
+          <Button variant="outline" className={styles.socialBtn} disabled={isLoading} title="Đang phát triển" onClick={() => alert('Tính năng đang phát triển')}>
             Apple
           </Button>
         </div>

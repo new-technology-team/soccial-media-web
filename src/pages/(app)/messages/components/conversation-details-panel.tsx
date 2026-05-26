@@ -32,7 +32,7 @@ type ConversationDetailsPanelProps = {
   handleToggleConversationPin: () => void | Promise<void>
   handleToggleConversationMute: () => void | Promise<void>
   handleUpdateNickname: (userId: number) => void | Promise<void>
-  handleUpdateGroupProfile: () => void | Promise<void>
+  handleUpdateGroupProfile: (payload: { name: string; avatarUrl?: string | null }) => void | Promise<void>
   handleBlockPeer: () => void | Promise<void>
   sharedContent: { photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }
   loadingSharedContent: boolean

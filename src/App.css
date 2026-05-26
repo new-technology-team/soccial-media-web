@@ -59,6 +59,18 @@
     @apply bg-background;
     scroll-behavior: smooth;
   }
+
+  /* Touch-friendly tap targets on mobile */
+  @media (max-width: 840px) and (pointer: coarse) {
+    button:not([class*="w-"]):not([class*="h-"]),
+    [role="button"],
+    a[href],
+    input[type="checkbox"],
+    input[type="radio"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
   body {
     @apply bg-background text-foreground;
     background-image:

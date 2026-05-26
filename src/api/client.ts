@@ -771,6 +771,25 @@ export const api = {
   readAllNotifications: (token: string) =>
     request<{ message: string }>('/social/notifications/read-all', { method: 'PATCH' }, token),
 
+  deleteNotification: (token: string, id: number | string) =>
+    request<{ message: string }>(`/social/notifications/${id}`, { method: 'DELETE' }, token),
+
+  getUserProfile: (token: string, userId: number | string) =>
+    request<{ user: User | null }>(`/social/users/${userId}`, { method: 'GET' }, token),
+
+  updateUserProfile: (
+    token: string,
+    payload: { displayName?: string; avatarUrl?: string; sex?: string; dateOfBirth?: string }
+  ) =>
+    request<{ message: string; user: User }>('/social/users/profile', { method: 'PUT', body: JSON.stringify(payload) }, token),
+
+  getUserPosts: (token: string, userId: number | string, limit?: number) => {
+    const suffix = limit ? `?limit=${limit}` : ''
+    return request<{ posts: FeedPost[] }>(`/social/users/${userId}/posts${suffix}`, { method: 'GET' }, token).then((res) => ({
+      posts: (res.posts || []).map(normalizeFeedPost),
+    }))
+  },
+
   submitReport: (
     token: string,
     payload: {

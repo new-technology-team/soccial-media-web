@@ -124,7 +124,7 @@
   border-radius: 13px;
   padding: 0.68rem;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 0.55rem;
   align-items: center;
   text-align: left;
@@ -198,6 +198,27 @@
 .deleteBtn {
   background: #e8ecef;
   color: #31414c;
+}
+
+.deleteNotifBtn {
+  border: 0;
+  background: transparent;
+  color: #9aa5ae;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.item:hover .deleteNotifBtn {
+  opacity: 1;
+}
+
+.deleteNotifBtn:hover {
+  color: #e55353;
 }
 
 .dot {

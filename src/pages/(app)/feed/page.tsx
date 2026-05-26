@@ -106,6 +106,7 @@ export default function FeedPage() {
   const me = useAuthStore((state) => state.user)
   const clearAuth = useAuthStore((state) => state.clearAuth)
   const [posts, setPosts] = useState<FeedPost[]>([])
+  const [isLoadingFeed, setIsLoadingFeed] = useState(true)
   const [content, setContent] = useState('')
   const [modalContent, setModalContent] = useState('')
   const [isPosting, setIsPosting] = useState(false)
@@ -174,6 +175,7 @@ export default function FeedPage() {
 
   useEffect(() => {
     const loadFeed = async () => {
+      setIsLoadingFeed(true)
       try {
         const response = await api.listFeed(token || undefined)
         const dedupedPosts = dedupePostsById(response.posts)
@@ -182,6 +184,8 @@ export default function FeedPage() {
       } catch (error) {
         if (handleAuthExpired(error)) return
         console.error('Failed to load feed', error)
+      } finally {
+        setIsLoadingFeed(false)
       }
     }
 
@@ -998,6 +1002,24 @@ export default function FeedPage() {
           {errorText ? <p className={styles.errorBanner}>{errorText}</p> : null}
 
           <div className={styles.feedList}>
+            {isLoadingFeed ? (
+              <>
+                <div className={styles.postSkeleton} aria-hidden="true" />
+                <div className={styles.postSkeleton} aria-hidden="true" />
+                <div className={styles.postSkeleton} aria-hidden="true" />
+              </>
+            ) : null}
+
+            {!isLoadingFeed && filteredPosts.length === 0 ? (
+              <div className={styles.emptyFeed}>
+                <p>Chưa có bài viết nào trong bảng tin.</p>
+                <Link to="/friends" className={styles.submitBtn}>
+                  <UserPlus size={15} />
+                  Kết bạn để xem nội dung
+                </Link>
+              </div>
+            ) : null}
+
             {visiblePosts.map((post) => {
               const postComments = commentLists[post.id] || []
               const paging = commentPaging[post.id]
@@ -1315,7 +1337,6 @@ export default function FeedPage() {
               )
             })}
 
-            {filteredPosts.length === 0 && <div className={styles.empty}>Chưa có bài viết nào trong bảng tin.</div>}
             {filteredPosts.length > 0 && hasMorePosts ? (
               <div ref={feedBottomSentinelRef} className={styles.feedLoadingMore}>
                 Đang tải thêm bài viết...

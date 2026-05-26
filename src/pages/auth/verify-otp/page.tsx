@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertCircle, ShieldCheck } from 'lucide-react'
@@ -22,6 +22,14 @@ export default function VerifyOtpPage() {
   const [isResending, setIsResending] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const cooldownTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current !== null) clearInterval(cooldownTimerRef.current)
+    }
+  }, [])
 
   const handleVerify = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -59,8 +67,19 @@ export default function VerifyOtpPage() {
     setIsResending(true)
     try {
       const response = await api.resendVerificationCode(emailOrPhone.trim())
-      const devCode = response.verificationCode ? ` (Mã dev: ${response.verificationCode})` : ''
-      setSuccess(`${response.message || 'Đã gửi lại mã OTP.'}${devCode}`)
+      setSuccess(response.message || 'Đã gửi lại mã OTP.')
+      setResendCooldown(60)
+      if (cooldownTimerRef.current !== null) clearInterval(cooldownTimerRef.current)
+      cooldownTimerRef.current = window.setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(cooldownTimerRef.current!)
+            cooldownTimerRef.current = null
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể gửi lại mã OTP.')
     } finally {
@@ -115,6 +134,7 @@ export default function VerifyOtpPage() {
             value={code}
             onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
             className={`${styles.input} ${styles.inputMuted}`}
+            autoFocus
             required
           />
         </div>
@@ -123,8 +143,8 @@ export default function VerifyOtpPage() {
           {isSubmitting ? 'Đang xác thực...' : 'Xác thực và đăng nhập'}
         </button>
 
-        <button type="button" className={styles.submitGhost} disabled={isResending} onClick={handleResend}>
-          {isResending ? 'Đang gửi lại mã...' : 'Gửi lại mã OTP'}
+        <button type="button" className={styles.submitGhost} disabled={isResending || resendCooldown > 0} onClick={handleResend}>
+          {isResending ? 'Đang gửi lại mã...' : resendCooldown > 0 ? `Gửi lại (${resendCooldown}s)` : 'Gửi lại mã OTP'}
         </button>
 
         <p className={styles.switchText}>

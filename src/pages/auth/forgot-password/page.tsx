@@ -36,8 +36,7 @@ export default function ForgotPasswordPage() {
 
     try {
       const response = await api.forgotPassword(formData.emailOrPhone)
-      const debugCode = response.resetCode ? ` Mã dev: ${response.resetCode}` : ''
-      setSuccess(`${response.message || 'Đã gửi mã OTP.'}${debugCode}`)
+      setSuccess(response.message || 'Đã gửi mã OTP.')
       setStep('reset')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể gửi mã OTP. Vui lòng thử lại.')

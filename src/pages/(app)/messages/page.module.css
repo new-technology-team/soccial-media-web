@@ -1,3 +1,10 @@
+:root {
+  --msg-primary: hsl(var(--primary, 216 100% 40%));
+  --msg-bg: hsl(var(--background, 0 0% 100%));
+  --msg-border: hsl(var(--border, 214 32% 91%));
+  --msg-muted: hsl(var(--muted, 210 40% 96%));
+}
+
 .page {
   height: 100%;
   padding: 0.8rem 0 1rem;
@@ -18,6 +25,23 @@
   overflow: hidden;
   background: rgba(245, 246, 247, 0.82);
   box-shadow: 0 12px 28px rgba(14, 18, 22, 0.08);
+}
+
+.backToListBtn {
+  display: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #5d6971;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.backToListBtn:hover {
+  background: #e9ecef;
 }
 
 .rail {
@@ -263,6 +287,12 @@
   color: #fff;
   font-size: 0.67rem;
   font-weight: 700;
+  animation: badgePulse 2.4s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.7; }
 }
 
 .chatPanel {
@@ -786,6 +816,12 @@
   align-items: end;
   gap: 0.5rem;
   max-width: 82%;
+  animation: bubbleFadeIn 200ms ease-out;
+}
+
+@keyframes bubbleFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .messageBlock {
@@ -1060,6 +1096,12 @@
   padding: 0.24rem;
   margin-top: 0.2rem;
   z-index: 4;
+  animation: reactionPickerIn 150ms ease-out;
+}
+
+@keyframes reactionPickerIn {
+  from { transform: scale(0.85); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }
 
 .reactionPicker button {
@@ -3236,6 +3278,26 @@
   gap: 0.3rem;
 }
 
+.groupNameInput {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgba(102, 126, 234, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: inherit;
+  outline: none;
+  text-align: center;
+}
+
+.groupNameInput:focus {
+  border-color: rgba(102, 126, 234, 0.6);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.12);
+}
+
 .settingsTitleRow button,
 .memberActions button {
   display: inline-grid;
@@ -3802,6 +3864,15 @@
 }
 
 @media (max-width: 1180px) {
+  /* Tablet: 3-col layout, details panel hidden from flow (only shown as drawer) */
+  .layout {
+    grid-template-columns: 74px 300px minmax(0, 1fr);
+  }
+
+  .detailsPanel:not(.detailsPanelOpen) {
+    display: none;
+  }
+
   .settingsBackdrop {
     position: fixed;
     inset: 0;
@@ -3828,6 +3899,44 @@
   }
 }
 
+@media (max-width: 840px) {
+  /* Mobile: 2-col layout, switch between list and chat */
+  .layout {
+    grid-template-columns: 74px minmax(0, 1fr);
+    border-radius: 14px;
+  }
+
+  /* When showing list (mobileShowList=true): hide chat */
+  .layoutShowList .chatPanel {
+    display: none;
+  }
+
+  /* When showing chat (mobileShowList=false): hide list */
+  .layout:not(.layoutShowList) .listPanel {
+    display: none;
+  }
+
+  /* Show back button on mobile */
+  .backToListBtn {
+    display: grid;
+  }
+}
+
+@media (max-width: 540px) {
+  /* Small mobile: no rail, full-width chat/list */
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .rail {
+    display: none;
+  }
+}
+
 @media (max-width: 420px) {
   .detailsPanelOpen {
     width: 100vw;
@@ -3851,4 +3960,34 @@
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+@keyframes convSkeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+}
+
+.convSkeleton {
+  height: 60px;
+  border-radius: 12px;
+  background: rgba(210, 218, 230, 0.6);
+  animation: convSkeletonPulse 1.3s ease-in-out infinite;
+  margin-bottom: 0.4rem;
+}
+
+.noConversationPlaceholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  color: #8a97a4;
+  padding: 2rem;
+}
+
+.noConversationPlaceholder p {
+  margin: 0;
+  font-size: 0.92rem;
+  text-align: center;
 }

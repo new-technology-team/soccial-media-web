@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   BadgeCheck,
   BadgeQuestionMark,
+  ArrowLeft,
   Bell,
   BicepsFlexed,
   CirclePlus,
@@ -208,6 +209,7 @@ export default function MessagesPage() {
   const [messageSearchKeyword, setMessageSearchKeyword] = useState('')
   const [showMessageFilters, setShowMessageFilters] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [isLoadingConversations, setIsLoadingConversations] = useState(true)
   const [sharedContent, setSharedContent] = useState<{ photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }>({
     photosVideos: [],
     files: [],
@@ -234,6 +236,7 @@ export default function MessagesPage() {
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const videoInputRef = useRef<HTMLInputElement | null>(null)
   const longPressTimer = useRef<number | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
@@ -376,10 +379,13 @@ export default function MessagesPage() {
     selectConversation,
   })
 
+  const [mobileShowList, setMobileShowList] = useState(true)
+
   const handleOpenConversation = useCallback(
     (conversationId: string) => {
       openConversation(conversationId)
       markConversationRead(conversationId)
+      setMobileShowList(false)
     },
     [markConversationRead, openConversation]
   )
@@ -406,6 +412,15 @@ export default function MessagesPage() {
     if (!token) return
     setConversations(await loadChatConversations(token))
   }, [token, setConversations])
+
+  useEffect(() => {
+    if (conversations.length > 0) setIsLoadingConversations(false)
+  }, [conversations.length])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsLoadingConversations(false), 4000)
+    return () => clearTimeout(timer)
+  }, [token])
 
   useEffect(() => {
     if (!token || !selectedConversationId) return
@@ -1013,14 +1028,10 @@ export default function MessagesPage() {
     }
   }
 
-  const handleUpdateGroupProfile = async () => {
+  const handleUpdateGroupProfile = async (payload: { name: string; avatarUrl?: string | null }) => {
     if (!token || !selectedGroup || !canAddMembers) return
-    const nextName = window.prompt('Tên nhóm mới', selectedGroup.name || '')
-    if (nextName === null || !nextName.trim()) return
-    const nextAvatar = window.prompt('URL ảnh đại diện nhóm (có thể để trống)', selectedGroup.avatarUrl || '')
-    if (nextAvatar === null) return
     try {
-      await api.updateGroupProfile(token, selectedGroup.id, { name: nextName.trim(), avatarUrl: nextAvatar.trim() || null })
+      await api.updateGroupProfile(token, selectedGroup.id, { name: payload.name, avatarUrl: payload.avatarUrl ?? selectedGroup.avatarUrl ?? null })
       await refreshConversations()
       setChatNotice('Đã cập nhật thông tin nhóm.')
     } catch (error) {
@@ -2086,7 +2097,7 @@ export default function MessagesPage() {
   }
   return (
     <div className={styles.page}>
-      <div className={styles.layout}>
+      <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''}`}>
         <MessagesSidebar
           initials={initials}
           userId={user?.id}
@@ -2095,6 +2106,7 @@ export default function MessagesPage() {
           notifications={notifications}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
+          isLoadingConversations={isLoadingConversations}
           onOpenConversation={handleOpenConversation}
           onShowNotifications={() => setShowNotificationsDrawer(true)}
           onShowNewMessage={() => setShowNewMessageModal(true)}
@@ -2108,6 +2120,9 @@ export default function MessagesPage() {
 
         <section className={styles.chatPanel}>
           <header className={styles.chatHeader}>
+            <button type="button" className={styles.backToListBtn} onClick={() => setMobileShowList(true)} aria-label="Quay lại danh sách">
+              <ArrowLeft size={18} />
+            </button>
             <div className={styles.chatIdentity}>
               <div className={styles.chatHeaderAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
               <div>
@@ -2315,88 +2330,35 @@ export default function MessagesPage() {
             </div>
           )}
 
-          <MessageThread
-            userId={user?.id}
-            selectedConversation={selectedConversation}
-            virtualSlice={virtualSlice}
-            messagesWrapRef={messagesWrapRef}
-            loadingOlderMessages={loadingOlderMessages || loadingMessages}
-            typingUserIds={typingUserIds}
-            busyActionId={busyActionId}
-            pinnedMessageIds={pinnedMessageIds}
-            reactionPickerMessageId={reactionPickerMessageId}
-            setReactionPickerMessageId={setReactionPickerMessageId}
-            openMessageActions={openMessageActions}
-            handleReaction={handleReaction}
-            renderMessagePreview={renderMessagePreview}
-            getMessageReadLabel={getMessageReadLabel}
-            onLoadOlderMessages={loadOlderMessages}
-            onScroll={(event) => {
-              const element = event.currentTarget
-              const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
-              setShowJumpToLatest(fromBottom > 260)
-            }}
-          >
-            {loadingOlderMessages ? <p className={styles.historyLoading}>Đang tải tin nhắn cũ hơn...</p> : null}
-            {virtualSlice.startIndex > 0 ? (
-              <p className={styles.virtualHint}>Đang hiển thị {VIRTUAL_CHUNK} tin nhắn mới nhất. Cuộn lên để tải thêm lịch sử.</p>
-            ) : null}
-            {virtualSlice.items.map((msg) => {
-              const mine = msg.senderId === user?.id
-              const senderName = getSenderName(msg.senderId, msg)
-              return (
-                <div key={msg.id} className={`${styles.messageRow} ${mine ? styles.messageRowMine : ''}`}>
-                  {!mine ? <div className={styles.messageAvatar}>{(senderName[0] || 'U').toUpperCase()}</div> : null}
-                  <div className={styles.messageBlock}>
-                    {!mine ? (
-                      <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
-                        {senderName}
-                      </Link>
-                    ) : null}
-                    <div
-                      className={`${styles.bubble} ${mine ? styles.bubbleMine : ''}`}
-                      onContextMenu={(event) => {
-                        event.preventDefault()
-                        setActionMenu({ messageId: msg.id, x: event.clientX, y: event.clientY })
-                      }}
-                      onTouchStart={(event) => {
-                        const touch = event.touches[0]
-                        longPressTimer.current = window.setTimeout(() => {
-                          setActionMenu({ messageId: msg.id, x: touch.clientX, y: touch.clientY })
-                        }, 420)
-                      }}
-                      onTouchEnd={() => {
-                        if (longPressTimer.current) {
-                          window.clearTimeout(longPressTimer.current)
-                          longPressTimer.current = null
-                        }
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className={styles.messageActionTrigger}
-                        title="Mở menu thao tác"
-                        aria-label="Mở menu thao tác"
-                        onClick={(event) => openMessageActions(event, msg.id)}
-                      >
-                        <MoreHorizontal size={14} />
-                      </button>
-                      {renderMessagePreview(msg)}
-                      {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
-                      {msg.reactionCount > 0 ? (
-                        <div className={styles.reactionSummary}>{reactionSummaryText(msg)}</div>
-                      ) : null}
-                    </div>
-                    <span className={styles.messageTime}>
-                      {formatVietnamTime(msg.createdAt)}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-
-            {messages.length === 0 ? <p className={styles.empty}>Chưa có tin nhắn trong cuộc trò chuyện này.</p> : null}
-          </div>
+          {!selectedConversationId ? (
+            <div className={styles.noConversationPlaceholder}>
+              <Send size={36} />
+              <p>Chọn một cuộc trò chuyện để bắt đầu nhắn tin</p>
+            </div>
+          ) : (
+            <MessageThread
+              userId={user?.id}
+              selectedConversation={selectedConversation}
+              virtualSlice={virtualSlice}
+              messagesWrapRef={messagesWrapRef}
+              loadingOlderMessages={loadingOlderMessages || loadingMessages}
+              typingUserIds={typingUserIds}
+              busyActionId={busyActionId}
+              pinnedMessageIds={pinnedMessageIds}
+              reactionPickerMessageId={reactionPickerMessageId}
+              setReactionPickerMessageId={setReactionPickerMessageId}
+              openMessageActions={openMessageActions}
+              handleReaction={handleReaction}
+              renderMessagePreview={renderMessagePreview}
+              getMessageReadLabel={getMessageReadLabel}
+              onLoadOlderMessages={loadOlderMessages}
+              onScroll={(event) => {
+                const element = event.currentTarget
+                const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
+                setShowJumpToLatest(fromBottom > 260)
+              }}
+            />
+          )}
 
           {replySuggestions.length > 0 && (
             <div style={{ padding: '8px 16px', display: 'flex', gap: 8, overflowX: 'auto', background: 'var(--bg-surface)' }}>
@@ -2415,190 +2377,32 @@ export default function MessagesPage() {
               ))}
             </div>
           )}
-          <footer className={styles.inputBar}>
-            <input ref={fileInputRef} type="file" className={styles.hiddenFileInput} onChange={handleFileSelected} aria-label="Đính kèm tệp" title="Đính kèm tệp" />
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              className={styles.hiddenFileInput}
-              onChange={handleFileSelected}
-              aria-label="Gửi hình ảnh"
-              title="Gửi hình ảnh"
+          {selectedConversationId ? (
+            <MessageComposer
+              message={message}
+              setMessage={setMessage}
+              handleSend={handleSend}
+              handleFileSelected={handleFileSelected}
+              handlePickAttachment={handlePickAttachment}
+              handlePickAttachmentType={handlePickAttachmentType}
+              busyUploading={busyUploading}
+              isSendingMessage={isSendingMessage}
+              composerMenuOpen={composerMenuOpen}
+              setComposerMenuOpen={setComposerMenuOpen}
+              showEmojiPanel={showEmojiPanel}
+              setShowEmojiPanel={setShowEmojiPanel}
+              showStickerPanel={showStickerPanel}
+              setShowStickerPanel={setShowStickerPanel}
+              onSendSticker={handleSendSticker}
+              attachmentDraft={attachmentDraft}
+              onRemoveAttachment={clearAttachmentDraft}
+              fileInputRef={fileInputRef}
+              imageInputRef={imageInputRef}
+              videoInputRef={videoInputRef}
+              onSuggestReplies={handleSuggestReplies}
+              isSuggesting={isSuggesting}
             />
-            <input
-              ref={videoInputRef}
-              type="file"
-              accept="video/*"
-              className={styles.hiddenFileInput}
-              onChange={handleFileSelected}
-              aria-label="Gửi video"
-              title="Gửi video"
-            />
-            <button type="button" className={styles.inputIcon} onClick={handlePickAttachment} disabled={busyUploading} title="Chọn tệp đính kèm" aria-label="Chọn tệp đính kèm">
-              <CirclePlus size={18} />
-            </button>
-            <button type="button" className={styles.inputIcon} onClick={handleSuggestReplies} disabled={isSuggesting || !selectedConversationId} title="Gợi ý trả lời AI" aria-label="Gợi ý trả lời AI">
-              <Sparkles size={18} />
-            </button>
-            {composerMenuOpen ? (
-              <div className={styles.composerPlusMenu}>
-                <button type="button" onClick={() => handlePickAttachmentType('image')} title="Gửi ảnh" aria-label="Gửi ảnh">
-                  <span>🖼️</span>
-                  <span>Gửi ảnh</span>
-                </button>
-                <button type="button" onClick={() => handlePickAttachmentType('video')} title="Gửi video" aria-label="Gửi video">
-                  <span>🎬</span>
-                  <span>Gửi video</span>
-                </button>
-                <button type="button" onClick={() => handlePickAttachmentType('file')} title="Gửi tệp" aria-label="Gửi tệp">
-                  <span>📎</span>
-                  <span>Gửi tệp</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowEmojiPanel(true)
-                    setShowStickerPanel(false)
-                    setComposerMenuOpen(false)
-                  }}
-                  title="Chèn emoji"
-                  aria-label="Chèn emoji"
-                >
-                  <span>😊</span>
-                  <span>Chèn emoji</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowStickerPanel((prev) => !prev)
-                    setShowEmojiPanel(false)
-                    setComposerMenuOpen(false)
-                  }}
-                >
-                  <Sticker size={16} />
-                  <span>Gửi sticker</span>
-                </button>
-              </div>
-            ) : null}
-            <textarea
-              placeholder="Type a message..."
-              value={message}
-              rows={1}
-              onChange={(event) => setMessage(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  handleSend()
-                }
-              }}
-            />
-            <button type="button" className={styles.inputIcon} onClick={() => fileInputRef.current?.click()} disabled={busyUploading} title="Chọn tệp" aria-label="Chọn tệp">
-              <Paperclip size={16} />
-            </button>
-            <button
-              type="button"
-              className={styles.inputIcon}
-              onClick={() => {
-                setShowEmojiPanel((prev) => !prev)
-                setShowStickerPanel(false)
-                setComposerMenuOpen(false)
-              }}
-              disabled={busyUploading}
-              title="Mở bảng emoji"
-              aria-label="Mở bảng emoji"
-            >
-              <Smile size={16} />
-            </button>
-            <button
-              type="button"
-              className={styles.sendBtn}
-              onClick={handleSend}
-              disabled={!message.trim() || isSendingMessage}
-              title="Gửi tin nhắn"
-              aria-label="Gửi tin nhắn"
-            >
-              <Send size={17} />
-            </button>
-
-            {showEmojiPanel ? (
-              <div className={styles.emojiPanel}>
-                {EMOJI_SET.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => setMessage((prev) => `${prev}${emoji}`)}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            {showStickerPanel ? (
-              <div className={styles.stickerPanel}>
-                <div className={styles.stickerTabs}>
-                  {(Object.keys(STICKER_PACKS) as Array<keyof typeof STICKER_PACKS>).map((packName) => (
-                    <button
-                      key={packName}
-                      type="button"
-                      className={packName === activeStickerPack ? styles.stickerTabActive : ''}
-                      onClick={() => {
-                        setActiveStickerPack(packName)
-                        if (!loadedStickerPacks[packName]) {
-                          setTimeout(() => {
-                            setLoadedStickerPacks((prev) => ({ ...prev, [packName]: true }))
-                          }, 220)
-                        }
-                      }}
-                    >
-                      {packName}
-                    </button>
-                  ))}
-                </div>
-                {loadedStickerPacks[activeStickerPack] ? STICKER_PACKS[activeStickerPack].map((sticker) => (
-                  <button
-                    key={sticker}
-                    type="button"
-                    title="Gửi sticker"
-                    aria-label="Gửi sticker"
-                    onClick={async () => {
-                      if (!token || !selectedConversationId) return
-                      try {
-                        const response = await api.sendMessagePayload(token, selectedConversationId, {
-                          type: 'sticker',
-                          text: sticker,
-                          sticker,
-                        })
-                        upsertMessage(selectedConversationId, response.message)
-                        setShowStickerPanel(false)
-                        setMessageLimitByConversation((prev) => {
-                          const current = prev[selectedConversationId]
-                          if (!current) return prev
-                          return {
-                            ...prev,
-                            [selectedConversationId]: {
-                              ...current,
-                              sent: current.sent + 1,
-                              remaining: Math.max(0, current.remaining - 1),
-                            },
-                          }
-                        })
-                      } catch (error) {
-                        if (error instanceof ApiError && error.code === 'MESSAGE_LIMIT_NON_FRIEND') {
-                          setChatNotice('Bạn chỉ gửi được tối đa 3 tin nhắn khi chưa kết bạn. Hãy kết bạn để tiếp tục.')
-                        } else if (error instanceof Error) {
-                          setChatNotice(error.message)
-                        }
-                      }
-                    }}
-                  >
-                    {sticker}
-                  </button>
-                )) : <p className={styles.stickerLoading}>Đang tải pack {activeStickerPack}...</p>}
-              </div>
-            ) : null}
-          </footer>
+          ) : null}
 
           {showJumpToLatest ? (
             <button

@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, MessageCircle, UserPlus, Heart, Share2, CheckCheck } from 'lucide-react'
+import { Bell, MessageCircle, UserPlus, Heart, Share2, CheckCheck, Trash2 } from 'lucide-react'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import type { NotificationItem } from '@/types'
 import { connectSocket } from '@/services/socket'
+import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
 
 type NotifFilter = 'all' | 'social' | 'messages'
@@ -74,6 +75,7 @@ export default function NotificationsPage() {
   const [activeFilter, setActiveFilter] = useState<NotifFilter>('all')
   const user = useAuthStore((state) => state.user)
   const [busyActionId, setBusyActionId] = useState<number | string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   const parseMeta = (item: NotificationItem): NotificationMeta | null => {
     const source = item.meta ?? item.meta_json
@@ -103,6 +105,7 @@ export default function NotificationsPage() {
       .catch((error) => {
         console.error('Không thể tải thông báo', error)
       })
+      .finally(() => setIsLoading(false))
   }, [token])
 
   useEffect(() => {
@@ -181,6 +184,19 @@ export default function NotificationsPage() {
     }
   }
 
+  const handleDeleteNotification = async (id: number | string) => {
+    if (!token) return
+    setBusyActionId(id)
+    try {
+      await api.deleteNotification(token, id)
+      setNotifications((prev) => prev.filter((notif) => notif.id !== id))
+    } catch (error) {
+      console.error('Không thể xóa thông báo', error)
+    } finally {
+      setBusyActionId(null)
+    }
+  }
+
   const handleDeleteInvite = async (item: NotificationItem) => {
     if (!token) return
     const meta = parseMeta(item)
@@ -251,7 +267,17 @@ export default function NotificationsPage() {
           </div>
 
           <div className={styles.list}>
-            {filteredNotifications.map((item) => (
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className={styles.item} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.75rem', alignItems: 'center' }}>
+                  <Skeleton style={{ width: 40, height: 40, borderRadius: '50%' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <Skeleton style={{ height: 14, width: '70%' }} />
+                    <Skeleton style={{ height: 12, width: '40%' }} />
+                  </div>
+                </div>
+              ))
+            ) : filteredNotifications.map((item) => (
               <article
                 key={item.id}
                 className={`${styles.item} ${item.is_read ? '' : styles.itemUnread}`}
@@ -303,6 +329,18 @@ export default function NotificationsPage() {
                     </div>
                   ) : null}
                 </div>
+                <button
+                  type="button"
+                  className={styles.deleteNotifBtn}
+                  title="Xóa thông báo"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void handleDeleteNotification(item.id)
+                  }}
+                  disabled={busyActionId === item.id}
+                >
+                  <Trash2 size={14} />
+                </button>
                 {!item.is_read ? <span className={styles.dot} /> : null}
               </article>
             ))}

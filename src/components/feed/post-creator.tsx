@@ -13,6 +13,7 @@ import type { FeedPost } from '@/types'
 export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost) => void }) {
   const [content, setContent] = useState('')
   const [isPosting, setIsPosting] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
   const token = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
 
@@ -20,12 +21,14 @@ export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost
     if (!content.trim() || !token) return
 
     setIsPosting(true)
+    setErrorMsg('')
     try {
       const response = await api.createPost(token, { content })
       setContent('')
       onCreated?.(response.post)
     } catch (error) {
       console.error('Failed to post:', error)
+      setErrorMsg('Đăng bài thất bại, vui lòng thử lại.')
     } finally {
       setIsPosting(false)
     }
@@ -44,10 +47,14 @@ export default function PostCreator({ onCreated }: { onCreated?: (post: FeedPost
             <Textarea
               placeholder="Bạn đang nghĩ gì?"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => {
+                setContent(e.target.value)
+                if (errorMsg) setErrorMsg('')
+              }}
               className="resize-none min-h-[100px]"
               disabled={isPosting}
             />
+            {errorMsg ? <p className="text-sm text-destructive">{errorMsg}</p> : null}
 
             <div className="flex items-center justify-between">
               <div className="flex gap-2">

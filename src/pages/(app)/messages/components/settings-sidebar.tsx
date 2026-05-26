@@ -4,6 +4,7 @@ import {
   Blocks,
   Brush,
   CalendarClock,
+  Check,
   ChevronDown,
   Crown,
   FileText,
@@ -66,7 +67,7 @@ export type SettingsSidebarProps = {
   handleToggleConversationPin: () => void | Promise<void>
   handleToggleConversationMute: () => void | Promise<void>
   handleUpdateNickname: (userId: number) => void | Promise<void>
-  handleUpdateGroupProfile: () => void | Promise<void>
+  handleUpdateGroupProfile: (payload: { name: string; avatarUrl?: string | null }) => void | Promise<void>
   handleBlockPeer: () => void | Promise<void>
   sharedContent: SharedContent
   loadingSharedContent: boolean
@@ -350,6 +351,9 @@ export function SettingsSidebar({
   const [largeText, setLargeText] = useState(false)
   const [roundBubbles, setRoundBubbles] = useState(true)
   const [showAllMembers, setShowAllMembers] = useState(false)
+  const [editingGroupName, setEditingGroupName] = useState(false)
+  const [groupNameDraft, setGroupNameDraft] = useState('')
+  const [savingGroupName, setSavingGroupName] = useState(false)
 
   const description = useMemo(() => {
     if (!isGroup) return formatActivity(peer)
@@ -374,10 +378,63 @@ export function SettingsSidebar({
           )}
         </div>
         <div className={styles.settingsTitleRow}>
-          <h3>{title}</h3>
-          <button type="button" onClick={() => isGroup ? void handleUpdateGroupProfile() : peer ? void handleUpdateNickname(peer.userId) : undefined} title="Chỉnh sửa">
-            <UserPen size={15} />
-          </button>
+          {isGroup && editingGroupName ? (
+            <>
+              <input
+                className={styles.groupNameInput}
+                value={groupNameDraft}
+                onChange={(e) => setGroupNameDraft(e.target.value)}
+                maxLength={80}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && groupNameDraft.trim()) {
+                    void (async () => {
+                      setSavingGroupName(true)
+                      try { await handleUpdateGroupProfile({ name: groupNameDraft.trim(), avatarUrl: conversation.avatarUrl || null }); setEditingGroupName(false) }
+                      finally { setSavingGroupName(false) }
+                    })()
+                  }
+                  if (e.key === 'Escape') setEditingGroupName(false)
+                }}
+              />
+              <button
+                type="button"
+                title="Lưu"
+                disabled={!groupNameDraft.trim() || savingGroupName}
+                onClick={() => {
+                  if (!groupNameDraft.trim()) return
+                  void (async () => {
+                    setSavingGroupName(true)
+                    try { await handleUpdateGroupProfile({ name: groupNameDraft.trim(), avatarUrl: conversation.avatarUrl || null }); setEditingGroupName(false) }
+                    finally { setSavingGroupName(false) }
+                  })()
+                }}
+              >
+                <Check size={14} />
+              </button>
+              <button type="button" title="Hủy" onClick={() => setEditingGroupName(false)}>
+                <X size={14} />
+              </button>
+            </>
+          ) : (
+            <>
+              <h3>{title}</h3>
+              <button
+                type="button"
+                title="Chỉnh sửa"
+                onClick={() => {
+                  if (isGroup) {
+                    setGroupNameDraft(conversation.name || '')
+                    setEditingGroupName(true)
+                  } else if (peer) {
+                    void handleUpdateNickname(peer.userId)
+                  }
+                }}
+              >
+                <UserPen size={15} />
+              </button>
+            </>
+          )}
         </div>
         <p>{description}</p>
         {isGroup ? (
