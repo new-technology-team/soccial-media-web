@@ -14,6 +14,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const setAuth = useAuthStore((state) => state.setAuth)
+  const clearAuth = useAuthStore((state) => state.clearAuth)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -23,6 +24,8 @@ export default function LoginPage() {
   })
 
   useEffect(() => {
+    clearAuth()
+
     if (searchParams.get('reason') === 'session-expired') {
       setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.')
       return
@@ -38,9 +41,11 @@ export default function LoginPage() {
     }
 
     if (socialError === 'callback') {
-      setError('Không thể hoàn tất đăng nhập mạng xã hội. Vui lòng thử lại.')
+      const detail = searchParams.get('socialDetail')
+      const suffix = detail ? ` (${detail})` : ''
+      setError(`Không thể hoàn tất đăng nhập mạng xã hội. Vui lòng thử lại.${suffix}`)
     }
-  }, [searchParams])
+  }, [clearAuth, searchParams])
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
@@ -53,12 +58,14 @@ export default function LoginPage() {
     event.preventDefault()
     setIsLoading(true)
     setError('')
+    clearAuth()
 
     try {
       const payload = await api.login(formData.emailOrPhone.trim(), formData.password)
       setAuth(payload)
       navigate('/feed')
     } catch (err) {
+      clearAuth()
       const message = err instanceof Error ? err.message : 'Email/số điện thoại hoặc mật khẩu không hợp lệ.'
       setError(message)
       if (message.toLowerCase().includes('xác thực')) {

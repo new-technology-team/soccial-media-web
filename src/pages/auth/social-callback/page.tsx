@@ -8,28 +8,72 @@ import { useAuthStore } from '@/contexts/auth-store'
 import type { User } from '@/types'
 import styles from '../auth.module.css'
 
+const backendCallbackBase = '/backend/api/auth'
+
+const getParamSource = () => {
+  const queryParams = new URLSearchParams(window.location.search)
+  const hashText = window.location.hash.replace(/^#/, '')
+  const hashQuery = hashText.includes('?') ? hashText.slice(hashText.indexOf('?') + 1) : hashText
+  const hashParams = new URLSearchParams(hashQuery)
+  const merged = new URLSearchParams(hashParams)
+
+  queryParams.forEach((value, key) => merged.set(key, value))
+  return merged
+}
+
+const getProvider = (params: URLSearchParams) => {
+  const state = params.get('state') || ''
+  const savedProvider = sessionStorage.getItem('zchat-social-provider') || ''
+  if (state.includes('apple') || savedProvider === 'apple') return 'apple'
+  return 'google'
+}
+
 export default function SocialCallbackPage() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((state) => state.setAuth)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+    const params = getParamSource()
     const accessToken = params.get('accessToken')
     const refreshToken = params.get('refreshToken')
     const userText = params.get('user')
 
-    if (!accessToken || !refreshToken || !userText) {
-      navigate('/auth/login?socialError=callback', { replace: true })
+    if (accessToken && refreshToken && userText) {
+      try {
+        const user = JSON.parse(userText) as User
+        setAuth({ accessToken, refreshToken, user })
+        sessionStorage.removeItem('zchat-social-provider')
+        navigate(user.role === 'admin' ? '/admin/dashboard' : '/feed', { replace: true })
+      } catch {
+        navigate('/auth/login?socialError=callback&socialDetail=invalid-payload', { replace: true })
+      }
       return
     }
 
-    try {
-      const user = JSON.parse(userText) as User
-      setAuth({ accessToken, refreshToken, user })
-      navigate(user.role === 'admin' ? '/admin/dashboard' : '/feed', { replace: true })
-    } catch {
-      navigate('/auth/login?socialError=callback', { replace: true })
+    const code = params.get('code')
+    if (code) {
+      const provider = getProvider(params)
+      const callbackParams = new URLSearchParams({ code })
+      const appleUser = params.get('user')
+      if (appleUser) callbackParams.set('user', appleUser)
+      window.location.replace(`${backendCallbackBase}/${provider}/callback?${callbackParams.toString()}`)
+      return
     }
+
+    const idToken = params.get('id_token') || params.get('credential')
+    if (idToken) {
+      const provider = getProvider(params)
+      const callbackParams = new URLSearchParams({ idToken })
+      window.location.replace(`${backendCallbackBase}/${provider}/id-token?${callbackParams.toString()}`)
+      return
+    }
+
+    const error = params.get('error')
+    const receivedKeys = [...params.keys()].filter(Boolean).slice(0, 6).join(',')
+    const detail = error || (receivedKeys ? `missing-payload:${receivedKeys}` : 'missing-payload:no-query')
+    navigate(`/auth/login?socialError=callback&socialDetail=${encodeURIComponent(detail)}`, {
+      replace: true,
+    })
   }, [navigate, setAuth])
 
   return (

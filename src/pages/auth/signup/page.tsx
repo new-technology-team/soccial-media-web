@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AlertCircle, Apple, CalendarDays, Chrome, Lock, Phone, ShieldCheck, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/api/client'
+import { useAuthStore } from '@/contexts/auth-store'
 import { startSocialAuth } from '../social-auth'
 import styles from '../auth.module.css'
 
@@ -19,6 +20,7 @@ const normalizePhoneOrEmail = (value: string) => {
 
 export default function SignupPage() {
   const navigate = useNavigate()
+  const clearAuth = useAuthStore((state) => state.clearAuth)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -30,6 +32,10 @@ export default function SignupPage() {
     password: '',
     confirmPassword: '',
   })
+
+  useEffect(() => {
+    clearAuth()
+  }, [clearAuth])
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = event.target
@@ -111,6 +117,7 @@ export default function SignupPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
+    clearAuth()
 
     const validationError = validateForm()
     if (validationError) {
@@ -144,6 +151,7 @@ export default function SignupPage() {
         navigate('/auth/login')
       }
     } catch (err) {
+      clearAuth()
       setError(err instanceof Error ? err.message : 'Không thể tạo tài khoản. Vui lòng thử lại.')
     } finally {
       setIsLoading(false)

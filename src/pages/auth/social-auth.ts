@@ -12,6 +12,7 @@ export const startSocialAuth = (provider: SocialProvider) => {
   const fallbackUrl = `/backend/api/auth/${provider}?redirectOnError=${errorRedirect}`
   const targetUrl = configuredUrl?.trim() || fallbackUrl
 
+  sessionStorage.setItem('zchat-social-provider', provider)
   window.location.assign(targetUrl)
 }
 
