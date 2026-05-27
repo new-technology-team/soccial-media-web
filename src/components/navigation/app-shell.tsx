@@ -7,7 +7,7 @@ import { Toaster } from '@/components/ui/toaster'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
-  const hideMainNavbar = pathname.startsWith('/admin') || pathname.startsWith('/auth/admin-login')
+  const hideMainNavbar = pathname.startsWith('/admin') || pathname.startsWith('/moderator') || pathname.startsWith('/auth/admin-login')
 
   return (
     <>

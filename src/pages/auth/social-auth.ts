@@ -1,20 +1,17 @@
-type SocialProvider = 'google' | 'apple'
+type SocialProvider = 'google'
 
 const providerLabels: Record<SocialProvider, string> = {
   google: 'Google',
-  apple: 'Apple',
 }
 
 export const startSocialAuth = (provider: SocialProvider) => {
-  const upperProvider = provider.toUpperCase()
-  const configuredUrl = import.meta.env[`VITE_${upperProvider}_AUTH_URL`] as string | undefined
   const errorRedirect = encodeURIComponent(`/auth/login?socialProvider=${provider}`)
-  const fallbackUrl = `/backend/api/auth/${provider}?redirectOnError=${errorRedirect}`
-  const targetUrl = configuredUrl?.trim() || fallbackUrl
+  const targetUrl = `/backend/api/auth/${provider}?redirectOnError=${errorRedirect}`
 
   sessionStorage.setItem('zchat-social-provider', provider)
+  sessionStorage.removeItem('zchat-social-retry')
   window.location.assign(targetUrl)
 }
 
 export const getSocialAuthUnavailableMessage = (provider: SocialProvider) =>
-  `Chưa cấu hình đăng nhập ${providerLabels[provider]}. Hãy thêm VITE_${provider.toUpperCase()}_AUTH_URL hoặc endpoint /api/auth/${provider} ở backend.`
+  `Chưa cấu hình đăng nhập ${providerLabels[provider]}. Hãy thêm OAuth Client ID/Secret ở backend.`

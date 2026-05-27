@@ -1403,6 +1403,14 @@ export default function MessagesPage() {
     })
   }
 
+  const handleReportMessage = (message: ChatMessage) => {
+    setReportDialog({
+      targetType: 'message',
+      targetId: message.id,
+      title: 'Báo cáo tin nhắn',
+    })
+  }
+
   const handleSubmitReport = async (payload: { reason: string; details?: string }) => {
     if (!token || !reportDialog) return
     await api.submitReport(token, {
@@ -2625,6 +2633,37 @@ export default function MessagesPage() {
       return <p className={styles.recalledText}>Tin nhắn đã được thu hồi</p>
     }
 
+    const sharedPost = msg.meta?.sharedPost as
+      | {
+          id?: number | string
+          authorName?: string
+          authorAvatar?: string | null
+          content?: string
+          mediaUrl?: string | null
+          reactionCount?: number
+          commentCount?: number
+        }
+      | undefined
+
+    if (sharedPost) {
+      return (
+        <div className={styles.sharedPostMessage}>
+          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
+          <Link to={sharedPost.id ? `/posts/${sharedPost.id}` : '/feed'} className={styles.sharedPostCard}>
+            <div className={styles.sharedPostAuthor}>
+              {sharedPost.authorAvatar ? <img src={sharedPost.authorAvatar} alt={sharedPost.authorName || 'Tác giả'} /> : <span>{(sharedPost.authorName?.[0] || 'U').toUpperCase()}</span>}
+              <b>{sharedPost.authorName || 'Người dùng ZChat'}</b>
+            </div>
+            {sharedPost.content ? <p>{sharedPost.content}</p> : <p>Bài viết gốc không còn khả dụng</p>}
+            {sharedPost.mediaUrl ? <img src={sharedPost.mediaUrl} alt="Shared post" className={styles.sharedPostImage} loading="lazy" /> : null}
+            <small>
+              {Number(sharedPost.reactionCount || 0)} cảm xúc • {Number(sharedPost.commentCount || 0)} bình luận
+            </small>
+          </Link>
+        </div>
+      )
+    }
+
     if (msg.type === 'image' && msg.mediaUrl) {
       return (
         <div className={styles.mediaWrap}>
@@ -2975,6 +3014,7 @@ export default function MessagesPage() {
             setGroupSearchKeyword={setGroupSearchKeyword}
             toggleGroupMember={toggleGroupMember}
             handleTogglePinMessage={handleTogglePinMessage}
+            handleReportMessage={handleReportMessage}
             handleRecall={handleRecall}
             handleDeleteMessage={handleDeleteMessage}
             handleForward={handleForward}

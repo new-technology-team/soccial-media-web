@@ -1,61 +1,167 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, FileText, Flag, History, LogOut, Settings, Shield, ShieldCheck, Users } from 'lucide-react'
+import {
+  BarChart3,
+  ChevronDown,
+  Database,
+  FileText,
+  Flag,
+  Hash,
+  History,
+  KeyRound,
+  LayoutDashboard,
+  Lock,
+  LogOut,
+  Menu,
+  Settings,
+  Shield,
+  ShieldCheck,
+  Users,
+  X,
+} from 'lucide-react'
 
 import { useAuthStore } from '@/contexts/auth-store'
 import styles from './admin-layout.module.css'
 
-const navItems = [
-  { href: '/admin/dashboard', label: 'Tổng quan', icon: BarChart3 },
-  { href: '/admin/users', label: 'Quản lý người dùng', icon: Users },
-  { href: '/admin/moderators', label: 'Quản lý kiểm duyệt viên', icon: Shield },
-  { href: '/admin/reports', label: 'Quản lý báo cáo', icon: Flag },
-  { href: '/admin/posts', label: 'Quản lý nội dung', icon: FileText },
-  { href: '/admin/statistics', label: 'Thống kê', icon: BarChart3 },
-  { href: '/admin/audit-logs', label: 'Nhật ký hệ thống', icon: History },
-  { href: '/admin/settings', label: 'Cấu hình hệ thống', icon: Settings },
+const groups = [
+  {
+    title: 'Quản trị',
+    items: [
+      { href: '/admin/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
+      { href: '/admin/statistics', label: 'Thống kê', icon: BarChart3 },
+      { href: '/admin/audit-logs', label: 'Nhật ký hệ thống', icon: History },
+    ],
+  },
+  {
+    title: 'Người dùng',
+    items: [
+      { href: '/admin/users', label: 'Quản lý người dùng', icon: Users },
+      { href: '/admin/moderators', label: 'Kiểm duyệt viên', icon: Shield },
+      { href: '/admin/settings#roles', label: 'Phân quyền', icon: KeyRound },
+    ],
+  },
+  {
+    title: 'Nội dung',
+    items: [
+      { href: '/admin/posts', label: 'Quản lý nội dung', icon: FileText },
+      { href: '/admin/reports', label: 'Báo cáo', icon: Flag },
+      { href: '/admin/posts?media=true', label: 'Media', icon: Database },
+      { href: '/admin/statistics#hashtags', label: 'Hashtag', icon: Hash },
+    ],
+  },
+  {
+    title: 'Hệ thống',
+    items: [
+      { href: '/admin/settings', label: 'Cấu hình hệ thống', icon: Settings },
+      { href: '/admin/settings#security', label: 'Bảo mật', icon: Lock },
+      { href: '/admin/audit-logs#logs', label: 'Logs', icon: Database },
+    ],
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const clearAuth = useAuthStore((state) => state.clearAuth)
+  const user = useAuthStore((state) => state.user)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  const activeGroup = useMemo(() => {
+    const group = groups.find((section) => section.items.some((item) => pathname === item.href.split('?')[0].split('#')[0]))
+    return group?.title
+  }, [pathname])
 
   const handleLogout = () => {
     clearAuth()
     navigate('/auth/admin-login', { replace: true })
   }
 
+  const sidebar = (
+    <aside className={styles.sidebar}>
+      <div className={styles.brand}>
+        <span className={styles.badge}>
+          <ShieldCheck size={14} /> ADMIN
+        </span>
+        <strong>ZChat Control Room</strong>
+        <p>Operations console cho quản trị, an toàn nội dung và sức khỏe hệ thống.</p>
+      </div>
+
+      <div className={styles.operator}>
+        <span className={styles.avatar}>{String(user?.fullName || 'AD').slice(0, 2).toUpperCase()}</span>
+        <span>
+          <b>{user?.fullName || 'Admin'}</b>
+          <small>Security session active</small>
+        </span>
+      </div>
+
+      <nav className={styles.nav} aria-label="Admin navigation">
+        {groups.map((group) => {
+          const isOpen = collapsed[group.title] !== false || activeGroup === group.title
+          return (
+            <section key={group.title} className={styles.navGroup}>
+              <button
+                type="button"
+                className={styles.groupButton}
+                aria-expanded={isOpen}
+                onClick={() => setCollapsed((prev) => ({ ...prev, [group.title]: !isOpen }))}
+              >
+                <span>{group.title}</span>
+                <ChevronDown size={15} className={isOpen ? styles.chevronOpen : ''} />
+              </button>
+              {isOpen ? (
+                <div className={styles.groupItems}>
+                  {group.items.map((item) => {
+                    const Icon = item.icon
+                    const targetPath = item.href.split('?')[0].split('#')[0]
+                    const active = pathname === targetPath
+                    return (
+                      <Link
+                        key={item.href}
+                        to={item.href}
+                        className={active ? styles.activeLink : styles.link}
+                        onClick={() => setDrawerOpen(false)}
+                      >
+                        <Icon size={16} />
+                        <span>{item.label}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </section>
+          )
+        })}
+      </nav>
+
+      <button type="button" className={styles.logoutButton} onClick={handleLogout}>
+        <LogOut size={16} />
+        <span>Đăng xuất</span>
+      </button>
+    </aside>
+  )
+
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brand}>
-          <span className={styles.badge}>
-            <ShieldCheck size={14} /> ADMIN
-          </span>
-          <strong>ZChat Control Room</strong>
-          <p>Không gian vận hành riêng cho quản trị viên.</p>
-        </div>
-
-        <nav className={styles.nav}>
-          {navItems.map((item) => {
-            const Icon = item.icon
-            const active = pathname === item.href
-            return (
-              <Link key={item.href} to={item.href} className={active ? styles.activeLink : styles.link}>
-                <Icon size={16} />
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
-        </nav>
-
-        <button type="button" className={styles.logoutButton} onClick={handleLogout}>
-          <LogOut size={16} />
-          <span>Đăng xuất</span>
+      <header className={styles.mobileBar}>
+        <button type="button" className={styles.mobileMenu} onClick={() => setDrawerOpen(true)} aria-label="Mở menu admin">
+          <Menu size={18} />
         </button>
-      </aside>
+        <strong>ZChat Admin</strong>
+        <span className={styles.mobileStatus}>Live</span>
+      </header>
+
+      <div className={styles.desktopSidebar}>{sidebar}</div>
+      {drawerOpen ? (
+        <div className={styles.drawerOverlay} role="dialog" aria-modal="true">
+          <button type="button" className={styles.drawerClose} onClick={() => setDrawerOpen(false)} aria-label="Đóng menu">
+            <X size={18} />
+          </button>
+          {sidebar}
+        </div>
+      ) : null}
 
       <section className={styles.content}>{children}</section>
     </div>

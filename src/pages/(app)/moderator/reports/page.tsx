@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 
 import { api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
+import { useReportRealtime } from '@/hooks/use-report-realtime'
 import { toast } from '@/hooks/use-toast'
 import styles from '../../admin/admin-console.module.css'
 
@@ -13,7 +15,19 @@ const REPORT_LABEL: Record<string, string> = {
   REJECTED: 'Đã từ chối',
 }
 
+const TARGET_LABEL: Record<string, string> = {
+  POST: 'Bài viết',
+  COMMENT: 'Bình luận',
+  MESSAGE: 'Tin nhắn',
+  USER: 'Người dùng',
+}
+
+function normalizeTargetType(report: Record<string, unknown>) {
+  return String(report.reportType || report.targetType || '').toUpperCase()
+}
+
 export default function ModeratorReportsPage() {
+  const location = useLocation()
   const token = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const [reports, setReports] = useState<Array<Record<string, unknown>>>([])
@@ -23,6 +37,15 @@ export default function ModeratorReportsPage() {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null)
   const [nextStatus, setNextStatus] = useState<'IN_REVIEW' | 'RESOLVED' | 'REJECTED'>('IN_REVIEW')
   const [note, setNote] = useState('')
+
+  useReportRealtime({ token, user, setReports })
+
+  useEffect(() => {
+    const type = new URLSearchParams(location.search).get('type')
+    if (type === 'post' || type === 'comment' || type === 'message' || type === 'user') {
+      setTargetType(type)
+    }
+  }, [location.search])
 
   const load = async () => {
     if (!token) return
@@ -37,7 +60,7 @@ export default function ModeratorReportsPage() {
   const filtered = useMemo(() => {
     const q = keyword.trim().toLowerCase()
     return reports.filter((item) => {
-      const type = String(item.reportType || item.targetType || '').toLowerCase()
+      const type = normalizeTargetType(item).toLowerCase()
       const okType = targetType === 'all' || type === targetType
       const okKeyword = !q || JSON.stringify(item).toLowerCase().includes(q)
       return okType && okKeyword
@@ -47,7 +70,11 @@ export default function ModeratorReportsPage() {
   const submit = async () => {
     if (!token || !selected) return
     await api.reviewModerationReport(token, Number(selected.reportId || selected.id), { status: nextStatus, resolutionNote: note })
-    toast({ title: 'Thao tác thành công' })
+    toast({
+      title: `Đã cập nhật báo cáo #${selected.reportId || selected.id}`,
+      description: 'Trạng thái báo cáo đã được ghi nhận và đồng bộ realtime.',
+      type: 'success',
+    })
     setSelected(null)
     setNote('')
     await load()
@@ -73,8 +100,9 @@ export default function ModeratorReportsPage() {
         <select value={targetType} onChange={(event) => setTargetType(event.target.value)}>
           <option value="all">Tất cả loại báo cáo</option>
           <option value="post">Bài viết bị báo cáo</option>
-          <option value="user">Tài khoản bị báo cáo</option>
+          <option value="comment">Bình luận bị báo cáo</option>
           <option value="message">Tin nhắn bị báo cáo</option>
+          <option value="user">Tài khoản bị báo cáo</option>
         </select>
       </section>
       <section className={styles.panel}>
@@ -83,10 +111,11 @@ export default function ModeratorReportsPage() {
           <tbody>
             {filtered.map((report) => {
               const current = String(report.status || 'PENDING')
+              const type = normalizeTargetType(report)
               return (
                 <tr key={String(report.reportId || report.id)}>
                   <td><b>#{String(report.reportId || report.id)}</b><br /><small>{String(report.reason || report.description || 'Không có mô tả')}</small></td>
-                  <td>{String(report.reportType || report.targetType || 'Không rõ')} #{String(report.targetId || '')}</td>
+                  <td>{TARGET_LABEL[type] || 'Không rõ'} #{String(report.targetId || '')}</td>
                   <td><span className={`${styles.badge} ${styles[current.toLowerCase()] || ''}`}>{REPORT_LABEL[current] || current}</span></td>
                   <td>{String(report.resolutionNote || 'Không có dữ liệu')}</td>
                   <td><button type="button" className={styles.button} onClick={() => setSelected(report)}>Xử lý</button></td>

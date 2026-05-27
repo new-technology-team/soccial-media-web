@@ -45,7 +45,16 @@ export default function ModeratorUsersPage() {
     if (action.type === 'warn') await api.warnModerationUser(token, action.user.id, reason)
     if (action.type === 'restrict') await api.restrictModerationUser(token, action.user.id, reason)
     if (action.type === 'temp-lock') await api.tempLockModerationUser(token, action.user.id, reason)
-    toast({ title: 'Thao tác thành công' })
+    toast({
+      title:
+        action.type === 'warn'
+          ? `Đã cảnh cáo "${action.user.fullName}"`
+          : action.type === 'restrict'
+            ? `Đã hạn chế tài khoản "${action.user.fullName}"`
+            : `Đã tạm khóa tài khoản "${action.user.fullName}"`,
+      description: 'Hành động kiểm duyệt đã được ghi nhận. Nếu tài khoản bị khóa, phiên đăng nhập sẽ bị thu hồi.',
+      type: 'success',
+    })
     setAction(null)
     setReason('')
     await loadUsers()

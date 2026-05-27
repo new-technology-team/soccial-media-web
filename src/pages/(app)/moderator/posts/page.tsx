@@ -40,7 +40,16 @@ export default function ModeratorPostsPage() {
   const submit = async () => {
     if (!token || !action) return
     await api.moderatePost(token, action.post.id, { status: action.status, resolutionNote: reason || 'Cập nhật từ trang kiểm duyệt bài viết' })
-    toast({ title: 'Thao tác thành công' })
+    toast({
+      title:
+        action.status === 'hidden'
+          ? `Đã ẩn bài viết #${action.post.id}`
+          : action.status === 'deleted'
+            ? `Đã xóa bài viết vi phạm #${action.post.id}`
+            : `Đã khôi phục bài viết #${action.post.id}`,
+      description: 'Hành động kiểm duyệt đã được ghi nhận và đồng bộ realtime.',
+      type: 'success',
+    })
     setAction(null)
     setReason('')
     await loadPosts()
@@ -54,7 +63,7 @@ export default function ModeratorPostsPage() {
         <div>
           <p className={styles.eyebrow}>Kiểm duyệt viên</p>
           <h1>Bài viết bị báo cáo</h1>
-          <p>Ẩn bài viết, xóa bài viết vi phạm, khôi phục bài viết nếu được cấp quyền và ghi lý do xử lý.</p>
+          <p>Ẩn bài viết, xóa bài viết vi phạm, khôi phục nội dung phù hợp và ghi lý do xử lý.</p>
         </div>
       </header>
       <section className={styles.toolbar}>
@@ -70,7 +79,7 @@ export default function ModeratorPostsPage() {
                 <td><b>#{post.id}</b><br /><small>{post.content || 'Không có nội dung'}</small></td>
                 <td>{post.authorName}</td>
                 <td><span className={`${styles.badge} ${styles[post.status] || ''}`}>{POST_STATUS_LABEL[post.status] || post.status}</span></td>
-                <td>{post.reactionCount} cảm xúc • {post.commentCount} bình luận</td>
+                <td>{post.reactionCount} cảm xúc · {post.commentCount} bình luận</td>
                 <td>
                   <div className={styles.actions}>
                     <button type="button" className={styles.secondary} onClick={() => setAction({ post, status: 'hidden', title: 'Ẩn bài viết?' })}>Ẩn</button>

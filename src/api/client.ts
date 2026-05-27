@@ -29,7 +29,8 @@ const resolveApiAssetUrl = (value: string | null | undefined) => {
 
     try {
       const origin =
-        typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost'
+        typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''
+      if (!origin) return value
       const base = new URL(API_BASE, origin)
       return new URL(value, `${base.origin}/`).toString()
     } catch {
@@ -69,10 +70,17 @@ const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({
   mediaUrl: resolveApiAssetUrl(message.mediaUrl),
 })
 
-const normalizeFeedPost = (post: FeedPost): FeedPost => ({
+export const normalizeFeedPost = (post: FeedPost): FeedPost => ({
   ...post,
   mediaUrl: resolveApiAssetUrl(post.mediaUrl),
   authorAvatar: resolveApiAssetUrl(post.authorAvatar),
+  sharedPost: post.sharedPost
+    ? {
+        ...post.sharedPost,
+        mediaUrl: resolveApiAssetUrl(post.sharedPost.mediaUrl),
+        authorAvatar: resolveApiAssetUrl(post.sharedPost.authorAvatar),
+      }
+    : post.sharedPost,
 })
 
 const normalizeNotification = (item: NotificationItem & Record<string, unknown>): NotificationItem => ({
@@ -379,7 +387,7 @@ export const api = {
     }))
   },
 
-  createPost: (token: string, payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private' }) =>
+  createPost: (token: string, payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private'; sharedPostId?: number | string }) =>
     request<{ post: FeedPost }>(
       '/social/posts',
       {
@@ -685,6 +693,7 @@ export const api = {
       mimeType?: string
       fileSize?: number
       sticker?: string
+      meta?: Record<string, unknown>
     }
   ) =>
     request<{ message: ChatMessage }>(
@@ -797,6 +806,16 @@ export const api = {
   adminAuditLogs: (token: string) =>
     request<{ logs: Array<Record<string, unknown>> }>('/admin/audit-logs', { method: 'GET' }, token),
 
+  adminSystemSettings: (token: string) =>
+    request<{ settings: Record<string, boolean>; updatedAt?: string | null }>('/admin/settings', { method: 'GET' }, token),
+
+  updateAdminSystemSettings: (token: string, settings: Record<string, boolean>) =>
+    request<{ message: string; settings: Record<string, boolean> }>(
+      '/admin/settings',
+      { method: 'PATCH', body: JSON.stringify({ settings }) },
+      token
+    ),
+
   adminReports: (token: string, status?: string) => {
     const suffix = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : ''
     return request<{ reports: Array<Record<string, unknown>> }>(`/admin/reports${suffix}`, { method: 'GET' }, token)
@@ -821,7 +840,7 @@ export const api = {
   updateModeratorPermissions: (
     token: string,
     userId: number,
-    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: User['accountStatus']; reason?: string }
+    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: User['accountStatus']; reason?: string; permissions?: string[] }
   ) =>
     request<{ message: string; moderator: User }>(
       `/admin/moderators/${userId}/permissions`,

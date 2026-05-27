@@ -4,7 +4,15 @@ import { FormEvent, useEffect, useState } from 'react'
 import { AppDialog, DialogButton } from './app-dialog'
 import styles from './dialogs.module.css'
 
-const REPORT_REASONS = ['Spam', 'Lừa đảo', 'Quấy rối', 'Nội dung không phù hợp', 'Giả mạo', 'Khác']
+const REPORT_REASONS = [
+  'Spam',
+  'Harassment',
+  'Hate speech',
+  'Violence',
+  'Sexual content',
+  'Fake information',
+  'Scam',
+]
 
 export function ReportDialog({
   open,
@@ -32,10 +40,6 @@ export function ReportDialog({
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    if (reason === 'Khác' && !details.trim()) {
-      setError('Vui lòng mô tả lý do báo cáo.')
-      return
-    }
 
     try {
       setLoading(true)
@@ -53,7 +57,7 @@ export function ReportDialog({
       open={open}
       onOpenChange={(value) => !loading && onOpenChange(value)}
       title={title}
-      description="Báo cáo sẽ được gửi đến quản trị viên để xem xét."
+      description="Báo cáo sẽ được gửi đến đội ngũ kiểm duyệt để xem xét."
       footer={
         <>
           <DialogButton type="button" variant="secondary" disabled={loading} onClick={() => onOpenChange(false)}>
@@ -75,21 +79,17 @@ export function ReportDialog({
             </label>
           ))}
         </div>
-        {reason === 'Khác' ? (
-          <textarea
-            className={styles.textarea}
-            value={details}
-            onChange={(event) => {
-              setDetails(event.target.value)
-              setError(null)
-            }}
-            placeholder="Mô tả lý do báo cáo..."
-            autoFocus
-          />
-        ) : null}
+        <textarea
+          className={styles.textarea}
+          value={details}
+          onChange={(event) => {
+            setDetails(event.target.value)
+            setError(null)
+          }}
+          placeholder="Ghi chú thêm cho kiểm duyệt viên (không bắt buộc)..."
+        />
         {error ? <span className={styles.error}>{error}</span> : null}
       </form>
     </AppDialog>
   )
 }
-

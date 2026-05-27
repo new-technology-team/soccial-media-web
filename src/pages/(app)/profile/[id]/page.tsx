@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Rss, Settings } from 'lucide-react'
 import { useAuthStore } from '@/contexts/auth-store'
 import { api } from '@/api/client'
+import { useSocialRealtime } from '@/hooks/use-social-realtime'
 import ProfileTabs, { type ProfileTab } from '@/components/navigation/profile-tabs'
 import type { FeedPost, FriendConnection } from '@/types'
 import styles from './page.module.css'
@@ -91,6 +92,12 @@ export default function ProfilePage() {
       : userPosts[0]?.authorAvatar || profileFriend?.avatarUrl || null
   const initials = (profileName[0] || 'U').toUpperCase()
   const isOwnProfile = Boolean(me?.id && String(me.id) === profileId)
+
+  useSocialRealtime({
+    token,
+    user: me,
+    setPosts,
+  })
 
   useEffect(() => {
     setProfileAvatarBroken(false)

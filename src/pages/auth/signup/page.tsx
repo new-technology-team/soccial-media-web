@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertCircle, Apple, CalendarDays, Chrome, Lock, Phone, ShieldCheck, User } from 'lucide-react'
+import { AlertCircle, CalendarDays, Chrome, Lock, Phone, ShieldCheck, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/api/client'
@@ -330,16 +330,6 @@ export default function SignupPage() {
           >
             <Chrome size={17} />
             Google
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className={styles.socialBtn}
-            disabled={isLoading}
-            onClick={() => startSocialAuth('apple')}
-          >
-            <Apple size={17} />
-            Apple
           </Button>
         </div>
 

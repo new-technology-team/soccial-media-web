@@ -22,9 +22,6 @@ const getParamSource = () => {
 }
 
 const getProvider = (params: URLSearchParams) => {
-  const state = params.get('state') || ''
-  const savedProvider = sessionStorage.getItem('zchat-social-provider') || ''
-  if (state.includes('apple') || savedProvider === 'apple') return 'apple'
   return 'google'
 }
 
@@ -54,8 +51,6 @@ export default function SocialCallbackPage() {
     if (code) {
       const provider = getProvider(params)
       const callbackParams = new URLSearchParams({ code })
-      const appleUser = params.get('user')
-      if (appleUser) callbackParams.set('user', appleUser)
       window.location.replace(`${backendCallbackBase}/${provider}/callback?${callbackParams.toString()}`)
       return
     }
@@ -69,6 +64,15 @@ export default function SocialCallbackPage() {
     }
 
     const error = params.get('error')
+    const savedProvider = sessionStorage.getItem('zchat-social-provider')
+    const alreadyRetried = sessionStorage.getItem('zchat-social-retry') === 'true'
+    if (!error && savedProvider && !alreadyRetried && [...params.keys()].length === 0) {
+      sessionStorage.setItem('zchat-social-retry', 'true')
+      window.location.replace(`${backendCallbackBase}/${savedProvider}`)
+      return
+    }
+
+    sessionStorage.removeItem('zchat-social-retry')
     const receivedKeys = [...params.keys()].filter(Boolean).slice(0, 6).join(',')
     const detail = error || (receivedKeys ? `missing-payload:${receivedKeys}` : 'missing-payload:no-query')
     navigate(`/auth/login?socialError=callback&socialDetail=${encodeURIComponent(detail)}`, {

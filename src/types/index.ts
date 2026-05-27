@@ -12,6 +12,7 @@ export interface User {
   lockedUntil?: string | null
   warningCount?: number
   restrictionReason?: string | null
+  permissions?: string[]
 }
 
 export interface AuthPayload {
@@ -27,6 +28,19 @@ export interface FeedPost {
   authorAvatar: string | null
   content: string
   mediaUrl: string | null
+  sharedPostId?: number | string | null
+  sharedPost?: {
+    id?: number | string
+    authorId?: number
+    authorName?: string
+    authorAvatar?: string | null
+    content?: string
+    mediaUrl?: string | null
+    reactionCount?: number
+    commentCount?: number
+    createdAt?: string
+    unavailable?: boolean
+  } | null
   visibility: 'public' | 'private'
   status: 'published' | 'hidden' | 'deleted'
   reactionCount: number

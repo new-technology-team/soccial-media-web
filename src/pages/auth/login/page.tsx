@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertCircle, Apple, Chrome, Eye, EyeOff, Lock, Smartphone } from 'lucide-react'
+import { AlertCircle, Chrome, Eye, EyeOff, Lock, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/api/client'
@@ -35,15 +35,13 @@ export default function LoginPage() {
     const socialError = searchParams.get('socialError')
     if (socialError === 'missing-config' && socialProvider) {
       setError(
-        `Đăng nhập ${socialProvider === 'google' ? 'Google' : 'Apple'} chưa được cấu hình. Vui lòng thêm OAuth Client ID ở backend.`
+        `Đăng nhập ${socialProvider === 'google' ? 'Google' : 'mạng xã hội'} chưa được cấu hình. Vui lòng thêm OAuth Client ID ở backend.`
       )
       return
     }
 
     if (socialError === 'callback') {
-      const detail = searchParams.get('socialDetail')
-      const suffix = detail ? ` (${detail})` : ''
-      setError(`Không thể hoàn tất đăng nhập mạng xã hội. Vui lòng thử lại.${suffix}`)
+      setError('Không thể hoàn tất đăng nhập mạng xã hội. Vui lòng thử lại.')
     }
   }, [clearAuth, searchParams])
 
@@ -63,6 +61,10 @@ export default function LoginPage() {
     try {
       const payload = await api.login(formData.emailOrPhone.trim(), formData.password)
       setAuth(payload)
+      if (payload.user.role === 'admin') {
+        navigate('/admin/dashboard')
+        return
+      }
       navigate('/feed')
     } catch (err) {
       clearAuth()
@@ -157,16 +159,6 @@ export default function LoginPage() {
               <Chrome size={17} />
               Google
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className={styles.socialBtn}
-              disabled={isLoading}
-              onClick={() => startSocialAuth('apple')}
-            >
-              <Apple size={17} />
-              Apple
-            </Button>
           </div>
 
           <p className={styles.switchText}>
@@ -174,7 +166,7 @@ export default function LoginPage() {
           </p>
 
           <p className={styles.switchTextSecondary}>
-            Là quản trị viên? <Link to="/auth/admin-login">Đăng nhập admin</Link>
+            Là admin/kiểm duyệt viên? <Link to="/auth/admin-login">Đăng nhập vận hành</Link>
           </p>
         </form>
       </div>
