@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { api, isAuthExpiredError } from '@/api/client'
 import { ConfirmDialog, ReportDialog } from '@/components/dialogs'
+import Sidebar from '@/components/navigation/sidebar'
 import type { FeedComment, FeedPost } from '@/types'
 import { useAuthStore } from '@/contexts/auth-store'
 import { toast } from '@/hooks/use-toast'
@@ -115,6 +116,7 @@ export default function FeedPage() {
   const me = useAuthStore((state) => state.user)
   const clearAuth = useAuthStore((state) => state.clearAuth)
   const [posts, setPosts] = useState<FeedPost[]>([])
+  const [isLoadingFeed, setIsLoadingFeed] = useState(true)
   const [content, setContent] = useState('')
   const [modalContent, setModalContent] = useState('')
   const [isPosting, setIsPosting] = useState(false)
@@ -185,6 +187,7 @@ export default function FeedPage() {
 
   useEffect(() => {
     const loadFeed = async () => {
+      setIsLoadingFeed(true)
       try {
         const response = await api.listFeed(token || undefined)
         const dedupedPosts = dedupePostsById(response.posts)
@@ -193,6 +196,8 @@ export default function FeedPage() {
       } catch (error) {
         if (handleAuthExpired(error)) return
         console.error('Failed to load feed', error)
+      } finally {
+        setIsLoadingFeed(false)
       }
     }
 
@@ -916,85 +921,18 @@ export default function FeedPage() {
   return (
     <div className={styles.page}>
       <div className={styles.layout}>
-        <aside className={styles.leftRail}>
-          <div className={styles.brandWrap}>
-            <div className={styles.brandIcon}>
-              <MessageCircle size={21} />
-            </div>
-            <div>
-              <p className={styles.brandTitle}>ZChat</p>
-              <p className={styles.brandSub}>Mạng xã hội chuyên nghiệp</p>
-            </div>
-          </div>
-
-          <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railProfile}>
-            <span className={styles.avatarBadge}>{(me?.fullName?.[0] || 'K').toUpperCase()}</span>
-            <span>
-              <b>{isGuestView ? 'Khách vãng lai' : me?.fullName || 'Người dùng'}</b>
-              <small>{isGuestView ? 'Đăng nhập để tương tác' : 'Xem hồ sơ của bạn'}</small>
-            </span>
-          </Link>
-
-          <nav className={styles.railNav}>
-            <Link to="/feed" className={`${styles.railItem} ${styles.railItemActive}`}>
-              <House size={17} />
-              <span>Bảng tin</span>
-            </Link>
-            <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railItem}>
-              <UserRound size={17} />
-              <span>Hồ sơ</span>
-            </Link>
-            <Link to="/messages" className={styles.railItem}>
-              <MessagesSquare size={17} />
-              <span>Trò chuyện</span>
-            </Link>
-          </nav>
-
-          <button
-            type="button"
-            className={styles.newPostBtn}
-            onClick={() => {
-              if (isGuestView) {
-                navigate('/auth/login?next=/feed')
-                return
-              }
-              setIsModalOpen(true)
-            }}
-          >
-            <PenLine size={16} />
-            <span>Tạo bài viết</span>
-          </button>
-
-          <div className={styles.railBottom}>
-            <Link to="/settings" className={styles.bottomBtn}>
-              <Settings size={15} />
-              <span>Cài đặt</span>
-            </Link>
-            <button type="button" className={styles.bottomBtn}>
-              <CircleHelp size={15} />
-              <span>Hỗ trợ</span>
-            </button>
-          </div>
-        </aside>
+        <Sidebar
+          user={me}
+          onCreatePost={() => {
+            if (isGuestView) {
+              navigate('/auth/login?next=/feed')
+              return
+            }
+            setIsModalOpen(true)
+          }}
+        />
 
         <section className={styles.mainCol}>
-          <header className={styles.topBar}>
-            <div className={styles.feedHeading}>
-              <h1>Bảng tin</h1>
-              <p>Cập nhật mới từ cộng đồng của bạn</p>
-            </div>
-            <input className={styles.searchInput} placeholder="Tìm kiếm..." />
-            <div className={styles.topActions}>
-              <button type="button" className={styles.iconBtn}>
-                <Bell size={16} />
-              </button>
-              <button type="button" className={styles.iconBtn}>
-                <Settings size={16} />
-              </button>
-              <div className={styles.avatarBadge}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
-            </div>
-          </header>
-
           {isGuestView ? (
             <section className={styles.guestBanner}>
               <h3>Chế độ khách vãng lai</h3>
@@ -1038,6 +976,13 @@ export default function FeedPage() {
           {errorText ? <p className={styles.errorBanner}>{errorText}</p> : null}
 
           <div className={styles.feedList}>
+            {isLoadingFeed ? (
+              <>
+                <div className={styles.feedSkeleton} />
+                <div className={styles.feedSkeleton} />
+                <div className={styles.feedSkeleton} />
+              </>
+            ) : null}
             {visiblePosts.map((post) => {
               const postComments = commentLists[post.id] || []
               const paging = commentPaging[post.id]

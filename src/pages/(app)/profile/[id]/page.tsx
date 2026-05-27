@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Rss, Settings } from 'lucide-react'
 import { useAuthStore } from '@/contexts/auth-store'
 import { api } from '@/api/client'
+import ProfileTabs, { type ProfileTab } from '@/components/navigation/profile-tabs'
 import type { FeedPost, FriendConnection } from '@/types'
 import styles from './page.module.css'
 
@@ -20,7 +21,7 @@ export default function ProfilePage() {
   const [friendStatus, setFriendStatus] = useState<'none' | 'pending' | 'accepted'>('none')
   const [socialActionBusy, setSocialActionBusy] = useState(false)
   const [profileAvatarBroken, setProfileAvatarBroken] = useState(false)
-  const [activeTab, setActiveTab] = useState<'posts' | 'about' | 'friends' | 'photos' | 'videos'>('posts')
+  const [activeTab, setActiveTab] = useState<ProfileTab>('posts')
   const [mediaOnly, setMediaOnly] = useState(false)
 
   useEffect(() => {
@@ -208,23 +209,7 @@ export default function ProfilePage() {
           )}
         </header>
 
-        <nav className={styles.tabs}>
-          <button type="button" className={`${styles.tab} ${activeTab === 'posts' ? styles.tabActive : ''}`} onClick={() => setActiveTab('posts')}>
-            Bài viết
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'about' ? styles.tabActive : ''}`} onClick={() => setActiveTab('about')}>
-            Giới thiệu
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'friends' ? styles.tabActive : ''}`} onClick={() => setActiveTab('friends')}>
-            Bạn bè
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'photos' ? styles.tabActive : ''}`} onClick={() => setActiveTab('photos')}>
-            Ảnh
-          </button>
-          <button type="button" className={`${styles.tab} ${activeTab === 'videos' ? styles.tabActive : ''}`} onClick={() => setActiveTab('videos')}>
-            Video
-          </button>
-        </nav>
+        <ProfileTabs activeTab={activeTab} onChange={setActiveTab} />
 
         <div className={styles.grid}>
           <aside className={styles.leftCol}>
@@ -316,7 +301,6 @@ export default function ProfilePage() {
               <div className={styles.composerActions}>
                 <button type="button" onClick={() => navigate('/feed?compose=1')}>Tạo bài viết</button>
                 <button type="button" onClick={() => setActiveTab('photos')}>Ảnh/Video</button>
-                <button type="button" onClick={() => navigate('/feed')}>Bảng tin</button>
               </div>
             </section>
 

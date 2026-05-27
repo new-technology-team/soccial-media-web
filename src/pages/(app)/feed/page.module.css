@@ -8,9 +8,8 @@
   --feed-muted: #5f7087;
   --feed-primary: #3567f1;
   min-height: calc(100vh - 64px);
-  padding: 0.95rem 0 1.4rem;
-  background:
-    linear-gradient(180deg, rgba(243, 247, 255, 0.58), rgba(245, 247, 251, 0));
+  padding: 16px 0 24px;
+  background: #f4f6f8;
 }
 
 .page :where(input, textarea, select, button) {
@@ -18,11 +17,12 @@
 }
 
 .layout {
-  width: min(1320px, calc(100% - 1.2rem));
+  width: min(1360px, calc(100% - 32px));
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr) 300px;
-  gap: 1.1rem;
+  grid-template-columns: 280px minmax(0, 680px) minmax(240px, 300px);
+  justify-content: center;
+  gap: 16px;
 }
 
 .leftRail {
@@ -287,10 +287,10 @@
 
 .composer {
   border: 1px solid var(--feed-border);
-  border-radius: 24px;
+  border-radius: 12px;
   background: var(--feed-surface);
-  box-shadow: 0 16px 38px rgba(28, 43, 78, 0.09);
-  padding: 1rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  padding: 16px;
 }
 
 .guestBanner {
@@ -397,9 +397,20 @@
 }
 
 .feedList {
-  margin-top: 0.9rem;
+  margin-top: 16px;
   display: grid;
-  gap: 0.9rem;
+  gap: 16px;
+}
+
+.feedSkeleton {
+  height: 220px;
+  border: 1px solid var(--feed-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent),
+    #e9eef5;
+  background-size: 220px 100%, 100% 100%;
+  animation: skeletonSweep 1300ms ease-in-out infinite;
 }
 
 .feedLoadingMore,
@@ -415,9 +426,9 @@
 
 .postCard {
   border: 1px solid var(--feed-border);
-  border-radius: 24px;
+  border-radius: 12px;
   background: var(--feed-surface);
-  box-shadow: 0 16px 38px rgba(28, 43, 78, 0.09);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
   overflow: visible;
 }
 
@@ -576,8 +587,10 @@
   display: block;
   margin-top: 0.65rem;
   width: 100%;
-  height: min(55vw, 380px);
-  object-fit: cover;
+  max-height: 520px;
+  height: auto;
+  object-fit: contain;
+  background: #f1f5f9;
 }
 
 .postStats {
@@ -856,11 +869,11 @@
 
 .empty {
   border: 1px dashed rgba(117, 119, 120, 0.4);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  background: #fff;
   color: #5d666c;
   text-align: center;
-  padding: 1rem;
+  padding: 32px 16px;
 }
 
 .rightCol {
@@ -871,10 +884,10 @@
 
 .widget {
   border: 1px solid var(--feed-border);
-  border-radius: 22px;
+  border-radius: 12px;
   background: var(--feed-surface);
-  box-shadow: 0 14px 34px rgba(28, 43, 78, 0.08);
-  padding: 0.85rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  padding: 16px;
 }
 
 .widget h3 {
@@ -1359,7 +1372,7 @@
 
 @media (max-width: 1180px) {
   .layout {
-    grid-template-columns: 244px minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 680px);
   }
 
   .rightCol {
@@ -1370,31 +1383,6 @@
 @media (max-width: 880px) {
   .layout {
     grid-template-columns: 1fr;
-  }
-
-  .leftRail {
-    position: static;
-    height: auto;
-  }
-
-  .railNav {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .railItem {
-    justify-content: center;
-    min-width: 0;
-    padding: 0 0.35rem;
-  }
-
-  .newPostBtn {
-    margin-top: 0.6rem;
-  }
-
-  .railBottom {
-    margin-top: 0.8rem;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .topBar {
@@ -1409,23 +1397,8 @@
 
 @media (max-width: 640px) {
   .layout {
-    width: min(100%, calc(100% - 0.7rem));
-    gap: 0.72rem;
-  }
-
-  .leftRail {
-    border-radius: 20px;
-    padding: 0.8rem;
-  }
-
-  .railProfile {
-    margin-bottom: 0.5rem;
-  }
-
-  .railItem {
-    min-height: 40px;
-    gap: 0.28rem;
-    font-size: 0.74rem;
+    width: min(100%, calc(100% - 16px));
+    gap: 12px;
   }
 
   .topBar {
@@ -1480,5 +1453,15 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes skeletonSweep {
+  from {
+    background-position: -220px 0, 0 0;
+  }
+
+  to {
+    background-position: calc(100% + 220px) 0, 0 0;
   }
 }
