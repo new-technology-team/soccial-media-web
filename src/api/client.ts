@@ -133,7 +133,7 @@ const buildHeaders = (token?: string) => {
   return headers
 }
 
-const request = async <T>(
+export const request = async <T>(
   path: string,
   options: RequestInit = {},
   token?: string,
@@ -859,6 +859,9 @@ export const api = {
     return request<{ reports: Array<Record<string, unknown>> }>(`/moderator/reports${suffix}`, { method: 'GET' }, token)
   },
 
+  getModerationReport: (token: string, reportId: number) =>
+    request<{ report: Record<string, unknown> }>(`/moderator/reports/${reportId}`, { method: 'GET' }, token),
+
   moderationUsers: (token: string) =>
     request<{ users: User[] }>('/social/admin/users', { method: 'GET' }, token),
 
@@ -870,6 +873,13 @@ export const api = {
     request<{ message: string; report: Record<string, unknown> }>(
       `/moderator/reports/${reportId}/status`,
       { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ),
+
+  assignModerationReport: (token: string, reportId: number, assignedTo: number | null) =>
+    request<{ message: string; report: Record<string, unknown> }>(
+      `/moderator/reports/${reportId}/assign`,
+      { method: 'PATCH', body: JSON.stringify({ assignedTo }) },
       token
     ),
 

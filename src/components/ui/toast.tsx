@@ -16,9 +16,12 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      'fixed right-0 top-0 z-[100] flex max-h-screen w-full flex-col gap-3 p-4 sm:max-w-[420px]',
+      'fixed bottom-4 left-1/2 z-[2147483647] flex w-[min(100vw-1rem,420px)] -translate-x-1/2 flex-col gap-3 p-0 sm:bottom-auto sm:left-auto sm:right-4 sm:top-4 sm:w-[420px] sm:translate-x-0',
       className,
     )}
+    role="status"
+    aria-live="polite"
+    aria-label="Thông báo hệ thống"
     {...props}
   />
 ))
@@ -29,14 +32,13 @@ const toastVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-slate-200/80 bg-white/90 text-slate-900',
-        success: 'border-emerald-200/90 bg-white/90 text-slate-900',
-        error: 'border-red-200/90 bg-white/90 text-slate-900',
-        warning: 'border-amber-200/90 bg-white/90 text-slate-900',
-        info: 'border-sky-200/90 bg-white/90 text-slate-900',
-        loading: 'border-slate-200/90 bg-white/90 text-slate-900',
-        destructive:
-          'destructive group border-red-200/90 bg-white/90 text-slate-900',
+        default: 'border-slate-200/80 bg-white/96 text-slate-900',
+        success: 'border-emerald-200/90 bg-gradient-to-br from-white to-emerald-50/70 text-slate-900',
+        error: 'border-rose-200/90 bg-gradient-to-br from-white to-rose-50/70 text-slate-900',
+        warning: 'border-amber-200/90 bg-gradient-to-br from-white to-amber-50/80 text-slate-900',
+        info: 'border-sky-200/90 bg-gradient-to-br from-white to-sky-50/80 text-slate-900',
+        loading: 'border-slate-200/90 bg-gradient-to-br from-white to-slate-50/80 text-slate-900',
+        destructive: 'destructive group border-rose-200/90 bg-gradient-to-br from-white to-rose-50/70 text-slate-900',
       },
     },
     defaultVariants: {
@@ -67,7 +69,7 @@ const ToastAction = React.forwardRef<
   <ToastPrimitives.Action
     ref={ref}
     className={cn(
-      'inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-muted/40 group-[.destructive]:hover:border-destructive/30 group-[.destructive]:hover:bg-destructive group-[.destructive]:hover:text-destructive-foreground group-[.destructive]:focus:ring-destructive',
+      'inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-rose-200 group-[.destructive]:hover:border-rose-300 group-[.destructive]:hover:bg-rose-600 group-[.destructive]:hover:text-white group-[.destructive]:focus:ring-rose-500',
       className,
     )}
     {...props}
@@ -82,7 +84,7 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      'absolute right-2 top-2 rounded-md p-1 text-slate-500 opacity-70 transition-opacity hover:text-slate-900 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-sky-400 group-hover:opacity-100',
+      'absolute right-2 top-2 rounded-md p-1 text-slate-500/80 opacity-80 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-sky-400 group-hover:opacity-100',
       className,
     )}
     toast-close=""
@@ -99,7 +101,7 @@ const ToastTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Title
     ref={ref}
-    className={cn('text-sm font-semibold', className)}
+    className={cn('text-sm font-semibold tracking-tight text-slate-950', className)}
     {...props}
   />
 ))
@@ -111,7 +113,7 @@ const ToastDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Description
     ref={ref}
-    className={cn('text-sm opacity-90', className)}
+    className={cn('text-sm leading-5 text-slate-600', className)}
     {...props}
   />
 ))

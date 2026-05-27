@@ -625,6 +625,12 @@ export default function MessagesPage() {
       refreshConversations().catch(() => undefined)
     })
 
+    socket.on('message:deleted', (payload: { conversationId: string; messageId?: string }) => {
+      if (!payload?.messageId) return
+      removeMessageFromConversation(String(payload.conversationId), String(payload.messageId))
+      refreshConversations().catch(() => undefined)
+    })
+
     socket.on('conversation:updated', () => {
       refreshConversations().catch(() => undefined)
     })
@@ -832,6 +838,7 @@ export default function MessagesPage() {
       socket.off('message:new')
       socket.off('message:reaction')
       socket.off('message:updated')
+      socket.off('message:deleted')
       socket.off('message:typing')
       socket.off('message:seen')
       socket.off('conversation:updated')
@@ -1149,19 +1156,28 @@ export default function MessagesPage() {
     return (messagesByConversation[selectedConversationId] || []).filter((item) => pinnedMessageIds.has(item.id))
   }, [messagesByConversation, pinnedMessageIds, selectedConversationId])
 
-  const chatPanelStyle = useMemo(() => {
-    const style: CSSProperties & Record<string, string> = {}
+  const chatPanelThemeClass = useMemo(() => {
     const themeColor = selectedConversationUiPrefs.themeColor ?? selectedConversation?.themeColor
     const backgroundUrl = selectedConversationUiPrefs.backgroundUrl ?? selectedConversation?.backgroundUrl
+    if (!themeColor && !backgroundUrl) return ''
+    const safeKey = [themeColor || 'default', backgroundUrl || ''].join('|').replace(/[^a-z0-9_-]/gi, '_').slice(0, 120)
+    return `chat-panel-theme-${safeKey}`
+  }, [selectedConversation?.backgroundUrl, selectedConversation?.themeColor, selectedConversationUiPrefs.backgroundUrl, selectedConversationUiPrefs.themeColor])
+
+  const chatPanelThemeStyle = useMemo(() => {
+    const themeColor = selectedConversationUiPrefs.themeColor ?? selectedConversation?.themeColor
+    const backgroundUrl = selectedConversationUiPrefs.backgroundUrl ?? selectedConversation?.backgroundUrl
+    if (!themeColor && !backgroundUrl) return ''
+    const rules: string[] = []
     if (themeColor) {
-      style['--chat-primary'] = themeColor
-      style['--chat-mine'] = `linear-gradient(135deg, color-mix(in srgb, ${themeColor} 88%, #ffffff) 0%, ${themeColor} 100%)`
+      rules.push(`--chat-primary: ${themeColor};`)
+      rules.push(`--chat-mine: linear-gradient(135deg, color-mix(in srgb, ${themeColor} 88%, #ffffff) 0%, ${themeColor} 100%);`)
     }
     if (backgroundUrl) {
-      style['--conversation-bg-image'] = `url("${backgroundUrl.replace(/"/g, '\\"')}")`
+      rules.push(`--conversation-bg-image: url("${backgroundUrl.replace(/"/g, '\\"')}");`)
     }
-    return style
-  }, [selectedConversation?.backgroundUrl, selectedConversation?.themeColor, selectedConversationUiPrefs.backgroundUrl, selectedConversationUiPrefs.themeColor])
+    return `.${chatPanelThemeClass} { ${rules.join(' ')} }`
+  }, [chatPanelThemeClass, selectedConversation?.backgroundUrl, selectedConversation?.themeColor, selectedConversationUiPrefs.backgroundUrl, selectedConversationUiPrefs.themeColor])
 
   const directPeerFriendship = directPeer ? friendMap[directPeer.id] : null
   const isDirectPeerFriend = Boolean(directPeerFriendship && directPeerFriendship.status === 'accepted')
@@ -2770,13 +2786,14 @@ export default function MessagesPage() {
           }}
         />
 
+        {chatPanelThemeStyle ? <style>{chatPanelThemeStyle}</style> : null}
         <section
           className={[
             styles.chatPanel,
+            chatPanelThemeClass,
             selectedConversationUiPrefs.largeText ? styles.chatPanelLargeText : '',
             selectedConversationUiPrefs.roundBubbles ? '' : styles.chatPanelSquareBubbles,
           ].filter(Boolean).join(' ')}
-          style={chatPanelStyle}
         >
           <header className={styles.chatHeader}>
             <div className={styles.chatIdentity}>

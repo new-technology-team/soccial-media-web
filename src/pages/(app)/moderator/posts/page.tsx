@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
@@ -15,6 +15,7 @@ const POST_STATUS_LABEL: Record<string, string> = {
 }
 
 export default function ModeratorPostsPage() {
+  const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const [posts, setPosts] = useState<FeedPost[]>([])
@@ -48,7 +49,7 @@ export default function ModeratorPostsPage() {
             ? `Đã xóa bài viết vi phạm #${action.post.id}`
             : `Đã khôi phục bài viết #${action.post.id}`,
       description: 'Hành động kiểm duyệt đã được ghi nhận và đồng bộ realtime.',
-      type: 'success',
+      variant: 'success',
     })
     setAction(null)
     setReason('')
@@ -65,6 +66,9 @@ export default function ModeratorPostsPage() {
           <h1>Bài viết bị báo cáo</h1>
           <p>Ẩn bài viết, xóa bài viết vi phạm, khôi phục nội dung phù hợp và ghi lý do xử lý.</p>
         </div>
+        <button type="button" className={styles.secondary} onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/moderator/dashboard'))}>
+          ← Quay về
+        </button>
       </header>
       <section className={styles.toolbar}>
         <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Tìm kiếm bài viết..." />

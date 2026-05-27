@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
@@ -18,6 +19,7 @@ const ACCOUNT_LABEL: Record<string, string> = {
 }
 
 export default function ModeratorUsersPage() {
+  const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
   const me = useAuthStore((state) => state.user)
   const [users, setUsers] = useState<User[]>([])
@@ -70,6 +72,9 @@ export default function ModeratorUsersPage() {
           <h1>Tài khoản bị báo cáo</h1>
           <p>Cảnh cáo người dùng, hạn chế tài khoản, tạm khóa tài khoản và xem lịch sử vi phạm.</p>
         </div>
+        <button type="button" className={styles.secondary} onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/moderator/dashboard'))}>
+          ← Quay về
+        </button>
       </header>
       <section className={styles.toolbar}>
         <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Tìm kiếm tài khoản..." />
