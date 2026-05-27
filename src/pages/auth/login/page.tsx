@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertCircle, Eye, EyeOff, Lock, Smartphone } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { AlertCircle, Apple, Chrome, Eye, EyeOff, Lock, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
+import { startSocialAuth } from '../social-auth'
 import styles from '../auth.module.css'
 
 export default function LoginPage() {
@@ -23,33 +23,46 @@ export default function LoginPage() {
   })
 
   useEffect(() => {
-    const reason = searchParams.get('reason')
-    if (reason === 'session-expired') {
+    if (searchParams.get('reason') === 'session-expired') {
       setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.')
+      return
+    }
+
+    const socialProvider = searchParams.get('socialProvider')
+    const socialError = searchParams.get('socialError')
+    if (socialError === 'missing-config' && socialProvider) {
+      setError(
+        `Đăng nhập ${socialProvider === 'google' ? 'Google' : 'Apple'} chưa được cấu hình. Vui lòng thêm OAuth Client ID ở backend.`
+      )
+      return
+    }
+
+    if (socialError === 'callback') {
+      setError('Không thể hoàn tất đăng nhập mạng xã hội. Vui lòng thử lại.')
     }
   }, [searchParams])
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData((prev) => ({
+      ...prev,
+      [event.target.name]: event.target.value,
+    }))
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setIsLoading(true)
     setError('')
 
     try {
-      const payload = await api.login(formData.emailOrPhone, formData.password)
+      const payload = await api.login(formData.emailOrPhone.trim(), formData.password)
       setAuth(payload)
       navigate('/feed')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Email hoặc mật khẩu không hợp lệ. Vui lòng thử lại.'
+      const message = err instanceof Error ? err.message : 'Email/số điện thoại hoặc mật khẩu không hợp lệ.'
       setError(message)
       if (message.toLowerCase().includes('xác thực')) {
-        navigate(`/auth/verify-otp?identifier=${encodeURIComponent(formData.emailOrPhone)}`)
+        navigate(`/auth/verify-otp?identifier=${encodeURIComponent(formData.emailOrPhone.trim())}`)
       }
     } finally {
       setIsLoading(false)
@@ -58,26 +71,24 @@ export default function LoginPage() {
 
   return (
     <div className={styles.loginWrap}>
-      <div className={styles.panel}> 
+      <div className={styles.panel}>
         <header>
           <h2 className={styles.heading}>Chào mừng trở lại</h2>
           <p className={styles.subheading}>Đăng nhập để tiếp tục sử dụng tài khoản của bạn</p>
         </header>
 
         <div className={styles.alertSpace}>
-          {error && (
+          {error ? (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
-          )}
+          ) : null}
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.field}>
-            <label htmlFor="emailOrPhone">
-              Số điện thoại hoặc Email
-            </label>
+            <label htmlFor="emailOrPhone">Số điện thoại hoặc Email</label>
             <div className={styles.inputWrap}>
               <Smartphone size={18} className={styles.inputIcon} />
               <input
@@ -89,15 +100,14 @@ export default function LoginPage() {
                 onChange={handleChange}
                 disabled={isLoading}
                 className={`${styles.input} ${styles.inputMuted}`}
+                autoComplete="username"
                 required
               />
             </div>
           </div>
 
           <div className={styles.field}>
-            <label htmlFor="password">
-              Mật khẩu
-            </label>
+            <label htmlFor="password">Mật khẩu</label>
             <div className={styles.inputWrap}>
               <Lock size={18} className={styles.inputIcon} />
               <input
@@ -109,6 +119,7 @@ export default function LoginPage() {
                 onChange={handleChange}
                 disabled={isLoading}
                 className={`${styles.input} ${styles.inputMuted}`}
+                autoComplete="current-password"
                 required
               />
               <button type="button" onClick={() => setShowPassword((prev) => !prev)} className={styles.eyeBtn}>
@@ -129,19 +140,30 @@ export default function LoginPage() {
           </div>
 
           <div className={styles.socialGrid}>
-            <Button variant="outline" className={styles.socialBtn} disabled={isLoading}>
+            <Button
+              type="button"
+              variant="outline"
+              className={styles.socialBtn}
+              disabled={isLoading}
+              onClick={() => startSocialAuth('google')}
+            >
+              <Chrome size={17} />
               Google
             </Button>
-            <Button variant="outline" className={styles.socialBtn} disabled={isLoading}>
+            <Button
+              type="button"
+              variant="outline"
+              className={styles.socialBtn}
+              disabled={isLoading}
+              onClick={() => startSocialAuth('apple')}
+            >
+              <Apple size={17} />
               Apple
             </Button>
           </div>
 
           <p className={styles.switchText}>
-            Chưa có tài khoản?{' '}
-            <Link to="/auth/signup">
-              Đăng ký ngay
-            </Link>
+            Chưa có tài khoản? <Link to="/auth/signup">Đăng ký ngay</Link>
           </p>
 
           <p className={styles.switchTextSecondary}>
@@ -149,12 +171,6 @@ export default function LoginPage() {
           </p>
         </form>
       </div>
-
-      <aside className={styles.loginNotes}>
-        <p>
-          Đăng nhập để truy cập tin nhắn, thông báo và cá nhân hóa bảng tin theo sở thích của bạn.
-        </p>
-      </aside>
     </div>
   )
 }

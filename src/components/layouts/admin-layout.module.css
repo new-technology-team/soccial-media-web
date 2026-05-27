@@ -80,6 +80,27 @@
   box-shadow: 0 10px 20px rgba(15, 138, 122, 0.2);
 }
 
+.logoutButton {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 0.75rem;
+  border: 1px solid rgba(180, 35, 24, 0.24);
+  border-radius: 12px;
+  background: #fff7f6;
+  color: #b42318;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.44rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.logoutButton:hover {
+  background: #ffebe8;
+}
+
 .content {
   min-width: 0;
 }

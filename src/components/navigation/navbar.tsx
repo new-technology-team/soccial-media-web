@@ -52,7 +52,7 @@ export default function Navbar() {
   const user = useAuthStore((state) => state.user)
   const clearAuth = useAuthStore((state) => state.clearAuth)
   const isLoggedIn = Boolean(user)
-  const profileHref = user ? `/profile/${user.id}` : '/auth/login'
+  const profileHref = user?.role === 'admin' ? '/admin/dashboard' : user ? `/profile/${user.id}` : '/auth/login'
   const isStaff = user?.role === 'admin' || user?.role === 'moderator'
 
   useEffect(() => {
@@ -247,7 +247,7 @@ export default function Navbar() {
     { href: '/media', label: 'Thư viện media', icon: Image },
     { href: '/system-alerts', label: 'Cảnh báo hệ thống', icon: Siren },
     { href: '/settings', label: 'Bảo mật', icon: Shield },
-    { href: profileHref, label: 'Trang cá nhân', icon: UserRound },
+    ...(user?.role === 'admin' ? [] : [{ href: profileHref, label: 'Trang cá nhân', icon: UserRound }]),
     ...roleItems,
   ]
 

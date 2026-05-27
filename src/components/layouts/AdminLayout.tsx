@@ -1,8 +1,9 @@
 'use client'
 
-import { Link, useLocation } from 'react-router-dom'
-import { BarChart3, FileText, Flag, History, Settings, Shield, ShieldCheck, Users } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { BarChart3, FileText, Flag, History, LogOut, Settings, Shield, ShieldCheck, Users } from 'lucide-react'
 
+import { useAuthStore } from '@/contexts/auth-store'
 import styles from './admin-layout.module.css'
 
 const navItems = [
@@ -18,6 +19,13 @@ const navItems = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const clearAuth = useAuthStore((state) => state.clearAuth)
+
+  const handleLogout = () => {
+    clearAuth()
+    navigate('/auth/admin-login', { replace: true })
+  }
 
   return (
     <div className={styles.shell}>
@@ -42,6 +50,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             )
           })}
         </nav>
+
+        <button type="button" className={styles.logoutButton} onClick={handleLogout}>
+          <LogOut size={16} />
+          <span>Đăng xuất</span>
+        </button>
       </aside>
 
       <section className={styles.content}>{children}</section>

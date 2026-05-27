@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/contexts/auth-store'
 
 const isRestrictedPath = (pathname: string) => pathname.startsWith('/admin') || pathname.startsWith('/moderator')
+const isAuthPath = (pathname: string) => pathname.startsWith('/auth')
 
 const guestAllowedPrefixes = ['/', '/feed', '/explore', '/posts', '/ai-chat', '/auth']
 
@@ -42,6 +43,11 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
 
     if (!user && !isGuestAllowedPath(pathname)) {
       navigate(`${loginTarget}?next=${encodeURIComponent(pathname)}`, { replace: true })
+      return
+    }
+
+    if (user?.role === 'admin' && !isRestrictedPath(pathname) && !isAuthPath(pathname)) {
+      navigate('/admin/dashboard', { replace: true })
       return
     }
 
