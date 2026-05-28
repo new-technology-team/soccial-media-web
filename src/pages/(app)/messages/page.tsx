@@ -32,7 +32,9 @@ import {
   Video,
   Wand2,
   BrainCircuit,
+  ChevronDown,
   Languages,
+  X,
   Zap,
   type LucideIcon,
 } from 'lucide-react'
@@ -231,6 +233,9 @@ export default function MessagesPage() {
 
   const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({})
   const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({})
+  const [chatSummaryCollapsed, setChatSummaryCollapsed] = useState(false)
+  const [sentimentCollapsed, setSentimentCollapsed] = useState(false)
+  const [showDetailsPanelDesktop, setShowDetailsPanelDesktop] = useState(true)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
@@ -282,6 +287,7 @@ export default function MessagesPage() {
 
       const res = await api.summarizeChat(token, recentMsgs)
       setChatSummary(res.summary)
+      setChatSummaryCollapsed(false)
     } catch (error) {
       setChatNotice('Không thể tóm tắt đoạn chat.')
     } finally {
@@ -332,6 +338,7 @@ export default function MessagesPage() {
 
       const res = await api.analyzeSentiment(token, recentMsgs)
       setSentimentResult(res)
+      setSentimentCollapsed(false)
     } catch (error) {
       setChatNotice('Không thể phân tích cảm xúc.')
     } finally {
@@ -2095,9 +2102,13 @@ export default function MessagesPage() {
       </div>
     )
   }
+  const activeRailTab = showNotificationsDrawer ? 'notifications' as const
+    : showNewMessageModal ? 'newMessage' as const
+    : showCreateGroupModal ? 'createGroup' as const
+    : 'messages' as const
   return (
     <div className={styles.page}>
-      <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''}`}>
+      <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''} ${!showDetailsPanelDesktop ? styles.layoutNarrow : ''}`}>
         <MessagesSidebar
           initials={initials}
           userId={user?.id}
@@ -2107,6 +2118,7 @@ export default function MessagesPage() {
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           isLoadingConversations={isLoadingConversations}
+          activeRailTab={activeRailTab}
           onOpenConversation={handleOpenConversation}
           onShowNotifications={() => setShowNotificationsDrawer(true)}
           onShowNewMessage={() => setShowNewMessageModal(true)}
@@ -2139,10 +2151,24 @@ export default function MessagesPage() {
               </div>
             </div>
             <div className={styles.chatActions}>
-              <button type="button" onClick={handleSummarizeChat} disabled={isSummarizing || !selectedConversationId} title="Tóm tắt đoạn chat (AI)" aria-label="Tóm tắt">
+              <button
+                type="button"
+                className={chatSummary ? styles.chatActionActive : undefined}
+                onClick={handleSummarizeChat}
+                disabled={isSummarizing || !selectedConversationId}
+                title="Tóm tắt đoạn chat (AI)"
+                aria-label="Tóm tắt"
+              >
                 <Wand2 size={16} />
               </button>
-              <button type="button" onClick={handleAnalyzeSentiment} disabled={isAnalyzingSentiment || !selectedConversationId} title="Phân tích cảm xúc (AI)" aria-label="Phân tích cảm xúc">
+              <button
+                type="button"
+                className={sentimentResult ? styles.chatActionActive : undefined}
+                onClick={handleAnalyzeSentiment}
+                disabled={isAnalyzingSentiment || !selectedConversationId}
+                title="Phân tích cảm xúc (AI)"
+                aria-label="Phân tích cảm xúc"
+              >
                 <BrainCircuit size={16} />
               </button>
               <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
@@ -2178,10 +2204,15 @@ export default function MessagesPage() {
                 type="button"
                 title="Xem chi tiết cuộc trò chuyện"
                 aria-label="Xem chi tiết cuộc trò chuyện"
+                className={showDetailsPanelDesktop ? styles.chatActionActive : undefined}
                 disabled={!selectedConversation}
                 onClick={() => {
-                  setRightPanelSection('overview')
-                  setShowSettingsDrawer(true)
+                  if (window.innerWidth > 1180) {
+                    setShowDetailsPanelDesktop(v => !v)
+                  } else {
+                    setRightPanelSection('overview')
+                    setShowSettingsDrawer(true)
+                  }
                 }}
               >
                 <Info size={16} />
@@ -2225,45 +2256,77 @@ export default function MessagesPage() {
           ) : null}
 
           {chatSummary && (
-            <div className={styles.limitBadge} style={{ backgroundColor: 'var(--color-primary-soft)', color: 'var(--color-primary-dark)', textAlign: 'left', padding: 12 }}>
-              <strong><Sparkles size={14} style={{ display: 'inline', marginBottom: -2 }} /> Tóm tắt AI:</strong> {chatSummary}
-              <button onClick={() => setChatSummary(null)} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
+            <div className={`${styles.aiCard} ${chatSummaryCollapsed ? styles.aiCardCollapsed : ''}`}>
+              <div className={styles.aiCardHead}>
+                <span className={styles.aiCardTitle}>
+                  <Sparkles size={12} /> Tóm tắt AI
+                </span>
+                <div className={styles.aiCardControls}>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title={chatSummaryCollapsed ? 'Mở rộng' : 'Thu gọn'}
+                    onClick={() => setChatSummaryCollapsed(c => !c)}
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title="Đóng"
+                    onClick={() => { setChatSummary(null); setChatSummaryCollapsed(false) }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+              <div className={styles.aiCardBody}>{chatSummary}</div>
             </div>
           )}
 
           {sentimentResult && (
-            <div className={styles.limitBadge} style={{
-              background: sentimentResult.sentiment === 'positive' ? 'linear-gradient(135deg, var(--color-surface) 0%, #ecfdf5 100%)' : sentimentResult.sentiment === 'negative' ? 'linear-gradient(135deg, var(--color-surface) 0%, #fef2f2 100%)' : 'linear-gradient(135deg, var(--color-surface) 0%, #fffbeb 100%)',
-              border: `1px solid ${sentimentResult.sentiment === 'positive' ? '#10b981' : sentimentResult.sentiment === 'negative' ? '#ef4444' : '#f59e0b'}`,
-              color: 'var(--color-text)', textAlign: 'left', padding: 16, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.08)', borderRadius: 12
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <strong style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, color: sentimentResult.sentiment === 'positive' ? '#047857' : sentimentResult.sentiment === 'negative' ? '#b91c1c' : '#b45309' }}>
+            <div
+              className={`${styles.aiCard} ${sentimentCollapsed ? styles.aiCardCollapsed : ''}`}
+              data-sentiment={sentimentResult.sentiment}
+            >
+              <div className={styles.aiCardHead}>
+                <span className={styles.aiCardTitle}>
+                  <BrainCircuit size={12} />
                   {sentimentResult.sentiment === 'positive' ? '✨ Tích cực' : sentimentResult.sentiment === 'negative' ? '🌧️ Tiêu cực' : '⚖️ Trung lập'}
-                </strong>
-                <button onClick={() => setSentimentResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)' }}>✕</button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1, height: 6, backgroundColor: 'var(--color-bg-secondary)', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${sentimentResult.score * 100}%`,
-                    height: '100%',
-                    backgroundColor: sentimentResult.sentiment === 'positive' ? 'var(--color-success)' : sentimentResult.sentiment === 'negative' ? 'var(--color-danger)' : 'var(--color-warning)',
-                    transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)'
-                  }} />
+                  <span className={styles.aiCardScore}>{Math.round(sentimentResult.score * 100)}%</span>
+                </span>
+                <div className={styles.aiCardControls}>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title={sentimentCollapsed ? 'Mở rộng' : 'Thu gọn'}
+                    onClick={() => setSentimentCollapsed(c => !c)}
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title="Đóng"
+                    onClick={() => { setSentimentResult(null); setSentimentCollapsed(false) }}
+                  >
+                    <X size={13} />
+                  </button>
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-secondary)' }}>{Math.round(sentimentResult.score * 100)}%</span>
               </div>
-
-              {sentimentResult.emotions && sentimentResult.emotions.length > 0 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {sentimentResult.emotions.map((emo, idx) => (
-                    <span key={idx} style={{ padding: '4px 10px', backgroundColor: sentimentResult.sentiment === 'positive' ? 'var(--color-success-soft)' : sentimentResult.sentiment === 'negative' ? 'var(--color-danger-soft)' : 'var(--color-warning-soft)', color: sentimentResult.sentiment === 'positive' ? 'var(--color-success-dark)' : sentimentResult.sentiment === 'negative' ? 'var(--color-danger-dark)' : 'var(--color-warning-dark)', borderRadius: 16, fontSize: 12, fontWeight: 500 }}>{emo}</span>
-                  ))}
+              <div className={styles.aiCardBody}>
+                <div className={styles.aiScoreBar}>
+                  <div className={styles.aiScoreBarFill} style={{ width: `${sentimentResult.score * 100}%` }} />
                 </div>
-              )}
-              <p style={{ margin: 0, fontStyle: 'italic', fontSize: 13, color: 'var(--color-text-secondary)' }}>"{sentimentResult.detail}"</p>
+                {sentimentResult.emotions && sentimentResult.emotions.length > 0 && (
+                  <div className={styles.aiEmotionTags}>
+                    {sentimentResult.emotions.map((emo, idx) => (
+                      <span key={idx} className={styles.aiEmotionTag}>{emo}</span>
+                    ))}
+                  </div>
+                )}
+                <p className={styles.aiDetail}>"{sentimentResult.detail}"</p>
+              </div>
             </div>
           )}
 
@@ -2361,20 +2424,28 @@ export default function MessagesPage() {
           )}
 
           {replySuggestions.length > 0 && (
-            <div style={{ padding: '8px 16px', display: 'flex', gap: 8, overflowX: 'auto', background: 'var(--bg-surface)' }}>
-              <span style={{ fontSize: 12, color: 'var(--color-text-muted)', alignSelf: 'center', whiteSpace: 'nowrap' }}><Sparkles size={12} style={{ display: 'inline', marginBottom: -2 }} /> Gợi ý:</span>
-              {replySuggestions.map((suggestion, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setMessage(suggestion)
-                    setReplySuggestions([])
-                  }}
-                  style={{ whiteSpace: 'nowrap', padding: '4px 12px', borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-panel)', fontSize: 13, cursor: 'pointer' }}
-                >
-                  {suggestion}
-                </button>
-              ))}
+            <div className={styles.aiSuggestBar}>
+              <span className={styles.aiSuggestLabel}><Sparkles size={12} /> Gợi ý:</span>
+              <div className={styles.aiSuggestList}>
+                {replySuggestions.map((suggestion, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={styles.aiSuggestBtn}
+                    onClick={() => { setMessage(suggestion); setReplySuggestions([]) }}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={styles.aiCardBtn}
+                title="Đóng gợi ý"
+                onClick={() => setReplySuggestions([])}
+              >
+                <X size={13} />
+              </button>
             </div>
           )}
           {selectedConversationId ? (
@@ -2687,83 +2758,46 @@ export default function MessagesPage() {
                   <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
                 </div>
               </div>
-              <button type="button" onClick={() => {
-                handleReaction(activeActionMessage, 'like')
-                setActionMenu(null)
-              }} title="Thích" aria-label="Thích">
-                Thích
-              </button>
-              <button type="button" onClick={() => {
-                handleReaction(activeActionMessage, 'love')
-                setActionMenu(null)
-              }} title="Yêu thích" aria-label="Yêu thích">
-                Yêu thích
-              </button>
-              <button type="button" onClick={() => {
-                handleReaction(activeActionMessage, 'care')
-                setActionMenu(null)
-              }} title="Quan tâm" aria-label="Quan tâm">
-                Quan tâm
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setForwardingMessageId(activeActionMessage.id)
-                  setActionMenu(null)
-                }}
-              >
-                Chuyển tiếp
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleTogglePinMessage(activeActionMessage)
-                  setActionMenu(null)
-                }}
-              >
-                {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
-              </button>
-              {activeActionMessage.text && !translatedMessages[activeActionMessage.id] ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleTranslateMessage(activeActionMessage.id, activeActionMessage.text!)
-                    setActionMenu(null)
-                  }}
-                  disabled={translatingIds[activeActionMessage.id]}
-                >
-                  <Languages size={14} style={{ display: 'inline', marginRight: 4, marginBottom: -2 }} />
-                  {translatingIds[activeActionMessage.id] ? 'Đang dịch...' : 'Dịch (AI)'}
-                </button>
-              ) : null}
-              {activeActionMessage.senderId === user?.id ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleRecall(activeActionMessage)
-                    setActionMenu(null)
-                  }}
-                >
-                  Thu hồi
-                </button>
-              ) : null}
-              {activeActionMessage.senderId === user?.id ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleDeleteMessage(activeActionMessage)
-                    setActionMenu(null)
-                  }}
-                >
-                  Xóa
-                </button>
-              ) : null}
+              {(() => {
+                const isActionMsgRecalled = !!(activeActionMessage.isDeleted || (activeActionMessage.meta as Record<string, unknown>)?.recalled)
+                return (
+                  <>
+                    {!isActionMsgRecalled ? (
+                      <>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'like'); setActionMenu(null) }} title="Thích" aria-label="Thích">Thích</button>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'love'); setActionMenu(null) }} title="Yêu thích" aria-label="Yêu thích">Yêu thích</button>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'care'); setActionMenu(null) }} title="Quan tâm" aria-label="Quan tâm">Quan tâm</button>
+                        <button type="button" onClick={() => { setForwardingMessageId(activeActionMessage.id); setActionMenu(null) }}>Chuyển tiếp</button>
+                        <button type="button" onClick={() => { void handleTogglePinMessage(activeActionMessage); setActionMenu(null) }}>
+                          {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
+                        </button>
+                      </>
+                    ) : null}
+                    {activeActionMessage.text && !translatedMessages[activeActionMessage.id] && !isActionMsgRecalled ? (
+                      <button
+                        type="button"
+                        onClick={() => { handleTranslateMessage(activeActionMessage.id, activeActionMessage.text!); setActionMenu(null) }}
+                        disabled={translatingIds[activeActionMessage.id]}
+                      >
+                        <Languages size={14} style={{ display: 'inline', marginRight: 4, marginBottom: -2 }} />
+                        {translatingIds[activeActionMessage.id] ? 'Đang dịch...' : 'Dịch (AI)'}
+                      </button>
+                    ) : null}
+                    {activeActionMessage.senderId === user?.id ? (
+                      <button type="button" onClick={() => { handleRecall(activeActionMessage); setActionMenu(null) }}>Thu hồi</button>
+                    ) : null}
+                    {activeActionMessage.senderId === user?.id ? (
+                      <button type="button" onClick={() => { handleDeleteMessage(activeActionMessage); setActionMenu(null) }}>Xóa</button>
+                    ) : null}
+                  </>
+                )
+              })()}
             </div>
           ) : null}
         </section>
 
         {showSettingsDrawer ? <button type="button" className={styles.settingsBackdrop} aria-label="Đóng cài đặt hội thoại" onClick={() => setShowSettingsDrawer(false)} /> : null}
-        <aside className={`${styles.detailsPanel} ${showSettingsDrawer ? styles.detailsPanelOpen : ''}`}>
+        <aside className={`${styles.detailsPanel}${showSettingsDrawer ? ` ${styles.detailsPanelOpen}` : ''}${!showDetailsPanelDesktop ? ` ${styles.detailsPanelHidden}` : ''}`}>
           <div className={styles.detailsBody}>
           <ConversationDetailsPanel
             selectedConversation={selectedConversation}
@@ -2797,7 +2831,10 @@ export default function MessagesPage() {
             handleBlockPeer={handleBlockPeer}
             sharedContent={sharedContent}
             loadingSharedContent={loadingSharedContent}
-            onClose={() => setShowSettingsDrawer(false)}
+            onClose={() => {
+              setShowSettingsDrawer(false)
+              setShowDetailsPanelDesktop(false)
+            }}
           />
           </div>
         </aside>

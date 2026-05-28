@@ -88,6 +88,7 @@ export function MessageThread({
       {virtualSlice.items.map((msg) => {
         const mine = msg.senderId === userId
         const reactionItems = getMessageReactionItems(msg)
+        const isRecalled = !!(msg.isDeleted || (msg.meta && (msg.meta as Record<string, unknown>).recalled))
         const sender = selectedConversation?.members.find((member) => member.userId === msg.senderId) || null
         const senderName = sender?.fullName || msg.senderName || `Người dùng #${msg.senderId}`
         const readLabel = mine ? getMessageReadLabel(msg) : null
@@ -142,7 +143,7 @@ export function MessageThread({
                 {renderMessagePreview(msg)}
                 {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
 
-                {reactionItems.length > 0 ? (
+                {!isRecalled && reactionItems.length > 0 ? (
                   <div className={styles.reactionsPill} title={reactionNames}>
                     {reactionItems.slice(0, 4).map((reaction, index) => {
                       const reactor = selectedConversation?.members.find((member) => member.userId === reaction.userId) || null
@@ -167,20 +168,22 @@ export function MessageThread({
               </div>
 
               <div className={cn(styles.messageFooter, mine && styles.messageFooterMine)}>
-                <button
-                  type="button"
-                  className={cn(styles.reactionTrigger, msg.viewerReaction && styles.reactionTriggerActive)}
-                  title="Thả cảm xúc"
-                  aria-label="Thả cảm xúc"
-                  onClick={() => setReactionPickerMessageId((current) => (current === msg.id ? null : msg.id))}
-                >
-                  {msg.viewerReaction ? <ReactionIcon type={msg.viewerReaction} size={14} /> : <Smile size={14} />}
-                </button>
+                {!isRecalled ? (
+                  <button
+                    type="button"
+                    className={cn(styles.reactionTrigger, msg.viewerReaction && styles.reactionTriggerActive)}
+                    title="Thả cảm xúc"
+                    aria-label="Thả cảm xúc"
+                    onClick={() => setReactionPickerMessageId((current) => (current === msg.id ? null : msg.id))}
+                  >
+                    {msg.viewerReaction ? <ReactionIcon type={msg.viewerReaction} size={14} /> : <Smile size={14} />}
+                  </button>
+                ) : null}
                 <span className={styles.messageTime}>{formatVietnamTime(msg.createdAt)}</span>
                 {readLabel ? <span className={styles.readLabel}>{readLabel}</span> : null}
               </div>
 
-              {reactionPickerMessageId === msg.id ? (
+              {!isRecalled && reactionPickerMessageId === msg.id ? (
                 <div className={styles.reactionPicker}>
                   {MESSAGE_REACTION_ICONS.map((reaction) => (
                     <button

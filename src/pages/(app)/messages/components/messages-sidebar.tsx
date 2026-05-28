@@ -14,6 +14,7 @@ type MessagesSidebarProps = {
   searchTerm: string
   setSearchTerm: (value: string) => void
   isLoadingConversations?: boolean
+  activeRailTab: 'messages' | 'newMessage' | 'createGroup' | 'notifications'
   onOpenConversation: (conversationId: string) => void
   onShowNotifications: () => void
   onShowNewMessage: () => void
@@ -29,6 +30,7 @@ export function MessagesSidebar({
   searchTerm,
   setSearchTerm,
   isLoadingConversations = false,
+  activeRailTab,
   onOpenConversation,
   onShowNotifications,
   onShowNewMessage,
@@ -41,16 +43,16 @@ export function MessagesSidebar({
           <MessageCircle size={23} />
         </div>
         <nav className={styles.railNav}>
-          <button type="button" className={cn(styles.railBtn, styles.railBtnActive)} title="Tin nhắn" aria-label="Tin nhắn">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'messages' && styles.railBtnActive)} title="Tin nhắn" aria-label="Tin nhắn">
             <Send size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowNewMessage} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'newMessage' && styles.railBtnActive)} onClick={onShowNewMessage} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
             <UserPlus size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowCreateGroup} title="Tạo nhóm" aria-label="Tạo nhóm">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'createGroup' && styles.railBtnActive)} onClick={onShowCreateGroup} title="Tạo nhóm" aria-label="Tạo nhóm">
             <CirclePlus size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowNotifications} title="Thông báo" aria-label="Thông báo">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'notifications' && styles.railBtnActive)} onClick={onShowNotifications} title="Thông báo" aria-label="Thông báo">
             <Bell size={16} />
           </button>
           <button type="button" className={cn(styles.railBtn, styles.railBottomBtn)} title="Thông tin" aria-label="Thông tin">
