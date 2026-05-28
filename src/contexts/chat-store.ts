@@ -12,6 +12,7 @@ type ChatState = {
   setMessages: (conversationId: string, messages: ChatMessage[]) => void
   appendMessage: (conversationId: string, message: ChatMessage) => void
   upsertMessage: (conversationId: string, message: ChatMessage) => void
+  updateUserAvatar: (userId: number, avatarUrl: string | null) => void
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -77,6 +78,45 @@ export const useChatStore = create<ChatState>((set) => ({
           ...state.messagesByConversation,
           [conversationId]: nextItems,
         },
+      }
+    }),
+  updateUserAvatar: (userId, avatarUrl) =>
+    set((state) => {
+      const sameUser = (value: unknown) => Number(value || 0) === Number(userId)
+      const messagesByConversation = Object.fromEntries(
+        Object.entries(state.messagesByConversation).map(([conversationId, messages]) => [
+          conversationId,
+          messages.map((message) =>
+            sameUser(message.senderId)
+              ? {
+                  ...message,
+                  senderAvatar: avatarUrl,
+                }
+              : message
+          ),
+        ])
+      )
+
+      return {
+        conversations: state.conversations.map((conversation) => ({
+          ...conversation,
+          avatarUrl: sameUser((conversation as any).peerId) ? avatarUrl : conversation.avatarUrl,
+          members: conversation.members?.map((member) =>
+            sameUser(member.userId)
+              ? {
+                  ...member,
+                  avatarUrl,
+                }
+              : member
+          ),
+          lastMessage: conversation.lastMessage && sameUser(conversation.lastMessage.senderId)
+            ? {
+                ...conversation.lastMessage,
+                senderAvatar: avatarUrl,
+              }
+            : conversation.lastMessage,
+        })),
+        messagesByConversation,
       }
     }),
 }))

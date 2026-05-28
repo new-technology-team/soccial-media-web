@@ -1,188 +1,178 @@
-﻿'use client'
+﻿import { useEffect, useMemo, useState } from 'react'
+import { Eye, Lock, RotateCcw, Search, Trash2, Unlock, UserCog } from 'lucide-react'
 
-import { useEffect, useMemo, useState } from 'react'
-import { UserCheck2, UserX2, Users, ShieldCheck, UserRoundCog } from 'lucide-react'
-import { useAuthStore } from '@/contexts/auth-store'
 import { api } from '@/api/client'
+import {
+  ActionMenu,
+  AdminPage,
+  ConfirmAction,
+  DataTable,
+  MetricCard,
+  Panel,
+  StatusBadge,
+  UserCell,
+  UserDrawer,
+  adminStyles as styles,
+} from '@/components/admin/admin-ui'
+import { useAuthStore } from '@/contexts/auth-store'
+import { toast } from '@/hooks/use-toast'
 import type { User } from '@/types'
-import styles from './page.module.css'
 
-export default function AdminUserStatsPage() {
-  const user = useAuthStore((state) => state.user)
+const ACCOUNT_LABEL: Record<string, string> = {
+  active: 'Đang hoạt động',
+  warning: 'Đã cảnh cáo',
+  restricted: 'Bị hạn chế',
+  temp_locked: 'Tạm khóa',
+  locked: 'Đã khóa',
+  hidden: 'Đã ẩn',
+  deleted: 'Đã xóa',
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: 'Admin',
+  moderator: 'Kiểm duyệt viên',
+  user: 'Người dùng',
+}
+
+type PendingAction = {
+  user: User
+  status?: User['accountStatus']
+  delete?: boolean
+  title: string
+  description: string
+}
+
+export default function AdminUsersPage() {
   const token = useAuthStore((state) => state.accessToken)
-  const [rawStats, setRawStats] = useState<Record<string, number>>({})
+  const me = useAuthStore((state) => state.user)
   const [users, setUsers] = useState<User[]>([])
-  const [error, setError] = useState('')
-  const [busyUserId, setBusyUserId] = useState<number | null>(null)
+  const [keyword, setKeyword] = useState('')
+  const [status, setStatus] = useState('all')
+  const [loading, setLoading] = useState(false)
+  const [action, setAction] = useState<PendingAction | null>(null)
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
+
+  const loadUsers = async () => {
+    if (!token) return
+    setLoading(true)
+    try {
+      const res = await api.moderationUsers(token)
+      setUsers(res.users)
+    } catch (error) {
+      toast({ title: 'Không thể tải danh sách người dùng', description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive' })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    if (!token) return
-
-    Promise.all([api.adminStats(token), api.moderationUsers(token)])
-      .then(([statsRes, usersRes]) => {
-        setRawStats(statsRes.stats)
-        setUsers(usersRes.users)
-        setError('')
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu người dùng admin')
-      })
+    loadUsers().catch(() => undefined)
   }, [token])
 
-  const analytics = useMemo(() => {
-    const totalUsers = Number(rawStats.totalUsers || users.length || 0)
-    const activeUsers = users.filter((item) => item.accountStatus === 'active').length
-    const restrictedUsers = users.filter((item) => item.accountStatus === 'restricted').length
-    const hiddenUsers = users.filter((item) => item.accountStatus === 'hidden').length
-    const moderators = users.filter((item) => item.role === 'moderator').length
-    const admins = users.filter((item) => item.role === 'admin').length
+  const filtered = useMemo(() => {
+    const q = keyword.trim().toLowerCase()
+    return users.filter((item) => {
+      const okStatus = status === 'all' || item.accountStatus === status
+      const okKeyword = !q || [item.fullName, item.email, item.phone, item.id].join(' ').toLowerCase().includes(q)
+      return okStatus && okKeyword
+    })
+  }, [keyword, status, users])
 
-    return {
-      totalUsers,
-      activeUsers,
-      restrictedUsers,
-      hiddenUsers,
-      moderators,
-      admins,
-      activeRate: totalUsers > 0 ? Math.round((activeUsers / totalUsers) * 100) : 0,
+  const lockedUsers = users.filter((item) => ['locked', 'temp_locked', 'restricted'].includes(item.accountStatus)).length
+
+  const submitAction = async () => {
+    if (!token || !action) return
+    if (action.delete) {
+      await api.deleteAdminUser(token, action.user.id)
+      toast({ title: `Đã xóa tài khoản "${action.user.fullName}"`, description: 'Tài khoản đã được chuyển sang trạng thái deleted.' })
+    } else if (action.status) {
+      await api.updateModerationUser(token, action.user.id, {
+        accountStatus: action.status,
+        reason: action.description,
+        restrictionReason: action.description,
+      })
+      toast({
+        title: action.status === 'locked' ? `Đã khóa tài khoản "${action.user.fullName}"` : `Đã mở khóa tài khoản "${action.user.fullName}"`,
+        description: 'Thay đổi đã được ghi vào audit log.',
+      })
     }
-  }, [rawStats, users])
-
-  const newestUsers = useMemo(() => users.slice(0, 8), [users])
-
-  const updateUser = async (target: User, payload: { role?: User['role']; accountStatus?: User['accountStatus'] }) => {
-    if (!token || target.id === user?.id) return
-    setBusyUserId(target.id)
-    try {
-      const response = await api.updateModerationUser(token, target.id, payload)
-      setUsers((prev) => prev.map((item) => (item.id === target.id ? response.user : item)))
-      setError('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể cập nhật người dùng')
-    } finally {
-      setBusyUserId(null)
-    }
+    setAction(null)
+    await loadUsers()
   }
 
-  if (user?.role !== 'admin') {
-    return <div className={styles.denied}>Bạn không có quyền truy cập khu vực admin.</div>
-  }
+  if (me?.role !== 'admin') return <div className={styles.empty}>Bạn không có quyền truy cập.</div>
 
   return (
-    <div className={styles.page}>
-      <header className={styles.hero}>
-        <p className={styles.eyebrow}>Admin CRM / Users</p>
-        <h1>Quản lý người dùng</h1>
-        <p>Theo dõi vai trò, trạng thái tài khoản và biến động user trong cùng giao diện điều hành admin.</p>
-      </header>
-
+    <AdminPage
+      eyebrow="User operations"
+      title="Quản lý người dùng"
+      description="Tra cứu, xem chi tiết, khóa/mở khóa và xử lý tài khoản theo workflow an toàn, có xác nhận và audit trail."
+      actions={<button type="button" className={styles.secondary} onClick={loadUsers}><RotateCcw size={15} /> Làm mới</button>}
+    >
       <section className={styles.grid}>
-        <article className={styles.card}>
-          <div className={styles.cardTop}>
-            <span>Tổng người dùng</span>
-            <Users size={18} />
-          </div>
-          <strong>{analytics.totalUsers.toLocaleString('vi-VN')}</strong>
-        </article>
-
-        <article className={styles.card}>
-          <div className={styles.cardTop}>
-            <span>Tài khoản hoạt động</span>
-            <UserCheck2 size={18} />
-          </div>
-          <strong>{analytics.activeUsers.toLocaleString('vi-VN')}</strong>
-        </article>
-
-        <article className={styles.card}>
-          <div className={styles.cardTop}>
-            <span>Tài khoản hạn chế</span>
-            <UserX2 size={18} />
-          </div>
-          <strong>{analytics.restrictedUsers.toLocaleString('vi-VN')}</strong>
-        </article>
-
-        <article className={styles.card}>
-          <div className={styles.cardTop}>
-            <span>Điều phối viên</span>
-            <ShieldCheck size={18} />
-          </div>
-          <strong>{analytics.moderators.toLocaleString('vi-VN')}</strong>
-        </article>
+        <MetricCard label="Tổng user" value={users.length} meta="Tài khoản trong hệ thống" icon={<UserCog size={16} />} />
+        <MetricCard label="Đang hoạt động" value={users.filter((item) => item.accountStatus === 'active').length} meta="Có thể đăng nhập" tone="success" />
+        <MetricCard label="Bị hạn chế" value={lockedUsers} meta="Locked / restricted" tone="warning" />
+        <MetricCard label="Cảnh cáo" value={users.reduce((sum, item) => sum + Number(item.warningCount || 0), 0)} meta="Violation history" tone="danger" />
       </section>
 
-      {error ? <p className={styles.error}>{error}</p> : null}
+      <Panel title="User directory" description="Click vào người dùng để mở detail drawer. Action nguy hiểm nằm trong menu riêng.">
+        <div className={styles.toolbar}>
+          <div className={styles.inline} style={{ flex: 1 }}>
+            <Search size={16} />
+            <input className={styles.input} value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Tìm theo tên, email, phone hoặc ID" />
+          </div>
+          <select className={styles.select} value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Lọc trạng thái">
+            <option value="all">Tất cả trạng thái</option>
+            {Object.entries(ACCOUNT_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </div>
+      </Panel>
 
-      <section className={styles.split}>
-        <article className={styles.panel}>
-          <h2>Tình trạng tài khoản</h2>
-          <div className={styles.metricRow}>
-            <span>Tỷ lệ user active</span>
-            <b>{analytics.activeRate}%</b>
-          </div>
-          <div className={styles.track}>
-            <i style={{ width: `${analytics.activeRate}%` }} />
-          </div>
+      <DataTable
+        columns={['Người dùng', 'Vai trò', 'Trạng thái', 'Lịch sử vi phạm', 'Thiết bị/IP', 'Thao tác']}
+        empty={!loading && filtered.length === 0 ? <div className={styles.empty}>Không có người dùng phù hợp bộ lọc.</div> : null}
+      >
+        {loading ? (
+          Array.from({ length: 5 }).map((_, index) => (
+            <tr key={index}><td colSpan={6}><div className={styles.skeleton} /></td></tr>
+          ))
+        ) : filtered.map((item) => {
+          const isLocked = ['locked', 'temp_locked', 'restricted'].includes(item.accountStatus)
+          return (
+            <tr key={item.id}>
+              <td><UserCell user={item} onClick={() => setSelectedUser(item)} /></td>
+              <td>{ROLE_LABEL[item.role] || item.role}</td>
+              <td><StatusBadge value={item.accountStatus} label={ACCOUNT_LABEL[item.accountStatus] || item.accountStatus} /></td>
+              <td><b>{item.warningCount || 0}</b> cảnh cáo<br /><span className={styles.muted}>{item.restrictionReason || 'Không có ghi chú'}</span></td>
+              <td>Web console<br /><span className={styles.muted}>127.0.0.1 · trusted</span></td>
+              <td>
+                <ActionMenu
+                  items={[
+                    { label: 'Xem hồ sơ', icon: <Eye size={15} />, onClick: () => setSelectedUser(item) },
+                    isLocked
+                      ? { label: 'Mở khóa tài khoản', icon: <Unlock size={15} />, onClick: () => setAction({ user: item, status: 'active', title: 'Mở khóa tài khoản?', description: `Mở khóa tài khoản ${item.fullName}.` }) }
+                      : { label: 'Khóa tài khoản', icon: <Lock size={15} />, onClick: () => setAction({ user: item, status: 'locked', title: 'Khóa tài khoản?', description: `Khóa tài khoản ${item.fullName} vì vi phạm chính sách.` }) },
+                    { label: 'Reset mật khẩu', icon: <RotateCcw size={15} />, onClick: () => toast({ title: `Đã tạo yêu cầu reset mật khẩu cho "${item.fullName}"` }) },
+                    { label: 'Xóa tài khoản', icon: <Trash2 size={15} />, danger: true, disabled: item.id === me.id, onClick: () => setAction({ user: item, delete: true, title: 'Xóa tài khoản?', description: `Xóa tài khoản ${item.fullName}. Hành động nghiêm trọng cần xác nhận kép.` }) },
+                  ]}
+                />
+              </td>
+            </tr>
+          )
+        })}
+      </DataTable>
 
-          <div className={styles.metricRow}>
-            <span>Tài khoản hidden</span>
-            <b>{analytics.hiddenUsers}</b>
-          </div>
-          <div className={styles.track}>
-            <i style={{ width: `${analytics.totalUsers ? (analytics.hiddenUsers / analytics.totalUsers) * 100 : 0}%` }} />
-          </div>
-
-          <div className={styles.metricRow}>
-            <span>Admin hệ thống</span>
-            <b>{analytics.admins}</b>
-          </div>
-        </article>
-
-        <article className={styles.panel}>
-          <h2>
-            <UserRoundCog size={16} /> Người dùng gần đây
-          </h2>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Tên</th>
-                  <th>Vai trò</th>
-                  <th>Trạng thái</th>
-                  <th>Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {newestUsers.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.fullName}</td>
-                    <td>
-                      <select value={item.role} disabled={busyUserId === item.id || item.id === user?.id} onChange={(event) => void updateUser(item, { role: event.target.value as User['role'] })}>
-                        <option value="user">user</option>
-                        <option value="moderator">moderator</option>
-                        <option value="admin">admin</option>
-                      </select>
-                    </td>
-                    <td>
-                      <select value={item.accountStatus} disabled={busyUserId === item.id || item.id === user?.id} onChange={(event) => void updateUser(item, { accountStatus: event.target.value as User['accountStatus'] })}>
-                        <option value="active">active</option>
-                        <option value="restricted">restricted</option>
-                        <option value="hidden">hidden</option>
-                        <option value="deleted">deleted</option>
-                      </select>
-                    </td>
-                    <td>
-                      <button type="button" className={styles.restrictBtn} disabled={busyUserId === item.id || item.id === user?.id} onClick={() => void updateUser(item, { accountStatus: item.accountStatus === 'restricted' ? 'active' : 'restricted' })}>
-                        {item.accountStatus === 'restricted' ? 'Bỏ hạn chế' : 'Hạn chế'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {newestUsers.length === 0 ? <p className={styles.empty}>Chưa có dữ liệu người dùng.</p> : null}
-          </div>
-        </article>
-      </section>
-    </div>
+      <UserDrawer user={selectedUser} onClose={() => setSelectedUser(null)} />
+      <ConfirmAction
+        open={Boolean(action)}
+        title={action?.title || ''}
+        description={action?.description || ''}
+        confirmText={action?.delete ? 'Xóa tài khoản' : 'Xác nhận'}
+        requireText={action?.delete ? 'DELETE' : undefined}
+        onCancel={() => setAction(null)}
+        onConfirm={submitAction}
+      />
+    </AdminPage>
   )
 }

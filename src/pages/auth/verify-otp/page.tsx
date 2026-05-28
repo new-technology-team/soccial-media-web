@@ -1,9 +1,8 @@
 ﻿'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { AlertCircle, ShieldCheck } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ShieldCheck } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
@@ -14,10 +13,9 @@ export default function VerifyOtpPage() {
   const [searchParams] = useSearchParams()
   const setAuth = useAuthStore((state) => state.setAuth)
   const initialIdentifier = useMemo(() => searchParams.get('identifier') || '', [searchParams])
-  const initialCode = useMemo(() => searchParams.get('code') || '', [searchParams])
 
   const [emailOrPhone, setEmailOrPhone] = useState(initialIdentifier)
-  const [code, setCode] = useState(initialCode)
+  const [code, setCode] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isResending, setIsResending] = useState(false)
   const [error, setError] = useState('')
@@ -34,7 +32,7 @@ export default function VerifyOtpPage() {
   const handleVerify = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
-    setSuccess('')
+      setSuccess('')
 
     if (!emailOrPhone.trim() || !code.trim()) {
       setError('Vui lòng nhập đầy đủ email/số điện thoại và mã OTP.')
@@ -147,11 +145,11 @@ export default function VerifyOtpPage() {
           {isResending ? 'Đang gửi lại mã...' : resendCooldown > 0 ? `Gửi lại (${resendCooldown}s)` : 'Gửi lại mã OTP'}
         </button>
 
-        <p className={styles.switchText}>
-          Quay lại <Link to="/auth/login">Đăng nhập</Link>
-        </p>
+        <button type="button" className={styles.backButton} onClick={() => navigate('/auth/login')}>
+          <ArrowLeft size={16} />
+          Quay lại đăng nhập
+        </button>
       </form>
     </div>
   )
 }
-

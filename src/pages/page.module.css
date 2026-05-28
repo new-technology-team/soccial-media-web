@@ -480,7 +480,7 @@
 
 .heroTitle {
   margin: 0;
-  font-size: clamp(2rem, 4.2vw, 4rem);
+  font-size: clamp(1.7rem, 3.4vw, 3.2rem);
   line-height: 1.05;
   font-weight: 900;
   color: #152223;
@@ -657,7 +657,7 @@
 .ctaPanel h2 {
   margin: 0;
   color: #152223;
-  font-size: clamp(1.9rem, 4vw, 3.2rem);
+  font-size: clamp(1.45rem, 2.8vw, 2.4rem);
 }
 
 .ctaPanel p {

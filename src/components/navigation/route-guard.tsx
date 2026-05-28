@@ -5,8 +5,20 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/contexts/auth-store'
 
 const isRestrictedPath = (pathname: string) => pathname.startsWith('/admin') || pathname.startsWith('/moderator')
-
 const guestAllowedPrefixes = ['/', '/feed', '/explore', '/posts', '/ai-chat', '/auth']
+const moderatorRoutePermissions: Array<{ prefix: string; permission: string }> = [
+  { prefix: '/moderator/posts', permission: 'manage_posts' },
+  { prefix: '/moderator/users', permission: 'manage_users' },
+  { prefix: '/moderator/reports', permission: 'manage_reports' },
+  { prefix: '/moderator/dashboard', permission: 'manage_reports' },
+]
+
+const firstAllowedModeratorPath = (permissions?: string[]) => {
+  if (!permissions?.length || permissions.includes('manage_reports')) return '/moderator/dashboard'
+  if (permissions.includes('manage_posts')) return '/moderator/posts'
+  if (permissions.includes('manage_users')) return '/moderator/users'
+  return '/feed'
+}
 
 const isGuestAllowedPath = (pathname: string) => {
   if (pathname === '/') return true
@@ -31,14 +43,20 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
       return user.role === 'admin'
     }
 
-    return user.role === 'admin' || user.role === 'moderator'
+    if (user.role === 'admin') return true
+    if (user.role !== 'moderator') return false
+
+    const required = moderatorRoutePermissions.find((item) => pathname.startsWith(item.prefix))?.permission
+    if (!required) return true
+    if (!user.permissions?.length) return true
+    return user.permissions.includes(required)
   }, [pathname, user])
 
   useEffect(() => {
     if (!mounted) return
 
-    const isAdminPath = pathname.startsWith('/admin')
-    const loginTarget = isAdminPath ? '/auth/admin-login' : '/auth/login'
+    const isStaffPath = isRestrictedPath(pathname)
+    const loginTarget = isStaffPath ? '/auth/admin-login' : '/auth/login'
 
     if (!user && !isGuestAllowedPath(pathname)) {
       navigate(`${loginTarget}?next=${encodeURIComponent(pathname)}`, { replace: true })
@@ -53,7 +71,7 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
     }
 
     if (!hasPermission) {
-      navigate('/feed', { replace: true })
+      navigate(user.role === 'moderator' ? firstAllowedModeratorPath(user.permissions) : '/feed', { replace: true })
     }
   }, [hasPermission, mounted, pathname, navigate, user])
 

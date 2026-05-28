@@ -1,4 +1,4 @@
-import { Bell, BellOff, CirclePlus, Info, MessageCircle, Pin, Search, Send, UserPlus, Users } from 'lucide-react'
+import { Bell, BellOff, CirclePlus, Info, LockKeyhole, MessageCircle, Pin, Search, Send, UserPlus, Users } from 'lucide-react'
 
 import { formatVietnamTime, getConversationDisplayName } from '@/services/messages/formatters'
 import type { Conversation, NotificationItem } from '@/types'
@@ -36,6 +36,14 @@ export function MessagesSidebar({
   onShowNewMessage,
   onShowCreateGroup,
 }: MessagesSidebarProps) {
+  const q = searchTerm.trim().toLowerCase()
+  const visibleConversations = conversations.filter((conv) => {
+    const name = getConversationDisplayName(conv, userId).toLowerCase()
+    const searchable = [name, conv.name || '', String(conv.id)].join(' ').toLowerCase()
+    if (!q) return !conv.isHidden
+    return searchable.includes(q)
+  })
+
   return (
     <>
       <aside className={styles.rail}>
@@ -92,7 +100,7 @@ export function MessagesSidebar({
             </>
           ) : null}
 
-          {conversations.map((conv) => {
+          {visibleConversations.map((conv) => {
             const isActive = conv.id === selectedConversationId
             const name = getConversationDisplayName(conv, userId)
             const fallback = (name[0] || 'C').toUpperCase()
@@ -145,7 +153,7 @@ export function MessagesSidebar({
                 </div>
                 <div className={styles.convText}>
                   <div className={styles.convLineTop}>
-                    <strong>{name} {conv.isPinned ? <Pin size={11} /> : null} {conv.isMuted ? <BellOff size={11} /> : null}</strong>
+                    <strong>{name} {conv.isPinned ? <Pin size={11} /> : null} {conv.isMuted ? <BellOff size={11} /> : null} {conv.isHidden ? <LockKeyhole size={11} /> : null} {conv.isLocked ? <LockKeyhole size={11} /> : null}</strong>
                     <span>{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
                   </div>
                   <div className={styles.convStatusLine}>

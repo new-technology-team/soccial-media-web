@@ -1,4 +1,4 @@
-import { Check, CornerUpRight, Pin, RotateCcw, Trash2 } from 'lucide-react'
+import { Check, CornerUpRight, Flag, Pin, RotateCcw, Trash2 } from 'lucide-react'
 
 import { formatVietnamTime, getAvatarInitial, getConversationDisplayName } from '@/services/messages/formatters'
 import { parseNotificationMeta, type MessageNotificationItem } from '@/services/messages/notification-meta'
@@ -41,6 +41,7 @@ type MessagesOverlaysProps = {
   setGroupSearchKeyword: (value: string) => void
   toggleGroupMember: (userId: number) => void
   handleTogglePinMessage: (message: ChatMessage) => void | Promise<void>
+  handleReportMessage: (message: ChatMessage) => void | Promise<void>
   handleRecall: (message: ChatMessage) => void | Promise<void>
   handleDeleteMessage: (message: ChatMessage) => void | Promise<void>
   handleForward: (targetConversationId: string) => void | Promise<void>
@@ -93,6 +94,7 @@ export function MessagesOverlays({
   setGroupSearchKeyword,
   toggleGroupMember,
   handleTogglePinMessage,
+  handleReportMessage,
   handleRecall,
   handleDeleteMessage,
   handleForward,
@@ -121,6 +123,10 @@ export function MessagesOverlays({
           <button type="button" onClick={() => { void handleTogglePinMessage(activeActionMessage); setActionMenu(null) }}>
             <Pin size={15} />
             {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
+          </button>
+          <button type="button" onClick={() => { void handleReportMessage(activeActionMessage); setActionMenu(null) }}>
+            <Flag size={15} />
+            Báo cáo tin nhắn
           </button>
           {activeActionMessage.senderId === userId ? (
             <button type="button" onClick={() => { void handleRecall(activeActionMessage); setActionMenu(null) }}>

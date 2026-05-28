@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { Dispatch, MouseEvent, MutableRefObject, ReactNode, SetStateAction, UIEvent } from 'react'
 
 import { formatVietnamTime, getMessageReactionItems, getMessageReactionMeta } from '@/services/messages/formatters'
+import { CallHistoryMessage } from '@/components/call'
 import type { ChatMessage, Conversation } from '@/types'
 import { cn } from '@/utils'
 import styles from '../page.module.css'
@@ -86,6 +87,10 @@ export function MessageThread({
       ) : null}
 
       {virtualSlice.items.map((msg) => {
+        if (msg.type === 'call-history') {
+          return <CallHistoryMessage key={msg.id} text={msg.text || 'Cuộc gọi đã kết thúc'} />
+        }
+
         const mine = msg.senderId === userId
         const reactionItems = getMessageReactionItems(msg)
         const isRecalled = !!(msg.isDeleted || (msg.meta && (msg.meta as Record<string, unknown>).recalled))

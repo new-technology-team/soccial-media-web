@@ -24,8 +24,12 @@ import {
   MapPin,
 } from 'lucide-react'
 import { api, isAuthExpiredError } from '@/api/client'
+import { ConfirmDialog, ReportDialog } from '@/components/dialogs'
+import Sidebar from '@/components/navigation/sidebar'
 import type { FeedComment, FeedPost } from '@/types'
 import { useAuthStore } from '@/contexts/auth-store'
+import { useSocialRealtime } from '@/hooks/use-social-realtime'
+import { toast } from '@/hooks/use-toast'
 import styles from './page.module.css'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
@@ -88,6 +92,13 @@ const dedupePostsById = (items: FeedPost[]) => {
   return result
 }
 
+type ConfirmModalState = {
+  title: string
+  description: string
+  confirmLabel: string
+  onConfirm: () => void | Promise<void>
+}
+
 const isVideoMediaUrl = (url: string) =>
   /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
 
@@ -130,7 +141,7 @@ export default function FeedPage() {
   const [loadingMoreComments, setLoadingMoreComments] = useState<Record<number, boolean>>({})
   const [commentPaging, setCommentPaging] = useState<Record<number, CommentPaging>>({})
   const [shareTargetPostId, setShareTargetPostId] = useState<number | null>(null)
-  const [shareConversations, setShareConversations] = useState<Array<{ id: number; name: string | null }>>([])
+  const [shareConversations, setShareConversations] = useState<Array<{ id: string; name: string | null }>>([])
   const [activePostMenuId, setActivePostMenuId] = useState<number | null>(null)
   const [hiddenPostIds, setHiddenPostIds] = useState<Record<number, boolean>>({})
   const [editingPostId, setEditingPostId] = useState<number | null>(null)
@@ -147,9 +158,21 @@ export default function FeedPage() {
   const [uploadingMedia, setUploadingMedia] = useState(false)
   const [openReactionPostId, setOpenReactionPostId] = useState<number | null>(null)
   const [visiblePostsCount, setVisiblePostsCount] = useState(FEED_BATCH_SIZE)
+  const [feedSearchQuery, setFeedSearchQuery] = useState('')
+  const [feedSearchUsers, setFeedSearchUsers] = useState<Array<{ id: number; name: string; avatarUrl: string | null }>>([])
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
+  const [reportPost, setReportPost] = useState<FeedPost | null>(null)
+  const [reportComment, setReportComment] = useState<FeedComment | null>(null)
   const mediaInputRef = useRef<HTMLInputElement | null>(null)
   const feedBottomSentinelRef = useRef<HTMLDivElement | null>(null)
   const isGuestView = !token
+
+  useSocialRealtime({
+    token,
+    user: me,
+    setPosts,
+    setCommentLists,
+  })
 
   const resetComposerPanels = () => {
     setShowEmojiTray(false)
@@ -241,6 +264,35 @@ export default function FeedPage() {
   }, [handleAuthExpired, tagKeyword, token])
 
   useEffect(() => {
+    const q = feedSearchQuery.trim()
+    if (!token || q.length < 2) {
+      setFeedSearchUsers([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.searchUsers(token, q)
+        setFeedSearchUsers(
+          (result.users || [])
+            .map((item) => ({
+              id: Number(item.id || item.userId || 0),
+              name: String(item.full_name || item.fullName || item.displayName || 'Người dùng'),
+              avatarUrl: (item.avatarUrl || item.avatar_url || null) as string | null,
+            }))
+            .filter((item) => item.id > 0)
+            .slice(0, 5)
+        )
+      } catch (error) {
+        if (handleAuthExpired(error)) return
+        setFeedSearchUsers([])
+      }
+    }, 240)
+
+    return () => clearTimeout(timer)
+  }, [feedSearchQuery, handleAuthExpired, token])
+
+  useEffect(() => {
     if (!token) return
     if (shareTargetPostId === null) return
 
@@ -276,10 +328,18 @@ export default function FeedPage() {
       .slice(0, 6)
   }, [me?.id, posts])
 
-  const filteredPosts = useMemo(
-    () => posts.filter((post) => !hiddenPostIds[post.id]),
-    [hiddenPostIds, posts]
-  )
+  const filteredPosts = useMemo(() => {
+    const q = feedSearchQuery.trim().toLowerCase()
+    return posts.filter((post) => {
+      if (hiddenPostIds[post.id]) return false
+      if (!q) return true
+      return (
+        post.content.toLowerCase().includes(q) ||
+        post.authorName.toLowerCase().includes(q) ||
+        (post.content.match(/#[^\s#.,!?;:]+/g) || []).some((tag) => tag.toLowerCase().includes(q))
+      )
+    })
+  }, [feedSearchQuery, hiddenPostIds, posts])
   const visiblePosts = useMemo(
     () => filteredPosts.slice(0, visiblePostsCount),
     [filteredPosts, visiblePostsCount]
@@ -470,14 +530,35 @@ export default function FeedPage() {
       navigate('/auth/login')
       return
     }
+    const previousReaction = post.viewerReaction
+    const nextReaction = previousReaction === reactionType ? null : reactionType
+    const reactionDelta = previousReaction
+      ? nextReaction
+        ? 0
+        : -1
+      : nextReaction
+        ? 1
+        : 0
+    setPosts((prev) =>
+      prev.map((item) =>
+        String(item.id) === String(post.id)
+          ? {
+              ...item,
+              viewerReaction: nextReaction,
+              reactionCount: Math.max(0, Number(item.reactionCount || 0) + reactionDelta),
+            }
+          : item
+      )
+    )
+    setOpenReactionPostId(null)
     try {
       const response = post.viewerReaction === reactionType
         ? await api.unreactPost(token, post.id)
         : await api.reactPost(token, post.id, reactionType)
-      setPosts((prev) => prev.map((item) => (item.id === post.id ? response.post : item)))
-      setOpenReactionPostId(null)
+      setPosts((prev) => prev.map((item) => (String(item.id) === String(post.id) ? response.post : item)))
     } catch (error) {
       if (handleAuthExpired(error)) return
+      setPosts((prev) => prev.map((item) => (String(item.id) === String(post.id) ? post : item)))
       console.error('Failed to react post', error)
     }
   }
@@ -537,19 +618,33 @@ export default function FeedPage() {
   }
 
   const handleDeleteComment = async (post: FeedPost, comment: FeedComment) => {
-    if (!token || Number(post.authorId) !== Number(me?.id)) return
-    if (!window.confirm('Xóa bình luận này khỏi bài viết?')) return
-    setBusyCommentId(comment.id)
-    try {
-      await api.deleteComment(token, comment.id)
-      setCommentLists((prev) => ({ ...prev, [post.id]: (prev[post.id] || []).filter((item) => item.id !== comment.id) }))
-      setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, commentCount: Math.max(0, item.commentCount - 1) } : item)))
-    } catch (error) {
-      if (handleAuthExpired(error)) return
-      console.error('Failed to delete comment', error)
-    } finally {
-      setBusyCommentId(null)
-    }
+    const canDeleteComment =
+      Number(comment.userId) === Number(me?.id) ||
+      Number(post.authorId) === Number(me?.id) ||
+      me?.role === 'admin' ||
+      me?.role === 'moderator'
+    if (!token || !canDeleteComment) return
+    setConfirmModal({
+      title: 'Xóa bình luận?',
+      description: 'Bình luận này sẽ bị xóa khỏi bài viết.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        setBusyCommentId(comment.id)
+        try {
+          await api.deleteComment(token, comment.id)
+          setCommentLists((prev) => ({ ...prev, [post.id]: (prev[post.id] || []).filter((item) => item.id !== comment.id) }))
+          setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, commentCount: Math.max(0, item.commentCount - 1) } : item)))
+          toast({ title: 'Đã xóa bình luận' })
+        } catch (error) {
+          if (handleAuthExpired(error)) return
+          const message = error instanceof Error ? error.message : 'Không thể xóa bình luận.'
+          toast({ title: 'Không thể xóa bình luận', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setBusyCommentId(null)
+        }
+      },
+    })
   }
 
   const handleReportComment = async (comment: FeedComment) => {
@@ -557,15 +652,27 @@ export default function FeedPage() {
       navigate('/auth/login')
       return
     }
-    const reason = window.prompt('Lý do báo cáo bình luận', 'Nội dung không phù hợp')
-    if (!reason?.trim()) return
-    setBusyCommentId(comment.id)
+    setReportComment(comment)
+  }
+
+  const submitReportComment = async (payload: { reason: string; details?: string }) => {
+    if (!token || !reportComment) return
+    setBusyCommentId(reportComment.id)
     try {
-      await api.submitReport(token, { targetType: 'comment', targetId: comment.id, reason: reason.trim() })
+      await api.submitReport(token, {
+        targetType: 'comment',
+        targetId: reportComment.id,
+        reason: payload.reason,
+        details: payload.details,
+      })
       setErrorText('Đã gửi báo cáo bình luận.')
+      toast({ title: 'Đã gửi báo cáo bình luận' })
     } catch (error) {
       if (handleAuthExpired(error)) return
+      const message = error instanceof Error ? error.message : 'Không thể gửi báo cáo bình luận.'
       console.error('Failed to report comment', error)
+      toast({ title: 'Không thể gửi báo cáo', description: message, variant: 'destructive' })
+      throw error
     } finally {
       setBusyCommentId(null)
     }
@@ -585,10 +692,10 @@ export default function FeedPage() {
       return
     }
 
-    const link = `${window.location.origin}/posts/${post.id}`
     try {
       await api.createPost(token, {
-        content: `🔁 Chia sẻ từ ${post.authorName}\n\n${post.content.slice(0, 360)}\n\nXem bài gốc: ${link}`,
+        content: '',
+        sharedPostId: post.id,
         visibility: 'public',
       })
       const refreshed = await api.listFeed(token)
@@ -601,15 +708,30 @@ export default function FeedPage() {
     }
   }
 
-  const handleShareToConversation = async (post: FeedPost, conversationId: number) => {
+  const handleShareToConversation = async (post: FeedPost, conversationId: string) => {
     if (!token) {
       navigate('/auth/login')
       return
     }
 
-    const link = `${window.location.origin}/posts/${post.id}`
     try {
-      await api.sendMessage(token, conversationId, `📨 ${me?.fullName || 'Bạn của bạn'} đã chia sẻ một bài viết:\n${post.content.slice(0, 240)}\n${link}`)
+      await api.sendMessagePayload(token, conversationId, {
+        type: 'text',
+        text: `${me?.fullName || 'Bạn của bạn'} đã chia sẻ một bài viết của ${post.authorName}`,
+        mediaUrl: post.mediaUrl || undefined,
+        meta: {
+          sharedPost: {
+            id: post.id,
+            authorId: post.authorId,
+            authorName: post.authorName,
+            authorAvatar: post.authorAvatar,
+            content: post.content.slice(0, 240),
+            mediaUrl: post.mediaUrl,
+            reactionCount: post.reactionCount,
+            commentCount: post.commentCount,
+          },
+        },
+      })
       setErrorText('Đã chia sẻ bài viết vào tin nhắn.')
       setShareTargetPostId(null)
     } catch (error) {
@@ -659,6 +781,32 @@ export default function FeedPage() {
     setPostEditDraft(null)
   }
 
+  const handleEditSelectedMedia = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !token) return
+
+    setUploadingMedia(true)
+    try {
+      const upload = await api.uploadPostMediaBase64(token, {
+        fileName: file.name,
+        contentType: file.type || 'application/octet-stream',
+        base64Data: await fileToBase64(file),
+      })
+      if (!upload.mediaUrl) {
+        throw new Error('Không thể tải media bài viết.')
+      }
+      setPostEditDraft((prev) => (prev ? { ...prev, mediaUrl: upload.mediaUrl } : prev))
+      toast({ title: 'Đã tải media', description: 'Preview đã được cập nhật trong bài viết.' })
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      const message = error instanceof Error ? error.message : 'Không thể tải media bài viết.'
+      toast({ title: 'Không thể tải media', description: message, variant: 'destructive' })
+    } finally {
+      setUploadingMedia(false)
+      event.target.value = ''
+    }
+  }
+
   const handleSaveEditPost = async (post: FeedPost) => {
     if (!token) {
       navigate('/auth/login')
@@ -698,23 +846,31 @@ export default function FeedPage() {
       return
     }
 
-    const approved = window.confirm('Bạn có chắc muốn xóa bài viết này?')
-    if (!approved) return
-
-    try {
-      await api.deletePost(token, post.id)
-      setPosts((prev) => prev.filter((item) => item.id !== post.id))
-      setShareTargetPostId((prev) => (prev === post.id ? null : prev))
-      setActivePostMenuId(null)
-      if (editingPostId === post.id) {
-        handleCancelEditPost()
-      }
-      setErrorText('Đã xóa bài viết.')
-    } catch (error) {
-      if (handleAuthExpired(error)) return
-      console.error('Failed to delete post', error)
-      setErrorText('Không thể xóa bài viết. Vui lòng thử lại.')
-    }
+    setConfirmModal({
+      title: 'Xóa bài viết?',
+      description: 'Bài viết này sẽ bị xóa khỏi bảng tin của bạn.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        try {
+          await api.deletePost(token, post.id)
+          setPosts((prev) => prev.filter((item) => item.id !== post.id))
+          setShareTargetPostId((prev) => (prev === post.id ? null : prev))
+          setActivePostMenuId(null)
+          if (editingPostId === post.id) {
+            handleCancelEditPost()
+          }
+          setErrorText('Đã xóa bài viết.')
+          toast({ title: 'Đã xóa bài viết' })
+        } catch (error) {
+          if (handleAuthExpired(error)) return
+          console.error('Failed to delete post', error)
+          const message = 'Không thể xóa bài viết. Vui lòng thử lại.'
+          setErrorText(message)
+          toast({ title: 'Không thể xóa bài viết', description: message, variant: 'destructive' })
+          throw error
+        }
+      },
+    })
   }
 
   const handleHidePost = (postId: number) => {
@@ -728,20 +884,26 @@ export default function FeedPage() {
       navigate('/auth/login')
       return
     }
+    setReportPost(post)
+    setActivePostMenuId(null)
+  }
 
+  const submitReportPost = async (payload: { reason: string; details?: string }) => {
+    if (!token || !reportPost) return
     try {
       await api.submitReport(token, {
         targetType: 'post',
-        targetId: post.id,
-        reason: 'Nội dung không phù hợp trên bảng tin',
-        details: `Bài viết từ ${post.authorName}`,
+        targetId: reportPost.id,
+        reason: payload.reason,
+        details: payload.details || `Bài viết từ ${reportPost.authorName}`,
       })
-      setActivePostMenuId(null)
+      setReportPost(null)
       setErrorText('Đã gửi báo cáo bài viết. Cảm ơn bạn đã phản hồi.')
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to report post', error)
       setErrorText('Không thể gửi báo cáo bài viết. Vui lòng thử lại.')
+      throw error
     }
   }
 
@@ -880,84 +1042,51 @@ export default function FeedPage() {
   return (
     <div className={styles.page}>
       <div className={styles.layout}>
-        <aside className={styles.leftRail}>
-          <div className={styles.brandWrap}>
-            <div className={styles.brandIcon}>
-              <MessageCircle size={21} />
-            </div>
-            <div>
-              <p className={styles.brandTitle}>ZChat</p>
-              <p className={styles.brandSub}>Mạng xã hội chuyên nghiệp</p>
-            </div>
-          </div>
-
-          <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railProfile}>
-            <span className={styles.avatarBadge}>{(me?.fullName?.[0] || 'K').toUpperCase()}</span>
-            <span>
-              <b>{isGuestView ? 'Khách vãng lai' : me?.fullName || 'Người dùng'}</b>
-              <small>{isGuestView ? 'Đăng nhập để tương tác' : 'Xem hồ sơ của bạn'}</small>
-            </span>
-          </Link>
-
-          <nav className={styles.railNav}>
-            <Link to="/feed" className={`${styles.railItem} ${styles.railItemActive}`}>
-              <House size={17} />
-              <span>Bảng tin</span>
-            </Link>
-            <Link to={isGuestView ? '/auth/login?next=/feed' : `/profile/${me?.id || 1}`} className={styles.railItem}>
-              <UserRound size={17} />
-              <span>Hồ sơ</span>
-            </Link>
-            <Link to="/messages" className={styles.railItem}>
-              <MessagesSquare size={17} />
-              <span>Trò chuyện</span>
-            </Link>
-          </nav>
-
-          <button
-            type="button"
-            className={styles.newPostBtn}
-            onClick={() => {
-              if (isGuestView) {
-                navigate('/auth/login?next=/feed')
-                return
-              }
-              setIsModalOpen(true)
-            }}
-          >
-            <PenLine size={16} />
-            <span>Tạo bài viết</span>
-          </button>
-
-          <div className={styles.railBottom}>
-            <Link to="/settings" className={styles.bottomBtn}>
-              <Settings size={15} />
-              <span>Cài đặt</span>
-            </Link>
-            <button type="button" className={styles.bottomBtn}>
-              <CircleHelp size={15} />
-              <span>Hỗ trợ</span>
-            </button>
-          </div>
-        </aside>
+        <Sidebar
+          user={me}
+          onCreatePost={() => {
+            if (isGuestView) {
+              navigate('/auth/login?next=/feed')
+              return
+            }
+            setIsModalOpen(true)
+          }}
+        />
 
         <section className={styles.mainCol}>
-          <header className={styles.topBar}>
-            <div className={styles.feedHeading}>
-              <h1>Bảng tin</h1>
-              <p>Cập nhật mới từ cộng đồng của bạn</p>
-            </div>
-            <input className={styles.searchInput} placeholder="Tìm kiếm..." />
-            <div className={styles.topActions}>
-              <button type="button" className={styles.iconBtn}>
-                <Bell size={16} />
-              </button>
-              <button type="button" className={styles.iconBtn}>
-                <Settings size={16} />
-              </button>
-              <div className={styles.avatarBadge}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
-            </div>
-          </header>
+          <section className={styles.feedSearchBox}>
+            <input
+              value={feedSearchQuery}
+              onChange={(event) => setFeedSearchQuery(event.target.value)}
+              placeholder="Tìm người, bài viết hoặc hashtag..."
+            />
+            {feedSearchQuery.trim() ? (
+              <div className={styles.feedSearchDropdown}>
+                {feedSearchUsers.map((item) => (
+                  <Link key={item.id} to={`/profile/${item.id}`} className={styles.feedSearchRow}>
+                    {item.avatarUrl ? <img src={item.avatarUrl} alt={item.name} /> : <span>{(item.name[0] || 'U').toUpperCase()}</span>}
+                    <b>{item.name}</b>
+                    <small>Tài khoản</small>
+                  </Link>
+                ))}
+                {filteredPosts.slice(0, 4).map((post) => (
+                  <button
+                    key={post.id}
+                    type="button"
+                    className={styles.feedSearchRow}
+                    onClick={() => navigate(`/posts/${post.id}`)}
+                  >
+                    {post.authorAvatar ? <img src={post.authorAvatar} alt={post.authorName} /> : <span>{(post.authorName[0] || 'U').toUpperCase()}</span>}
+                    <b>{post.content.slice(0, 54) || `Bài viết của ${post.authorName}`}</b>
+                    <small>Bài viết</small>
+                  </button>
+                ))}
+                {feedSearchUsers.length === 0 && filteredPosts.length === 0 ? (
+                  <p className={styles.feedSearchEmpty}>Không tìm thấy kết quả phù hợp.</p>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
 
           {isGuestView ? (
             <section className={styles.guestBanner}>
@@ -1109,64 +1238,13 @@ export default function FeedPage() {
                   </div>
                 </div>
 
-                {editingPostId === post.id && postEditDraft ? (
-                  <div className={styles.postEditPanel}>
-                    <textarea
-                      value={postEditDraft.content}
-                      onChange={(event) =>
-                        setPostEditDraft((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                content: event.target.value,
-                              }
-                            : prev
-                        )
-                      }
-                      placeholder="Nhập nội dung bài viết..."
-                    />
-                    <input
-                      value={postEditDraft.mediaUrl}
-                      onChange={(event) =>
-                        setPostEditDraft((prev) =>
-                          prev
-                            ? {
-                                ...prev,
-                                mediaUrl: event.target.value,
-                              }
-                            : prev
-                        )
-                      }
-                      placeholder="Link media (tuỳ chọn)"
-                    />
-                    <div className={styles.postEditRow}>
-                      <select
-                        value={postEditDraft.visibility}
-                        onChange={(event) =>
-                          setPostEditDraft((prev) =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  visibility: event.target.value as 'public' | 'private',
-                                }
-                              : prev
-                          )
-                        }
-                      >
-                        <option value="public">Công khai</option>
-                        <option value="private">Riêng tư</option>
-                      </select>
-                      <button type="button" onClick={handleCancelEditPost} disabled={isSavingPostEdit}>
-                        Hủy
-                      </button>
-                      <button type="button" onClick={() => void handleSaveEditPost(post)} disabled={isSavingPostEdit}>
-                        {isSavingPostEdit ? 'Đang lưu...' : 'Lưu'}
-                      </button>
-                    </div>
-                  </div>
+                {post.sharedPost ? (
+                  <p className={styles.sharedByLine}>
+                    {post.authorName} đã chia sẻ bài viết
+                  </p>
                 ) : null}
 
-                <p className={styles.postContent}>{post.content}</p>
+                {post.content ? <p className={styles.postContent}>{post.content}</p> : null}
 
                 {post.mediaUrl ? (
                   <img
@@ -1178,6 +1256,30 @@ export default function FeedPage() {
                       event.currentTarget.style.display = 'none'
                     }}
                   />
+                ) : null}
+
+                {post.sharedPost ? (
+                  <Link to={post.sharedPost.unavailable ? '#' : `/posts/${post.sharedPost.id}`} className={styles.sharedPostEmbed}>
+                    {post.sharedPost.unavailable ? (
+                      <p className={styles.sharedUnavailable}>Bài viết gốc không còn khả dụng</p>
+                    ) : (
+                      <>
+                        <div className={styles.sharedPostAuthor}>
+                          {post.sharedPost.authorAvatar ? (
+                            <img src={post.sharedPost.authorAvatar} alt={post.sharedPost.authorName || 'Tác giả'} />
+                          ) : (
+                            <span>{(post.sharedPost.authorName?.[0] || 'U').toUpperCase()}</span>
+                          )}
+                          <b>{post.sharedPost.authorName || 'Người dùng ZChat'}</b>
+                        </div>
+                        {post.sharedPost.content ? <p>{post.sharedPost.content}</p> : null}
+                        {post.sharedPost.mediaUrl ? <img src={post.sharedPost.mediaUrl} alt="Shared post media" /> : null}
+                        <small>
+                          {Number(post.sharedPost.reactionCount || 0)} cảm xúc • {Number(post.sharedPost.commentCount || 0)} bình luận
+                        </small>
+                      </>
+                    )}
+                  </Link>
                 ) : null}
 
                 <div className={styles.postStats}>
@@ -1298,14 +1400,19 @@ export default function FeedPage() {
                             <b>{comment.authorName}</b>
                           </Link>
                           <p>{comment.content}</p>
-                          {Number(post.authorId) === Number(me?.id) ? (
+                          {token ? (
                             <div className={styles.commentActions}>
                               <button type="button" onClick={() => void handleReportComment(comment)} disabled={busyCommentId === comment.id}>
                                 Báo cáo
                               </button>
-                              <button type="button" onClick={() => void handleDeleteComment(post, comment)} disabled={busyCommentId === comment.id}>
-                                Xóa
-                              </button>
+                              {Number(comment.userId) === Number(me?.id) ||
+                              Number(post.authorId) === Number(me?.id) ||
+                              me?.role === 'admin' ||
+                              me?.role === 'moderator' ? (
+                                <button type="button" onClick={() => void handleDeleteComment(post, comment)} disabled={busyCommentId === comment.id}>
+                                  Xóa
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -1661,6 +1768,135 @@ export default function FeedPage() {
           </form>
         </div>
       ) : null}
+      {editingPostId && postEditDraft ? (
+        <div className={styles.modalOverlay}>
+          <form
+            className={`${styles.modal} ${styles.editPostModal}`}
+            onSubmit={(event) => {
+              event.preventDefault()
+              const targetPost = posts.find((item) => item.id === editingPostId)
+              if (targetPost) void handleSaveEditPost(targetPost)
+            }}
+          >
+            <header className={styles.modalHeader}>
+              <h2>Chỉnh sửa bài viết</h2>
+              <button type="button" className={styles.closeBtn} onClick={handleCancelEditPost} disabled={isSavingPostEdit}>
+                <X size={16} />
+              </button>
+            </header>
+
+            <div className={styles.modalUser}>
+              <div className={styles.avatarBadge}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
+              <div>
+                <b>{me?.fullName || 'Người dùng'}</b>
+                <small>{postEditDraft.visibility === 'public' ? 'Công khai' : 'Riêng tư'}</small>
+              </div>
+            </div>
+
+            <label className={styles.visibilityRow}>
+              <span>Quyền riêng tư</span>
+              <select
+                value={postEditDraft.visibility}
+                onChange={(event) =>
+                  setPostEditDraft((prev) =>
+                    prev ? { ...prev, visibility: event.target.value as 'public' | 'private' } : prev
+                  )
+                }
+              >
+                <option value="public">Công khai</option>
+                <option value="private">Riêng tư</option>
+              </select>
+            </label>
+
+            <textarea
+              className={styles.modalInput}
+              placeholder="Bạn muốn cập nhật điều gì?"
+              value={postEditDraft.content}
+              onChange={(event) => {
+                event.currentTarget.style.height = 'auto'
+                event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`
+                setPostEditDraft((prev) => (prev ? { ...prev, content: event.target.value } : prev))
+              }}
+            />
+
+            <input type="file" accept="image/*,video/*" className={styles.hiddenInput} onChange={handleEditSelectedMedia} />
+
+            <div className={styles.editMediaBox}>
+              {postEditDraft.mediaUrl ? (
+                <>
+                  {isVideoMediaUrl(postEditDraft.mediaUrl) ? (
+                    <video src={postEditDraft.mediaUrl} controls className={styles.modalMediaPreviewAsset} />
+                  ) : (
+                    <img src={postEditDraft.mediaUrl} alt="Media preview" className={styles.modalMediaPreviewAsset} />
+                  )}
+                  <button
+                    type="button"
+                    className={styles.removeMediaBtn}
+                    onClick={() => setPostEditDraft((prev) => (prev ? { ...prev, mediaUrl: '' } : prev))}
+                  >
+                    Gỡ media
+                  </button>
+                </>
+              ) : (
+                <label className={styles.dropMediaLabel}>
+                  <ImageIcon size={18} />
+                  <span>{uploadingMedia ? 'Đang tải media...' : 'Chọn ảnh/video cho bài viết'}</span>
+                  <input type="file" accept="image/*,video/*" onChange={handleEditSelectedMedia} disabled={uploadingMedia} />
+                </label>
+              )}
+            </div>
+
+            {postEditDraft.mediaUrl ? (
+              <label className={styles.replaceMediaBtn}>
+                <ImageIcon size={16} />
+                <span>{uploadingMedia ? 'Đang tải...' : 'Đổi media'}</span>
+                <input type="file" accept="image/*,video/*" onChange={handleEditSelectedMedia} disabled={uploadingMedia} />
+              </label>
+            ) : null}
+
+            <div className={styles.modalActionRow}>
+              <button type="button" className={styles.ghostBtn} onClick={handleCancelEditPost} disabled={isSavingPostEdit}>
+                Hủy
+              </button>
+              <button
+                type="submit"
+                className={styles.modalSubmit}
+                disabled={isSavingPostEdit || uploadingMedia || (!postEditDraft.content.trim() && !postEditDraft.mediaUrl.trim())}
+              >
+                {isSavingPostEdit ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={Boolean(confirmModal)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmModal(null)
+        }}
+        title={confirmModal?.title || ''}
+        description={confirmModal?.description || ''}
+        confirmLabel={confirmModal?.confirmLabel || 'Xác nhận'}
+        onConfirm={async () => {
+          await confirmModal?.onConfirm()
+        }}
+      />
+      <ReportDialog
+        open={Boolean(reportPost)}
+        onOpenChange={(open) => {
+          if (!open) setReportPost(null)
+        }}
+        title="Báo cáo bài viết"
+        onSubmit={submitReportPost}
+      />
+      <ReportDialog
+        open={Boolean(reportComment)}
+        onOpenChange={(open) => {
+          if (!open) setReportComment(null)
+        }}
+        title="Báo cáo bình luận"
+        onSubmit={submitReportComment}
+      />
     </div>
   )
 }

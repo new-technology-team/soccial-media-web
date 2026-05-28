@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import Navbar from '@/components/navigation/navbar'
+import TopNavbar from '@/components/navigation/top-navbar'
 import RouteGuard from '@/components/navigation/route-guard'
+import { Toaster } from '@/components/ui/toaster'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
-  const hideMainNavbar = pathname.startsWith('/admin') || pathname.startsWith('/auth/admin-login')
+  const hideMainNavbar = pathname.startsWith('/admin') || pathname.startsWith('/moderator') || pathname.startsWith('/auth/admin-login')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   useEffect(() => {
@@ -28,10 +29,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           Bạn đang offline — kiểm tra kết nối mạng
         </div>
       )}
-      {!hideMainNavbar ? <Navbar /> : null}
+      {!hideMainNavbar ? <TopNavbar /> : null}
       <main style={!isOnline ? { paddingTop: 36 } : undefined}>
         <RouteGuard>{children}</RouteGuard>
       </main>
+      <Toaster />
     </>
   )
 }

@@ -16,7 +16,8 @@ export const resolveChatMediaUrl = (value: string | null | undefined) => {
     }
 
     try {
-      const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost'
+      const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''
+      if (!origin) return value
       const base = new URL(API_BASE, origin)
       return new URL(value, `${base.origin}/`).toString()
     } catch {
