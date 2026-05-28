@@ -63,7 +63,8 @@ import {
 } from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
 import { useChatStore } from '@/contexts/chat-store'
-import { useCallStore, type IncomingCallState } from '@/contexts/call-store'
+import { useCallStore, type IncomingCallState, type ActiveCall } from '@/contexts/call-store'
+import { callSession } from '@/services/call-session'
 import { toast } from '@/hooks/use-toast'
 import { connectSocket, getSocket } from '@/services/socket'
 import { useConversationRouting } from '@/hooks/use-conversation-routing'
@@ -89,13 +90,7 @@ import { MessagesSidebar } from './components/messages-sidebar'
 import { MessageThread } from './components/message-thread'
 import { MessagesOverlays } from './components/messages-overlays'
 
-type ActiveCall = {
-  type: 'voice' | 'video'
-  withName: string
-  startedAt: number
-  mode: 'private' | 'group'
-  avatarUrl?: string | null
-}
+// ActiveCall type is imported from call-store
 
 type AttachmentDraft = {
   file: File
@@ -237,15 +232,15 @@ export default function MessagesPage() {
   } = useChatStore()
   const [message, setMessage] = useState('')
   const [callStatus, setCallStatus] = useState<string | null>(null)
-  const [callState, setCallState] = useState<CallState>('idle')
+  const [callState, setCallState] = useState<CallState>(() => useCallStore.getState().callState)
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null)
-  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(() => useCallStore.getState().activeCall)
   const [joinedCallUserIds, setJoinedCallUserIds] = useState<number[]>([])
-  const [callSeconds, setCallSeconds] = useState(0)
-  const [callMinimized, setCallMinimized] = useState(false)
+  const [callSeconds, setCallSeconds] = useState(() => useCallStore.getState().callSeconds)
+  const [callMinimized, setCallMinimized] = useState(() => useCallStore.getState().callMinimized)
   const [callSettingsOpen, setCallSettingsOpen] = useState(false)
-  const [cameraAvailable, setCameraAvailable] = useState(true)
-  const [localStreamState, setLocalStreamState] = useState<MediaStream | null>(null)
+  const [cameraAvailable, setCameraAvailable] = useState(() => useCallStore.getState().cameraAvailable)
+  const [localStreamState, setLocalStreamState] = useState<MediaStream | null>(() => useCallStore.getState().localStream)
   const [callSettings, setCallSettings] = useState<CallSettings>(() => {
     if (typeof window === 'undefined') return DEFAULT_CALL_SETTINGS
     try {
@@ -258,7 +253,7 @@ export default function MessagesPage() {
   const [busyUploading, setBusyUploading] = useState(false)
   const [busyActionId, setBusyActionId] = useState<string | null>(null)
   const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null)
-  const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>([])
+  const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>(() => useCallStore.getState().remoteStreams)
   const [actionMenu, setActionMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
@@ -298,9 +293,9 @@ export default function MessagesPage() {
   >({})
   const [friendMap, setFriendMap] = useState<Record<number, FriendConnection>>({})
   const [pendingFriendRequestTo, setPendingFriendRequestTo] = useState<Record<number, boolean>>({})
-  const [mutedMic, setMutedMic] = useState(false)
-  const [mutedCam, setMutedCam] = useState(false)
-  const [callAnswered, setCallAnswered] = useState(false)
+  const [mutedMic, setMutedMic] = useState(() => useCallStore.getState().mutedMic)
+  const [mutedCam, setMutedCam] = useState(() => useCallStore.getState().mutedCam)
+  const [callAnswered, setCallAnswered] = useState(() => useCallStore.getState().callAnswered)
   const [ringingStartedAt, setRingingStartedAt] = useState<number | null>(null)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
@@ -350,8 +345,10 @@ export default function MessagesPage() {
   const longPressTimer = useRef<number | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
-  const localStreamRef = useRef<MediaStream | null>(null)
-  const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
+  const localStreamRef = useRef<MediaStream | null>(useCallStore.getState().localStream)
+  // Share Map reference with callSession so WebRTC state survives navigation
+  const peersRef = useRef<Map<number, RTCPeerConnection>>(callSession.peers)
+  const pendingCandidatesRef = useRef<Map<number, RTCIceCandidateInit[]>>(callSession.pendingCandidates)
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
   const ringtoneRef = useRef<{ context: AudioContext; intervalId: number } | null>(null)
 
@@ -509,6 +506,23 @@ export default function MessagesPage() {
   const queryConversationId = searchParams.get('conversation') || ''
   const globalIncomingCall = useCallStore((state) => state.incomingCall)
   const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
+  const acceptPending = useCallStore((state) => state.acceptPending)
+  const setAcceptPending = useCallStore((state) => state.setAcceptPending)
+
+  // Stable Zustand setters (don't change between renders)
+  const {
+    setActiveCall: setGlobalActiveCall,
+    setCallAnswered: setGlobalCallAnswered,
+    setCallState: setGlobalCallState,
+    setCallMinimized: setGlobalCallMinimized,
+    setMutedMic: setGlobalMutedMic,
+    setMutedCam: setGlobalMutedCam,
+    setCallSeconds: setGlobalCallSeconds,
+    setCameraAvailable: setGlobalCameraAvailable,
+    setLocalStream: setGlobalLocalStream,
+    setRemoteStreams: setGlobalRemoteStreams,
+    setCallParticipants: setGlobalCallParticipants,
+  } = useCallStore.getState()
   const { openConversation: routeOpenConversation } = useConversationRouting({
     token,
     queryConversationId,
@@ -827,11 +841,18 @@ export default function MessagesPage() {
     socket.on('call:offer', (payload) => {
       if (!payload.offer) return
       const incomingConversationId = payload.conversationId ? String(payload.conversationId) : null
+      const incomingConv = incomingConversationId
+        ? conversations.find((c) => c.id === incomingConversationId) || null
+        : null
+      const callerMember = incomingConv?.members.find((m) => m.userId === Number(payload.fromUserId))
       const incomingPayload: IncomingCallState = {
         fromUserId: Number(payload.fromUserId),
         callType: payload.callType || 'voice',
         conversationId: incomingConversationId,
         offer: payload.offer,
+        fromUserName: callerMember?.fullName || payload.fromUserName || undefined,
+        conversationName: incomingConv ? getConversationDisplayName(incomingConv, user?.id) : payload.conversationName || undefined,
+        fromUserAvatar: callerMember?.avatarUrl || null,
       }
       setIncomingCall(incomingPayload)
       setGlobalIncomingCall(incomingPayload)
@@ -845,7 +866,11 @@ export default function MessagesPage() {
       const fromUserId = Number(payload.fromUserId || 0)
       const peer = peersRef.current.get(fromUserId)
       if (peer && payload.answer) {
-        await peer.setRemoteDescription(new RTCSessionDescription(payload.answer))
+        await peer.setRemoteDescription(new RTCSessionDescription({
+          type: (payload.answer.type as RTCSdpType) || 'answer',
+          sdp: payload.answer.sdp,
+        }))
+        await flushPendingCandidates(fromUserId)
       }
       const answeredAt = Number(payload?.answeredAt || 0) || Date.now()
       setCallAnswered(true)
@@ -875,10 +900,16 @@ export default function MessagesPage() {
       const fromUserId = Number(payload.fromUserId || 0)
       const peer = peersRef.current.get(fromUserId)
       if (!peer || !payload.candidate) return
+      if (!peer.remoteDescription) {
+        const pending = pendingCandidatesRef.current.get(fromUserId) || []
+        pending.push(payload.candidate as RTCIceCandidateInit)
+        pendingCandidatesRef.current.set(fromUserId, pending)
+        return
+      }
       try {
         await peer.addIceCandidate(new RTCIceCandidate(payload.candidate))
-      } catch (error) {
-        console.error('Failed to add ICE candidate', error)
+      } catch {
+        // ignore
       }
     })
 
@@ -1013,6 +1044,14 @@ export default function MessagesPage() {
     startRingtone('incoming')
   }, [globalIncomingCall, incomingCall, startRingtone])
 
+  // Auto-accept when user navigated from AppLayout's accept button
+  useEffect(() => {
+    if (!acceptPending || !globalIncomingCall) return
+    setAcceptPending(false)
+    void handleAcceptIncomingCall(globalIncomingCall)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acceptPending, globalIncomingCall])
+
   useEffect(() => {
     if (!selectedConversationId) return
     const socket = getSocket()
@@ -1048,17 +1087,19 @@ export default function MessagesPage() {
     return () => window.clearTimeout(timer)
   }, [callStatus, incomingCall, activeCall])
 
-  useEffect(() => {
-    if (!activeCall || !callAnswered) return
-    setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
-    const timer = window.setInterval(() => {
-      setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
-    }, 1000)
+  // Call timer has been moved to AppLayout so it persists across navigation
 
-    return () => {
-      window.clearInterval(timer)
-    }
-  }, [activeCall, callAnswered])
+  // Sync local call state → Zustand so AppLayout can render call windows across navigation
+  useEffect(() => { setGlobalActiveCall(activeCall) }, [activeCall]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallAnswered(callAnswered) }, [callAnswered]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallState(callState) }, [callState]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallMinimized(callMinimized) }, [callMinimized]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalMutedMic(mutedMic) }, [mutedMic]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalMutedCam(mutedCam) }, [mutedCam]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallSeconds(callSeconds) }, [callSeconds]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCameraAvailable(cameraAvailable) }, [cameraAvailable]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalLocalStream(localStreamState); callSession.localStream = localStreamState }, [localStreamState]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalRemoteStreams(remoteStreams) }, [remoteStreams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const messages = useMemo(
     () => (selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []),
@@ -1691,13 +1732,22 @@ export default function MessagesPage() {
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
         video: callType === 'video',
       })
       setCameraAvailable(callType === 'video' ? stream.getVideoTracks().length > 0 : true)
     } catch (error) {
       if (callType !== 'video') throw error
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 48000 },
+        video: false,
+      })
       setCameraAvailable(false)
       setChatNotice('Không tìm thấy camera trên thiết bị này. Bạn vẫn có thể tham gia bằng âm thanh.')
       toast({ title: 'Không tìm thấy camera trên thiết bị này', description: 'Bạn vẫn có thể tham gia bằng âm thanh.' })
@@ -1715,6 +1765,7 @@ export default function MessagesPage() {
       setMutedCam(callType === 'video' && callSettings.autoCameraOffOnJoin)
     }
     localStreamRef.current = stream
+    callSession.localStream = stream
     setLocalStreamState(stream)
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream
@@ -1722,9 +1773,10 @@ export default function MessagesPage() {
     return stream
   }
 
-  const buildPeerConnection = async (targetUserId: number, callType: 'voice' | 'video') => {
+  const buildPeerConnection = async (targetUserId: number, callType: 'voice' | 'video', conversationIdOverride?: string | null) => {
     const socket = getSocket()
-    if (!socket || !selectedConversationId) return null
+    const convId = conversationIdOverride || selectedConversationId
+    if (!socket || !convId) return null
 
     const pc = new RTCPeerConnection(RTC_CONFIG)
     const localStream = await ensureLocalStream(callType)
@@ -1750,20 +1802,42 @@ export default function MessagesPage() {
       if (!event.candidate) return
       socket.emit('call:ice-candidate', {
         targetUserId,
-        conversationId: selectedConversationId,
-        candidate: event.candidate,
+        conversationId: convId,
+        candidate: event.candidate.toJSON(),
       })
+    }
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        pc.restartIce()
+      }
     }
 
     peersRef.current.set(targetUserId, pc)
     return pc
   }
 
+  const flushPendingCandidates = async (targetUserId: number) => {
+    const peer = peersRef.current.get(targetUserId)
+    if (!peer) return
+    const pending = pendingCandidatesRef.current.get(targetUserId) || []
+    pendingCandidatesRef.current.delete(targetUserId)
+    for (const candidate of pending) {
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate))
+      } catch {
+        // ignore stale candidates
+      }
+    }
+  }
+
   const closeCallResources = () => {
     peersRef.current.forEach((peer) => peer.close())
     peersRef.current.clear()
+    pendingCandidatesRef.current.clear()
     localStreamRef.current?.getTracks().forEach((track) => track.stop())
     localStreamRef.current = null
+    callSession.localStream = null
     setLocalStreamState(null)
     setRemoteStreams([])
     setJoinedCallUserIds([])
@@ -2445,7 +2519,7 @@ export default function MessagesPage() {
           targetUserId,
           conversationId: selectedConversationId,
           callType,
-          offer,
+          offer: { type: offer.type, sdp: offer.sdp },
         })
         socket.emit(selectedConversation?.type === 'group' ? 'group_call_started' : 'call_started', {
           targetUserId,
@@ -2475,6 +2549,8 @@ export default function MessagesPage() {
       startedAt: Date.now(),
       mode: selectedConversation?.type === 'group' ? 'group' : 'private',
       avatarUrl: selectedConversation?.avatarUrl || selectedConversation?.members.find((member) => member.userId === directPeer?.id)?.avatarUrl || null,
+      conversationId: selectedConversationId,
+      targetUserIds: [...callTargets],
     })
     setCallMinimized(false)
     setJoinedCallUserIds(initialParticipants)
@@ -2491,25 +2567,38 @@ export default function MessagesPage() {
     }
   }
 
-  const handleAcceptIncomingCall = async () => {
+  const handleAcceptIncomingCall = async (callData?: IncomingCallState) => {
     const socket = getSocket()
-    if (!socket || !incomingCall) return
+    const call = callData || incomingCall
+    if (!socket || !call) return
 
-    const activeConversationId = incomingCall.conversationId || selectedConversationId
+    const activeConversationId = call.conversationId || selectedConversationId
     if (!activeConversationId) return
     const answeredAt = Date.now()
 
+    // Ensure local state is in sync
+    if (!incomingCall) setIncomingCall(call)
+
+    // Open the right conversation if not already
+    if (call.conversationId && selectedConversationId !== call.conversationId) {
+      routeOpenConversation(call.conversationId)
+    }
+
     try {
-      const pc = (await buildPeerConnection(incomingCall.fromUserId, incomingCall.callType)) || undefined
+      const pc = (await buildPeerConnection(call.fromUserId, call.callType, activeConversationId)) || undefined
       if (!pc) return
-      await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer))
+      await pc.setRemoteDescription(new RTCSessionDescription({
+        type: (call.offer.type as RTCSdpType) || 'offer',
+        sdp: call.offer.sdp,
+      }))
+      await flushPendingCandidates(call.fromUserId)
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
 
       socket.emit('call:answer', {
-        targetUserId: incomingCall.fromUserId,
+        targetUserId: call.fromUserId,
         conversationId: activeConversationId,
-        answer,
+        answer: { type: answer.type, sdp: answer.sdp },
         answeredAt,
       })
     } catch (error) {
@@ -2519,6 +2608,7 @@ export default function MessagesPage() {
       return
     }
 
+    const conv = conversations.find((c) => c.id === activeConversationId) || selectedConversation
     stopRingtone()
     setCallState('connected')
     setCallStatus('Đã kết nối')
@@ -2526,31 +2616,30 @@ export default function MessagesPage() {
     setRingingStartedAt(null)
     setCallSeconds(0)
     setActiveCall({
-      type: incomingCall.callType,
-      withName: selectedConversation
-        ? getConversationDisplayName(selectedConversation, user?.id)
-        : `Người dùng #${incomingCall.fromUserId}`,
+      type: call.callType,
+      withName: call.conversationName || call.fromUserName ||
+        (conv ? getConversationDisplayName(conv, user?.id) : `Người dùng #${call.fromUserId}`),
       startedAt: answeredAt,
-      mode: selectedConversation?.type === 'group' ? 'group' : 'private',
-      avatarUrl: selectedConversation?.avatarUrl || null,
+      mode: conv?.type === 'group' ? 'group' : 'private',
+      avatarUrl: call.fromUserAvatar || conv?.avatarUrl || null,
+      conversationId: activeConversationId,
+      targetUserIds: [call.fromUserId],
     })
     setCallMinimized(false)
-    const newJoinedIds = user?.id ? [user.id, incomingCall.fromUserId] : [incomingCall.fromUserId]
+    const newJoinedIds = user?.id ? [user.id, call.fromUserId] : [call.fromUserId]
     setJoinedCallUserIds(newJoinedIds)
     socket.emit('call:join', {
       conversationId: activeConversationId,
     })
-    socket.emit(selectedConversation?.type === 'group' ? 'group_call_joined' : 'call_joined', {
+    socket.emit(conv?.type === 'group' ? 'group_call_joined' : 'call_joined', {
       conversationId: activeConversationId,
-      callType: incomingCall.callType,
+      callType: call.callType,
     })
-    
     socket.emit('call:participants', {
       conversationId: activeConversationId,
       participantCount: newJoinedIds.length,
       participantIds: newJoinedIds,
     })
-    
     setIncomingCall(null)
     setGlobalIncomingCall(null)
   }
@@ -2739,6 +2828,8 @@ export default function MessagesPage() {
         }
       })
   }, [activeCall, joinedCallUserIds, localStreamState, mutedCam, mutedMic, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
+
+  useEffect(() => { setGlobalCallParticipants(callParticipantProfiles) }, [callParticipantProfiles]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderMessagePreview = (msg: ChatMessage) => {
     const renderRichMessageText = (text: string) => {
@@ -3193,7 +3284,7 @@ export default function MessagesPage() {
               {callStatus ? <p>{callStatus}</p> : null}
               {incomingCall ? (
                 <div className={styles.callBannerActions}>
-                  <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
+                  <button type="button" onClick={() => void handleAcceptIncomingCall()} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
                     Chấp nhận
                   </button>
                   <button type="button" onClick={handleDeclineIncomingCall} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
@@ -3676,37 +3767,7 @@ export default function MessagesPage() {
             onDecline={handleDeclineIncomingCall}
           />
         ) : null}
-        {activeCall && !callAnswered && !callMinimized ? (
-          <OutgoingCallModal
-            name={activeCall.withName}
-            avatarUrl={activeCall.avatarUrl}
-            callType={activeCall.type}
-            mode={activeCall.mode}
-            state={callState === 'idle' ? 'calling' : callState}
-            timer={formattedCallTime}
-            onEnd={handleEndCall}
-          />
-        ) : null}
-        {activeCall && callAnswered && !callMinimized ? (
-          <ActiveCallWindow
-            name={activeCall.withName}
-            avatarUrl={activeCall.avatarUrl}
-            callType={activeCall.type}
-            mode={activeCall.mode}
-            state={callState === 'idle' ? 'connected' : callState}
-            duration={formattedCallTime}
-            participants={callParticipantProfiles}
-            localStream={localStreamState}
-            remoteStreams={remoteStreams}
-            mutedMic={mutedMic}
-            mutedCam={mutedCam}
-            cameraAvailable={cameraAvailable}
-            onToggleMic={handleToggleMic}
-            onToggleCamera={handleToggleCamera}
-            onMinimize={() => setCallMinimized(true)}
-            onEnd={handleEndCall}
-          />
-        ) : null}
+        {/* OutgoingCallModal and ActiveCallWindow are rendered in AppLayout to persist across navigation */}
         {activeCall && callMinimized ? (
           <MinimizedCallPill
             name={activeCall.withName}

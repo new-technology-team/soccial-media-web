@@ -437,6 +437,17 @@ export const api = {
       mediaUrl: resolveApiAssetUrl(data.mediaUrl || data.fileUrl || '') || '',
     })),
 
+  savePost: (token: string, postId: number | string) =>
+    request<{ saved: boolean }>(`/social/posts/${postId}/save`, { method: 'POST' }, token),
+
+  unsavePost: (token: string, postId: number | string) =>
+    request<{ saved: boolean }>(`/social/posts/${postId}/save`, { method: 'DELETE' }, token),
+
+  listSavedPosts: (token: string) =>
+    request<{ posts: FeedPost[] }>('/social/posts/saved', { method: 'GET' }, token).then((res) => ({
+      posts: (res.posts || []).map(normalizeFeedPost),
+    })),
+
   reactPost: (token: string, postId: number | string, type = 'like') =>
     request<{ post: FeedPost }>(
       `/social/posts/${postId}/reaction`,
@@ -909,7 +920,7 @@ export const api = {
     request<{ report: Record<string, unknown> }>(`/moderator/reports/${reportId}`, { method: 'GET' }, token),
 
   moderationUsers: (token: string) =>
-    request<{ users: User[] }>('/social/admin/users', { method: 'GET' }, token),
+    request<{ users: User[] }>('/moderator/users', { method: 'GET' }, token),
 
   reviewModerationReport: (
     token: string,
@@ -948,6 +959,9 @@ export const api = {
 
   tempLockModerationUser: (token: string, userId: number, reason?: string) =>
     request<{ message: string; user: User }>(`/moderator/users/${userId}/temp-lock`, { method: 'PATCH', body: JSON.stringify({ reason }) }, token),
+
+  restoreModerationUser: (token: string, userId: number) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/restore`, { method: 'PATCH' }, token),
 
   adminPosts: (
     token: string,

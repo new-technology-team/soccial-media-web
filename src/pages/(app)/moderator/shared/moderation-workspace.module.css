@@ -391,6 +391,82 @@
   resize: vertical;
 }
 
+.cardReason {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f1f5f9;
+  line-height: 1.45;
+}
+
+.cardMeta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+  color: #94a3b8;
+  flex-wrap: wrap;
+}
+
+.cardMeta strong {
+  color: #cbd5e1;
+}
+
+.contentPreview {
+  font-size: 13px;
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-style: italic;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.assignedBadge {
+  color: #fde68a;
+}
+
+.assignedBadge strong {
+  color: #fef08a;
+}
+
+.unassigned {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Severity tag colours */
+.sev_critical { background: rgba(239, 68, 68, 0.16); color: #fca5a5; }
+.sev_high { background: rgba(249, 115, 22, 0.16); color: #fdba74; }
+.sev_medium { background: rgba(234, 179, 8, 0.16); color: #fde68a; }
+
+/* Detail modal */
+.targetContentBlock {
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.06);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.targetContentBlock span {
+  font-size: 12px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.targetContentBlock blockquote {
+  margin: 0;
+  font-size: 14px;
+  color: #e2e8f0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .emptyState,
 .loadingState {
   border: 1px dashed rgba(148, 163, 184, 0.22);

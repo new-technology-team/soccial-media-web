@@ -43,14 +43,15 @@ export default function AdminLoginPage() {
 
     try {
       const payload = await api.login(formData.emailOrPhone, formData.password)
-      if (payload.user.role !== 'admin' && payload.user.role !== 'moderator') {
+      const role = (payload.user.role || '').toLowerCase()
+      if (role !== 'admin' && role !== 'moderator') {
         clearAuth()
         setError('Tài khoản này không có quyền truy cập khu vực quản trị hoặc kiểm duyệt.')
         return
       }
 
       setAuth(payload)
-      const fallbackPath = payload.user.role === 'admin' ? '/admin/dashboard' : '/moderator/dashboard'
+      const fallbackPath = role === 'admin' ? '/admin/dashboard' : '/moderator/dashboard'
       const nextPath = searchParams.get('next') || fallbackPath
       navigate(nextPath)
     } catch (err) {

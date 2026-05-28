@@ -33,6 +33,12 @@ export default defineConfig({
         target: backendTarget,
         changeOrigin: true,
         ws: true,
+        configure: (proxy) => {
+          proxy.on('error', (err: NodeJS.ErrnoException) => {
+            if (err.code === 'ECONNABORTED' || err.code === 'ECONNRESET' || err.code === 'EPIPE') return
+            console.error('[socket.io proxy]', err.message)
+          })
+        },
       },
     },
   },

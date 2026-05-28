@@ -163,9 +163,11 @@ export default function FeedPage() {
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
   const [reportPost, setReportPost] = useState<FeedPost | null>(null)
   const [reportComment, setReportComment] = useState<FeedComment | null>(null)
+  const [savedPostIds, setSavedPostIds] = useState<Set<number | string>>(new Set())
   const mediaInputRef = useRef<HTMLInputElement | null>(null)
   const feedBottomSentinelRef = useRef<HTMLDivElement | null>(null)
   const isGuestView = !token
+  const isSavedView = searchParams.get('saved') === '1'
 
   useSocialRealtime({
     token,
@@ -200,8 +202,15 @@ export default function FeedPage() {
     const loadFeed = async () => {
       setIsLoadingFeed(true)
       try {
-        const response = await api.listFeed(token || undefined)
-        const dedupedPosts = dedupePostsById(response.posts)
+        let fetchedPosts: FeedPost[]
+        if (isSavedView && token) {
+          const response = await api.listSavedPosts(token)
+          fetchedPosts = response.posts
+        } else {
+          const response = await api.listFeed(token || undefined)
+          fetchedPosts = response.posts
+        }
+        const dedupedPosts = dedupePostsById(fetchedPosts)
         setPosts(dedupedPosts)
         setVisiblePostsCount(Math.min(FEED_BATCH_SIZE, dedupedPosts.length || FEED_BATCH_SIZE))
       } catch (error) {
@@ -213,7 +222,14 @@ export default function FeedPage() {
     }
 
     loadFeed()
-  }, [handleAuthExpired, token])
+  }, [handleAuthExpired, token, isSavedView])
+
+  useEffect(() => {
+    if (!token) return
+    api.listSavedPosts(token)
+      .then((res) => setSavedPostIds(new Set(res.posts.map((p) => p.id))))
+      .catch(() => undefined)
+  }, [token])
 
   useEffect(() => {
     if (!posts.length) {
@@ -873,6 +889,32 @@ export default function FeedPage() {
     })
   }
 
+  const handleToggleSave = async (postId: number | string) => {
+    if (!token) { navigate('/auth/login'); return }
+    const wasSaved = savedPostIds.has(postId)
+    setSavedPostIds((prev) => {
+      const next = new Set(prev)
+      if (wasSaved) next.delete(postId)
+      else next.add(postId)
+      return next
+    })
+    setActivePostMenuId(null)
+    try {
+      if (wasSaved) await api.unsavePost(token, postId)
+      else await api.savePost(token, postId)
+      if (isSavedView && wasSaved) {
+        setPosts((prev) => prev.filter((p) => p.id !== postId))
+      }
+    } catch {
+      setSavedPostIds((prev) => {
+        const next = new Set(prev)
+        if (wasSaved) next.add(postId)
+        else next.delete(postId)
+        return next
+      })
+    }
+  }
+
   const handleHidePost = (postId: number) => {
     setHiddenPostIds((prev) => ({ ...prev, [postId]: true }))
     setActivePostMenuId(null)
@@ -1130,6 +1172,13 @@ export default function FeedPage() {
 
           {errorText ? <p className={styles.errorBanner}>{errorText}</p> : null}
 
+          {isSavedView ? (
+            <div className={styles.feedHeading}>
+              <h1>Bài viết đã lưu</h1>
+              <p>Các bài viết bạn đã lưu để xem lại</p>
+            </div>
+          ) : null}
+
           <div className={styles.feedList}>
             {isLoadingFeed ? (
               <>
@@ -1141,11 +1190,17 @@ export default function FeedPage() {
 
             {!isLoadingFeed && filteredPosts.length === 0 ? (
               <div className={styles.emptyFeed}>
-                <p>Chưa có bài viết nào trong bảng tin.</p>
-                <Link to="/friends" className={styles.submitBtn}>
-                  <UserPlus size={15} />
-                  Kết bạn để xem nội dung
-                </Link>
+                {isSavedView ? (
+                  <p>Bạn chưa lưu bài viết nào.</p>
+                ) : (
+                  <>
+                    <p>Chưa có bài viết nào trong bảng tin.</p>
+                    <Link to="/friends" className={styles.submitBtn}>
+                      <UserPlus size={15} />
+                      Kết bạn để xem nội dung
+                    </Link>
+                  </>
+                )}
               </div>
             ) : null}
 
@@ -1187,6 +1242,9 @@ export default function FeedPage() {
                       <div className={styles.postMenu} role="menu">
                         <button type="button" onClick={() => void handleCopyPostId(post.id)}>
                           Sao chép ID bài viết (#{post.id})
+                        </button>
+                        <button type="button" onClick={() => void handleToggleSave(post.id)}>
+                          {savedPostIds.has(post.id) ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}
                         </button>
                         <button
                           type="button"
