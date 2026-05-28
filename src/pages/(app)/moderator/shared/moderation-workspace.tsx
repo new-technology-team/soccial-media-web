@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -240,8 +240,7 @@ export default function ModeratorReportWorkspace({
     } catch (error) {
       toast({
         title: 'Không thể tải danh sách báo cáo',
-        description: error instanceof Error ? error.message : 'Vui lòng thử lại sau.',
-        type: 'error',
+        description: error instanceof Error ? error.message : 'Vui lòng thử lại sau.', variant: 'destructive',
       })
     } finally {
       setLoading(false)
@@ -339,13 +338,11 @@ export default function ModeratorReportWorkspace({
       toast({
         title: `Đã nhận xử lý báo cáo #${report.reportId}`,
         description: 'Báo cáo đã được gán cho bạn và cập nhật realtime.',
-        type: 'success',
       })
     } catch (error) {
       toast({
         title: 'Không thể nhận xử lý báo cáo',
-        description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
-        type: 'error',
+        description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive',
       })
     } finally {
       setAssigningReportId(null)
@@ -368,25 +365,25 @@ export default function ModeratorReportWorkspace({
 
       if (actionType === 'hide_post') {
         await api.moderatePost(token, Number(report.targetId), { status: 'hidden', resolutionNote: statusNote })
-        toast({ title: `Đã ẩn bài viết #${report.targetId}`, description: 'Hành động kiểm duyệt đã được ghi nhận.', type: 'success' })
+        toast({ title: `Đã ẩn bài viết #${report.targetId}`, description: 'Hành động kiểm duyệt đã được ghi nhận.' })
       } else if (actionType === 'delete_post') {
         await api.moderatePost(token, Number(report.targetId), { status: 'deleted', resolutionNote: statusNote })
-        toast({ title: `Đã xóa bài viết #${report.targetId}`, description: 'Bài viết vi phạm đã được gỡ khỏi hệ thống.', type: 'success' })
+        toast({ title: `Đã xóa bài viết #${report.targetId}`, description: 'Bài viết vi phạm đã được gỡ khỏi hệ thống.' })
       } else if (actionType === 'delete_comment') {
         await api.deleteComment(token, report.targetId)
-        toast({ title: `Đã xóa bình luận #${report.targetId}`, description: 'Bình luận vi phạm đã được xử lý.', type: 'success' })
+        toast({ title: `Đã xóa bình luận #${report.targetId}`, description: 'Bình luận vi phạm đã được xử lý.' })
       } else if (actionType === 'delete_message') {
         await api.deleteMessage(token, report.targetId)
-        toast({ title: `Đã xóa tin nhắn #${report.targetId}`, description: 'Tin nhắn vi phạm đã được gỡ khỏi cuộc trò chuyện.', type: 'success' })
+        toast({ title: `Đã xóa tin nhắn #${report.targetId}`, description: 'Tin nhắn vi phạm đã được gỡ khỏi cuộc trò chuyện.' })
       } else if (actionType === 'warn_user') {
         await api.warnModerationUser(token, Number(report.targetId), statusNote)
-        toast({ title: `Đã cảnh cáo tài khoản #${report.targetId}`, description: 'Cảnh cáo đã được ghi vào lịch sử kiểm duyệt.', type: 'warning' })
+        toast({ title: `Đã cảnh cáo tài khoản #${report.targetId}`, description: 'Cảnh cáo đã được ghi vào lịch sử kiểm duyệt.' })
       } else if (actionType === 'restrict_user') {
         await api.restrictModerationUser(token, Number(report.targetId), statusNote)
-        toast({ title: `Đã hạn chế tài khoản #${report.targetId}`, description: 'Tài khoản đã bị giới hạn tương tác.', type: 'warning' })
+        toast({ title: `Đã hạn chế tài khoản #${report.targetId}`, description: 'Tài khoản đã bị giới hạn tương tác.' })
       } else if (actionType === 'temp_lock_user') {
         await api.tempLockModerationUser(token, Number(report.targetId), statusNote)
-        toast({ title: `Đã khóa tạm thời tài khoản #${report.targetId}`, description: 'Phiên làm việc của người dùng có thể đã bị thu hồi.', type: 'warning' })
+        toast({ title: `Đã khóa tạm thời tài khoản #${report.targetId}`, description: 'Phiên làm việc của người dùng có thể đã bị thu hồi.' })
       }
 
       if (actionStatus !== 'PENDING' || actionType === 'none') {
@@ -398,7 +395,7 @@ export default function ModeratorReportWorkspace({
       toast({
         title: actionStatus === 'REJECTED' ? `Đã từ chối báo cáo #${reportId}` : `Đã xử lý báo cáo #${reportId}`,
         description: 'Trạng thái báo cáo và lịch sử xử lý đã được đồng bộ realtime.',
-        type: actionStatus === 'REJECTED' ? 'warning' : 'success',
+        variant: actionStatus === 'REJECTED' ? 'destructive' : 'default',
       })
       setActionReport(null)
       setActionNote('')
@@ -407,8 +404,7 @@ export default function ModeratorReportWorkspace({
     } catch (error) {
       toast({
         title: 'Không thể thực thi hành động',
-        description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
-        type: 'error',
+        description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive',
       })
     } finally {
       setSubmitting(false)

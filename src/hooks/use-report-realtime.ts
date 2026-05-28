@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+﻿import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { connectSocket } from '@/services/socket'
 import { toast } from '@/hooks/use-toast'
@@ -35,19 +35,19 @@ export function useReportRealtime({
     const onCreated = (payload: { report?: ReportRow }) => {
       if (!payload?.report) return
       upsertReport(payload.report)
-      toast({ title: 'Báo cáo mới', description: `Report #${reportIdOf(payload.report)} vừa được gửi.`, type: 'warning' })
+      toast({ title: 'Báo cáo mới', description: `Report #${reportIdOf(payload.report)} vừa được gửi.` })
     }
 
     const onUpdated = (payload: { report?: ReportRow }) => {
       if (!payload?.report) return
       upsertReport(payload.report)
-      toast({ title: 'Báo cáo đã cập nhật', description: `Report #${reportIdOf(payload.report)} đã thay đổi trạng thái.`, type: 'info' })
+      toast({ title: 'Báo cáo đã cập nhật', description: `Report #${reportIdOf(payload.report)} đã thay đổi trạng thái.` })
     }
 
     const onAssigned = (payload: { report?: ReportRow }) => {
       if (!payload?.report) return
       upsertReport(payload.report)
-      toast({ title: 'Bạn được phân công báo cáo', description: `Report #${reportIdOf(payload.report)} đã được giao cho bạn.`, type: 'info' })
+      toast({ title: 'Bạn được phân công báo cáo', description: `Report #${reportIdOf(payload.report)} đã được giao cho bạn.` })
     }
 
     socket.on('report:created', onCreated)

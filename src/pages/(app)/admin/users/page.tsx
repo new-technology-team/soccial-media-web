@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Eye, Lock, RotateCcw, Search, Trash2, Unlock, UserCog } from 'lucide-react'
 
 import { api } from '@/api/client'
@@ -59,7 +59,7 @@ export default function AdminUsersPage() {
       const res = await api.moderationUsers(token)
       setUsers(res.users)
     } catch (error) {
-      toast({ title: 'Không thể tải danh sách người dùng', description: error instanceof Error ? error.message : 'Vui lòng thử lại.', type: 'error' })
+      toast({ title: 'Không thể tải danh sách người dùng', description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -84,7 +84,7 @@ export default function AdminUsersPage() {
     if (!token || !action) return
     if (action.delete) {
       await api.deleteAdminUser(token, action.user.id)
-      toast({ title: `Đã xóa tài khoản "${action.user.fullName}"`, description: 'Tài khoản đã được chuyển sang trạng thái deleted.', type: 'success' })
+      toast({ title: `Đã xóa tài khoản "${action.user.fullName}"`, description: 'Tài khoản đã được chuyển sang trạng thái deleted.' })
     } else if (action.status) {
       await api.updateModerationUser(token, action.user.id, {
         accountStatus: action.status,
@@ -94,7 +94,6 @@ export default function AdminUsersPage() {
       toast({
         title: action.status === 'locked' ? `Đã khóa tài khoản "${action.user.fullName}"` : `Đã mở khóa tài khoản "${action.user.fullName}"`,
         description: 'Thay đổi đã được ghi vào audit log.',
-        type: 'success',
       })
     }
     setAction(null)
@@ -154,7 +153,7 @@ export default function AdminUsersPage() {
                     isLocked
                       ? { label: 'Mở khóa tài khoản', icon: <Unlock size={15} />, onClick: () => setAction({ user: item, status: 'active', title: 'Mở khóa tài khoản?', description: `Mở khóa tài khoản ${item.fullName}.` }) }
                       : { label: 'Khóa tài khoản', icon: <Lock size={15} />, onClick: () => setAction({ user: item, status: 'locked', title: 'Khóa tài khoản?', description: `Khóa tài khoản ${item.fullName} vì vi phạm chính sách.` }) },
-                    { label: 'Reset mật khẩu', icon: <RotateCcw size={15} />, onClick: () => toast({ title: `Đã tạo yêu cầu reset mật khẩu cho "${item.fullName}"`, type: 'info' }) },
+                    { label: 'Reset mật khẩu', icon: <RotateCcw size={15} />, onClick: () => toast({ title: `Đã tạo yêu cầu reset mật khẩu cho "${item.fullName}"` }) },
                     { label: 'Xóa tài khoản', icon: <Trash2 size={15} />, danger: true, disabled: item.id === me.id, onClick: () => setAction({ user: item, delete: true, title: 'Xóa tài khoản?', description: `Xóa tài khoản ${item.fullName}. Hành động nghiêm trọng cần xác nhận kép.` }) },
                   ]}
                 />

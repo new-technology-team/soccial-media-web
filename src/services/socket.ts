@@ -8,7 +8,10 @@ const SOCKET_URL =
 let socketInstance: Socket | null = null
 
 export const connectSocket = (token: string, userId?: number) => {
-  if (socketInstance?.connected) {
+  if (socketInstance) {
+    if (!socketInstance.connected) {
+      socketInstance.connect()
+    }
     return socketInstance
   }
 

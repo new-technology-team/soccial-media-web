@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Flag, Search, UserCheck } from 'lucide-react'
 
 import { api } from '@/api/client'
@@ -63,7 +63,6 @@ export default function AdminReportsPage() {
     toast({
       title: `Đã phân công báo cáo #${String(selected.reportId || selected.id)}`,
       description: moderator ? `Người xử lý: ${moderator.fullName}` : 'Báo cáo đang ở hàng đợi chung.',
-      type: 'success',
     })
     setSelected(null)
     await load()
@@ -110,7 +109,7 @@ export default function AdminReportsPage() {
                 <ActionMenu
                   items={[
                     { label: 'Phân công moderator', icon: <UserCheck size={15} />, onClick: () => setSelected(report) },
-                    { label: 'Đưa vào review', icon: <Flag size={15} />, onClick: () => toast({ title: `Đã đưa báo cáo #${String(report.reportId || report.id)} vào review`, type: 'info' }) },
+                    { label: 'Đưa vào review', icon: <Flag size={15} />, onClick: () => toast({ title: `Đã đưa báo cáo #${String(report.reportId || report.id)} vào review` }) },
                   ]}
                 />
               </td>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { AlertTriangle, Lock, Save, ShieldCheck } from 'lucide-react'
 
 import { api } from '@/api/client'
@@ -60,8 +60,7 @@ export default function AdminSettingsPage() {
       .catch((error) => {
         toast({
           title: 'Không thể tải cấu hình hệ thống',
-          description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
-          type: 'error',
+          description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive',
         })
       })
       .finally(() => setLoading(false))
@@ -76,12 +75,11 @@ export default function AdminSettingsPage() {
     try {
       const res = await api.updateAdminSystemSettings(token, enabled)
       setEnabled({ ...defaults, ...(res.settings || {}) })
-      toast({ title: 'Đã cập nhật cấu hình hệ thống', description: 'Thiết lập đã được lưu vào backend và sẽ giữ nguyên khi chuyển trang.', type: 'success' })
+      toast({ title: 'Đã cập nhật cấu hình hệ thống', description: 'Thiết lập đã được lưu vào backend và sẽ giữ nguyên khi chuyển trang.' })
     } catch (error) {
       toast({
         title: 'Không thể lưu cấu hình hệ thống',
-        description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
-        type: 'error',
+        description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive',
       })
     } finally {
       setSaving(false)
@@ -139,7 +137,7 @@ export default function AdminSettingsPage() {
           <StatusBadge value="dangerBadge" label="High risk" />
         </div>
         <p className={styles.panelText}>Các thao tác xóa dữ liệu, bật maintenance mode hoặc thay đổi bảo mật nên yêu cầu xác nhận kép.</p>
-        <button type="button" className={styles.danger} onClick={() => toast({ title: 'Maintenance mode cần xác nhận kép', type: 'warning' })}>
+        <button type="button" className={styles.danger} onClick={() => toast({ title: 'Maintenance mode cần xác nhận kép' })}>
           <Lock size={15} /> Mở danger action
         </button>
       </section>

@@ -8,6 +8,7 @@ import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import { connectSocket } from '@/services/socket'
 import type { FeedComment, FeedPost } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
 
 export default function PostDetailPage() {
@@ -139,7 +140,14 @@ export default function PostDetailPage() {
           <p>Xem nội dung đầy đủ và toàn bộ bình luận theo thời gian thực.</p>
         </div>
 
-        {loading && <div className={styles.infoCard}>Đang tải dữ liệu...</div>}
+        {loading && (
+          <div className={styles.infoCard}>
+            <Skeleton style={{ height: 192, borderRadius: 12, marginBottom: 12 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12, marginBottom: 8 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12, marginBottom: 8 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12 }} />
+          </div>
+        )}
 
         {!loading && !post && <div className={styles.infoCard}>Không tìm thấy bài viết.</div>}
 

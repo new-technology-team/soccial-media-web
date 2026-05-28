@@ -1,4 +1,4 @@
-import { CirclePlus, File, Image, Paperclip, Send, Smile, Sticker, Video, X } from 'lucide-react'
+import { CirclePlus, File, Image, Paperclip, Send, Smile, Sparkles, Sticker, Video, X } from 'lucide-react'
 import { useState, type ChangeEvent, type Dispatch, type RefObject, type SetStateAction } from 'react'
 
 import { cn } from '@/utils'
@@ -81,6 +81,8 @@ type MessageComposerProps = {
   fileInputRef: RefObject<HTMLInputElement | null>
   imageInputRef: RefObject<HTMLInputElement | null>
   videoInputRef: RefObject<HTMLInputElement | null>
+  onSuggestReplies?: () => void | Promise<void>
+  isSuggesting?: boolean
 }
 
 const formatFileSize = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -106,6 +108,8 @@ export function MessageComposer({
   fileInputRef,
   imageInputRef,
   videoInputRef,
+  onSuggestReplies,
+  isSuggesting,
 }: MessageComposerProps) {
   const [activeStickerPack, setActiveStickerPack] = useState<StickerPackName>('Cảm xúc')
   const [loadedStickerPacks, setLoadedStickerPacks] = useState<Record<string, boolean>>({ 'Cảm xúc': true })
@@ -141,6 +145,12 @@ export function MessageComposer({
         <button type="button" className={styles.composerIconBtn} onClick={handlePickAttachment} disabled={busyUploading} title="Chọn tệp đính kèm" aria-label="Chọn tệp đính kèm">
           <CirclePlus size={18} />
         </button>
+
+        {onSuggestReplies ? (
+          <button type="button" className={styles.composerIconBtn} onClick={onSuggestReplies} disabled={isSuggesting} title="Gợi ý trả lời AI" aria-label="Gợi ý trả lời AI">
+            <Sparkles size={18} />
+          </button>
+        ) : null}
 
         {composerMenuOpen ? (
           <div className={styles.composerPlusMenu}>

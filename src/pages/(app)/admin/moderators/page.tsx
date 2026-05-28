@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { Lock, Plus, Search, Shield, Trash2, Unlock } from 'lucide-react'
 
 import { api } from '@/api/client'
@@ -51,11 +51,11 @@ export default function AdminModeratorsPage() {
   const createModerator = async () => {
     if (!token) return
     if (!form.username.trim() || !form.password.trim()) {
-      toast({ title: 'Thiếu thông tin moderator', description: 'Vui lòng nhập tên đăng nhập và mật khẩu.', type: 'error' })
+      toast({ title: 'Thiếu thông tin moderator', description: 'Vui lòng nhập tên đăng nhập và mật khẩu.', variant: 'destructive' })
       return
     }
     await api.createModerator(token, form)
-    toast({ title: `Đã tạo kiểm duyệt viên "${form.displayName || form.username}"`, description: 'Tài khoản mới chỉ có quyền moderation.', type: 'success' })
+    toast({ title: `Đã tạo kiểm duyệt viên "${form.displayName || form.username}"`, description: 'Tài khoản mới chỉ có quyền moderation.' })
     setCreateOpen(false)
     setForm({ username: '', password: '', displayName: '' })
     await loadModerators()
@@ -64,7 +64,7 @@ export default function AdminModeratorsPage() {
   const updateStatus = async (moderator: User, accountStatus: User['accountStatus']) => {
     if (!token) return
     await api.updateModeratorPermissions(token, moderator.id, { role: 'moderator', accountStatus })
-    toast({ title: accountStatus === 'locked' ? `Đã khóa moderator "${moderator.fullName}"` : `Đã mở khóa moderator "${moderator.fullName}"`, type: 'success' })
+    toast({ title: accountStatus === 'locked' ? `Đã khóa moderator "${moderator.fullName}"` : `Đã mở khóa moderator "${moderator.fullName}"` })
     await loadModerators()
   }
 
@@ -79,14 +79,14 @@ export default function AdminModeratorsPage() {
       accountStatus: moderator.accountStatus,
       permissions: next,
     })
-    toast({ title: `Đã cập nhật quyền "${moderator.fullName}"`, type: 'success' })
+    toast({ title: `Đã cập nhật quyền "${moderator.fullName}"` })
     await loadModerators()
   }
 
   const deleteModerator = async () => {
     if (!token || !removeTarget) return
     await api.deleteModerator(token, removeTarget.id)
-    toast({ title: `Đã xóa kiểm duyệt viên "${removeTarget.fullName}"`, type: 'success' })
+    toast({ title: `Đã xóa kiểm duyệt viên "${removeTarget.fullName}"` })
     setRemoveTarget(null)
     await loadModerators()
   }

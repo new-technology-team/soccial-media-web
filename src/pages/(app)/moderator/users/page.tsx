@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { api } from '@/api/client'
@@ -55,7 +55,6 @@ export default function ModeratorUsersPage() {
             ? `Đã hạn chế tài khoản "${action.user.fullName}"`
             : `Đã tạm khóa tài khoản "${action.user.fullName}"`,
       description: 'Hành động kiểm duyệt đã được ghi nhận. Nếu tài khoản bị khóa, phiên đăng nhập sẽ bị thu hồi.',
-      type: 'success',
     })
     setAction(null)
     setReason('')

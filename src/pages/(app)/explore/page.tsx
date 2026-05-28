@@ -7,7 +7,10 @@ import { Heart, MessageCircle, Search, Share2, UserPlus } from 'lucide-react'
 import { api, isAuthExpiredError } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import type { FeedPost } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
+
+type UserResult = { userId: number; displayName: string; avatarUrl: string | null }
 
 export default function ExplorePage() {
   const navigate = useNavigate()
@@ -18,6 +21,8 @@ export default function ExplorePage() {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [sortMode, setSortMode] = useState<'all' | 'recent' | 'popular'>('all')
+  const [userResults, setUserResults] = useState<UserResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
 
   useEffect(() => {
     api
@@ -46,6 +51,20 @@ export default function ExplorePage() {
     }, 260)
     return () => clearTimeout(timer)
   }, [query])
+
+  useEffect(() => {
+    const q = debouncedQuery.trim()
+    if (!q || !token) {
+      setUserResults([])
+      setIsSearching(false)
+      return
+    }
+    setIsSearching(true)
+    api.searchUsers(token, q)
+      .then((r) => setUserResults((r.users || []) as unknown as UserResult[]))
+      .catch(console.error)
+      .finally(() => setIsSearching(false))
+  }, [debouncedQuery, token])
 
   const filteredPosts = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase()
@@ -125,17 +144,42 @@ export default function ExplorePage() {
           </div>
 
           <div className={styles.peopleList}>
-            {people.map((person) => (
-              <Link key={person.id} to={`/profile/${person.id}`} className={styles.personCard}>
-                <div className={styles.avatar}>{(person.name[0] || 'U').toUpperCase()}</div>
-                <div className={styles.personMeta}>
-                  <strong>{person.name}</strong>
-                  <small>{person.postCount} bài viết liên quan</small>
-                </div>
-                <UserPlus size={14} />
-              </Link>
-            ))}
-            {people.length === 0 ? <p className={styles.empty}>Không có người dùng phù hợp.</p> : null}
+            {debouncedQuery.trim() ? (
+              isSearching ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className={styles.personCard} style={{ pointerEvents: 'none' }}>
+                    <Skeleton style={{ width: 40, height: 40, borderRadius: '50%', flexShrink: 0 }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                      <Skeleton style={{ height: 14, width: '75%' }} />
+                      <Skeleton style={{ height: 12, width: '45%' }} />
+                    </div>
+                  </div>
+                ))
+              ) : userResults.length > 0 ? userResults.map((u) => (
+                <Link key={u.userId} to={`/profile/${u.userId}`} className={styles.personCard}>
+                  {u.avatarUrl
+                    ? <img src={u.avatarUrl} alt={u.displayName} className={styles.avatar} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                    : <div className={styles.avatar}>{(u.displayName[0] || 'U').toUpperCase()}</div>
+                  }
+                  <div className={styles.personMeta}>
+                    <strong>{u.displayName}</strong>
+                    <small>Xem hồ sơ</small>
+                  </div>
+                  <UserPlus size={14} />
+                </Link>
+              )) : <p className={styles.empty}>Không tìm thấy người dùng nào.</p>
+            ) : (
+              people.length > 0 ? people.map((person) => (
+                <Link key={person.id} to={`/profile/${person.id}`} className={styles.personCard}>
+                  <div className={styles.avatar}>{(person.name[0] || 'U').toUpperCase()}</div>
+                  <div className={styles.personMeta}>
+                    <strong>{person.name}</strong>
+                    <small>{person.postCount} bài viết nổi bật</small>
+                  </div>
+                  <UserPlus size={14} />
+                </Link>
+              )) : <p className={styles.empty}>Không có người dùng nổi bật.</p>
+            )}
           </div>
 
           <div className={styles.box}>

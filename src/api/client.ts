@@ -769,6 +769,33 @@ export const api = {
       body: JSON.stringify({ message, history }),
     }, token),
 
+  getAiHistory: (token: string) =>
+    request<Array<{ role: 'user' | 'model'; text: string }>>('/social/ai/history', { method: 'GET' }, token),
+
+  summarizeChat: (token: string, messages: any[]) =>
+    request<{ summary: string }>('/social/ai/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, token),
+
+  suggestReplies: (token: string, messages: any[], currentUserName: string) =>
+    request<{ suggestions: string[] }>('/social/ai/suggest-replies', {
+      method: 'POST',
+      body: JSON.stringify({ messages, currentUserName }),
+    }, token),
+
+  analyzeSentiment: (token: string, messages: any[]) =>
+    request<{ sentiment: 'positive' | 'neutral' | 'negative'; score: number; detail: string; emotions: string[] }>('/social/ai/analyze-sentiment', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, token),
+
+  translateMessage: (token: string, text: string, targetLanguage: string = 'vi') =>
+    request<{ translatedText: string; detectedLanguage: string }>('/social/ai/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text, targetLanguage }),
+    }, token),
+
   notifications: (token: string) =>
     request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token).then((res) => ({
       notifications: (res.notifications || []).map((item) => normalizeNotification(item as NotificationItem & Record<string, unknown>)),
@@ -779,6 +806,25 @@ export const api = {
 
   readAllNotifications: (token: string) =>
     request<{ message: string }>('/social/notifications/read-all', { method: 'PATCH' }, token),
+
+  deleteNotification: (token: string, id: number | string) =>
+    request<{ message: string }>(`/social/notifications/${id}`, { method: 'DELETE' }, token),
+
+  getUserProfile: (token: string, userId: number | string) =>
+    request<{ user: User | null }>(`/social/users/${userId}`, { method: 'GET' }, token),
+
+  updateUserProfile: (
+    token: string,
+    payload: { displayName?: string; avatarUrl?: string; sex?: string; dateOfBirth?: string }
+  ) =>
+    request<{ message: string; user: User }>('/social/users/profile', { method: 'PUT', body: JSON.stringify(payload) }, token),
+
+  getUserPosts: (token: string, userId: number | string, limit?: number) => {
+    const suffix = limit ? `?limit=${limit}` : ''
+    return request<{ posts: FeedPost[] }>(`/social/users/${userId}/posts${suffix}`, { method: 'GET' }, token).then((res) => ({
+      posts: (res.posts || []).map(normalizeFeedPost),
+    }))
+  },
 
   submitReport: (
     token: string,

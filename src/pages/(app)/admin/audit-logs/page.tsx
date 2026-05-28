@@ -17,7 +17,7 @@ export default function AdminAuditLogsPage() {
     api.adminAuditLogs(token).then((res) => setLogs(res.logs || [])).catch(() => undefined)
   }, [token])
 
-  const enriched = useMemo(() => logs.map((log, index) => ({
+  const enriched = useMemo(() => logs.map((log, index): Record<string, unknown> & { severity: string } => ({
     ...log,
     severity: String(log.action || '').toLowerCase().includes('delete') ? 'high' : index % 3 === 0 ? 'medium' : 'low',
   })), [logs])

@@ -4,6 +4,7 @@ import {
   Blocks,
   Brush,
   CalendarClock,
+  Check,
   ChevronDown,
   Crown,
   FileText,
@@ -78,8 +79,7 @@ export type SettingsSidebarProps = {
   onLargeTextChange: (value: boolean) => void
   onRoundBubblesChange: (value: boolean) => void
   handleUpdateNickname: (userId: number) => void | Promise<void>
-  handleUpdateGroupProfile: () => void | Promise<void>
-  handleUpdateGroupAvatar: () => void | Promise<void>
+  handleUpdateGroupProfile: (payload: { name: string; avatarUrl?: string | null }) => void | Promise<void>
   handleBlockPeer: () => void | Promise<void>
   handleUnblockPeer: () => void | Promise<void>
   handleOpenHideConversation: () => void
@@ -400,7 +400,6 @@ export function SettingsSidebar({
   onRoundBubblesChange,
   handleUpdateNickname,
   handleUpdateGroupProfile,
-  handleUpdateGroupAvatar,
   handleBlockPeer,
   handleUnblockPeer,
   handleOpenHideConversation,
@@ -418,6 +417,9 @@ export function SettingsSidebar({
   const title = isGroup ? conversation.name || 'Nhóm chat' : peer?.nickname || peer?.fullName || conversation.name || 'Cuộc trò chuyện'
   const onlineMembers = conversation.members.filter((member) => member.online)
   const [showAllMembers, setShowAllMembers] = useState(false)
+  const [editingGroupName, setEditingGroupName] = useState(false)
+  const [groupNameDraft, setGroupNameDraft] = useState('')
+  const [savingGroupName, setSavingGroupName] = useState(false)
   const [boardPanel, setBoardPanel] = useState<'reminders' | 'pinned' | 'polls' | 'notes' | null>(null)
   const [reminderTitle, setReminderTitle] = useState('')
   const [reminderDueAt, setReminderDueAt] = useState('')
@@ -539,10 +541,63 @@ export function SettingsSidebar({
           )}
         </div>
         <div className={styles.settingsTitleRow}>
-          <h3>{title}</h3>
-          <button type="button" onClick={() => isGroup ? void handleUpdateGroupProfile() : peer ? void handleUpdateNickname(peer.userId) : undefined} title="Chỉnh sửa">
-            <UserPen size={15} />
-          </button>
+          {isGroup && editingGroupName ? (
+            <>
+              <input
+                className={styles.groupNameInput}
+                value={groupNameDraft}
+                onChange={(e) => setGroupNameDraft(e.target.value)}
+                maxLength={80}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && groupNameDraft.trim()) {
+                    void (async () => {
+                      setSavingGroupName(true)
+                      try { await handleUpdateGroupProfile({ name: groupNameDraft.trim(), avatarUrl: conversation.avatarUrl || null }); setEditingGroupName(false) }
+                      finally { setSavingGroupName(false) }
+                    })()
+                  }
+                  if (e.key === 'Escape') setEditingGroupName(false)
+                }}
+              />
+              <button
+                type="button"
+                title="Lưu"
+                disabled={!groupNameDraft.trim() || savingGroupName}
+                onClick={() => {
+                  if (!groupNameDraft.trim()) return
+                  void (async () => {
+                    setSavingGroupName(true)
+                    try { await handleUpdateGroupProfile({ name: groupNameDraft.trim(), avatarUrl: conversation.avatarUrl || null }); setEditingGroupName(false) }
+                    finally { setSavingGroupName(false) }
+                  })()
+                }}
+              >
+                <Check size={14} />
+              </button>
+              <button type="button" title="Hủy" onClick={() => setEditingGroupName(false)}>
+                <X size={14} />
+              </button>
+            </>
+          ) : (
+            <>
+              <h3>{title}</h3>
+              <button
+                type="button"
+                title="Chỉnh sửa"
+                onClick={() => {
+                  if (isGroup) {
+                    setGroupNameDraft(conversation.name || '')
+                    setEditingGroupName(true)
+                  } else if (peer) {
+                    void handleUpdateNickname(peer.userId)
+                  }
+                }}
+              >
+                <UserPen size={15} />
+              </button>
+            </>
+          )}
         </div>
         <p>{description}</p>
         {isGroup ? (
@@ -559,7 +614,7 @@ export function SettingsSidebar({
         <QuickActionButton icon={conversation.isPinned ? <PinOff size={18} /> : <Pin size={18} />} label={conversation.isPinned ? 'Bỏ ghim' : 'Ghim'} active={Boolean(conversation.isPinned)} onClick={() => void handleToggleConversationPin()} />
         {isGroup ? <QuickActionButton icon={<UserPlus size={18} />} label="Thêm" disabled={!canAddMembers} onClick={() => document.getElementById(`invite-${conversation.id}`)?.focus()} /> : null}
         {isGroup ? <QuickActionButton icon={<UsersRound size={18} />} label="Quản lý" onClick={() => document.getElementById(`members-${conversation.id}`)?.scrollIntoView({ block: 'nearest' })} /> : null}
-        {isGroup ? <QuickActionButton icon={<Image size={18} />} label="Ảnh nhóm" disabled={!canAddMembers} onClick={() => void handleUpdateGroupAvatar()} /> : null}
+        {isGroup ? <QuickActionButton icon={<Image size={18} />} label="Ảnh nhóm" disabled={true} onClick={() => undefined} /> : null}
         <QuickActionButton icon={<Wallpaper size={18} />} label="Nền" onClick={() => backgroundInputRef.current?.click()} />
         {!isGroup ? (
           <QuickActionButton

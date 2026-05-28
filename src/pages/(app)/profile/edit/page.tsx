@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -85,7 +85,7 @@ export default function EditProfilePage() {
   const prepareAvatar = async (file?: File) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      toast({ title: 'File không hợp lệ', description: 'Vui lòng chọn một ảnh đại diện.', type: 'error' })
+      toast({ title: 'File không hợp lệ', description: 'Vui lòng chọn một ảnh đại diện.', variant: 'destructive' })
       return
     }
     const dataUrl = await fileToDataUrl(file)
@@ -148,11 +148,11 @@ export default function EditProfilePage() {
         })
       }
       setMessage('Đã tải ảnh đại diện mới.')
-      toast({ title: 'Đã cập nhật ảnh đại diện', description: 'Avatar đã đồng bộ tới navbar, chat và bình luận.', type: 'success' })
+      toast({ title: 'Đã cập nhật ảnh đại diện', description: 'Avatar đã đồng bộ tới navbar, chat và bình luận.' })
     } catch (error) {
       console.error(error)
       setMessage(error instanceof Error ? error.message : 'Không thể tải ảnh đại diện.')
-      toast({ title: 'Không thể tải ảnh đại diện', description: error instanceof Error ? error.message : 'Vui lòng thử lại.', type: 'error' })
+      toast({ title: 'Không thể tải ảnh đại diện', description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive' })
     } finally {
       setBusyUpload(false)
     }
@@ -182,12 +182,12 @@ export default function EditProfilePage() {
       })
 
       setMessage('Lưu thay đổi thành công.')
-      toast({ title: 'Đã lưu hồ sơ', description: 'Thông tin hồ sơ đã được cập nhật.', type: 'success' })
+      toast({ title: 'Đã lưu hồ sơ', description: 'Thông tin hồ sơ đã được cập nhật.' })
       navigate(`/profile/${response.user.id}`)
     } catch (error) {
       console.error(error)
       setMessage('Không thể lưu hồ sơ. Vui lòng thử lại.')
-      toast({ title: 'Không thể lưu hồ sơ', description: 'Vui lòng thử lại.', type: 'error' })
+      toast({ title: 'Không thể lưu hồ sơ', description: 'Vui lòng thử lại.', variant: 'destructive' })
     } finally {
       setBusySave(false)
     }

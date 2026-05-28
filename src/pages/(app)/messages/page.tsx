@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   BadgeCheck,
   BadgeQuestionMark,
+  ArrowLeft,
   Bell,
   BicepsFlexed,
   CirclePlus,
@@ -29,6 +30,11 @@ import {
   ThumbsUp,
   UserPlus,
   Video,
+  Wand2,
+  BrainCircuit,
+  ChevronDown,
+  Languages,
+  X,
   Zap,
   type LucideIcon,
 } from 'lucide-react'
@@ -132,12 +138,12 @@ const RTC_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun1.l.google.com:19302' },
     ...(import.meta.env.VITE_TURN_URL
       ? [
-          {
-            urls: import.meta.env.VITE_TURN_URL,
-            username: import.meta.env.VITE_TURN_USERNAME,
-            credential: import.meta.env.VITE_TURN_CREDENTIAL,
-          },
-        ]
+        {
+          urls: import.meta.env.VITE_TURN_URL,
+          username: import.meta.env.VITE_TURN_USERNAME,
+          credential: import.meta.env.VITE_TURN_CREDENTIAL,
+        },
+      ]
       : []),
   ],
 }
@@ -303,6 +309,7 @@ export default function MessagesPage() {
   const [messageSearchKeyword, setMessageSearchKeyword] = useState('')
   const [showMessageFilters, setShowMessageFilters] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [isLoadingConversations, setIsLoadingConversations] = useState(true)
   const [sharedContent, setSharedContent] = useState<{ photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }>({
     photosVideos: [],
     files: [],
@@ -320,10 +327,28 @@ export default function MessagesPage() {
   })
   const typingTimeoutRef = useRef<number | null>(null)
   const sendingMessageRef = useRef(false)
+
+  // AI States
+  const [isSummarizing, setIsSummarizing] = useState(false)
+  const [chatSummary, setChatSummary] = useState<string | null>(null)
+
+  const [isSuggesting, setIsSuggesting] = useState(false)
+  const [replySuggestions, setReplySuggestions] = useState<string[]>([])
+
+  const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false)
+  const [sentimentResult, setSentimentResult] = useState<{ sentiment: 'positive' | 'neutral' | 'negative'; score: number; detail: string; emotions: string[] } | null>(null)
+
+  const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({})
+  const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({})
+  const [chatSummaryCollapsed, setChatSummaryCollapsed] = useState(false)
+  const [sentimentCollapsed, setSentimentCollapsed] = useState(false)
+  const [showDetailsPanelDesktop, setShowDetailsPanelDesktop] = useState(true)
+
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const videoInputRef = useRef<HTMLInputElement | null>(null)
   const longPressTimer = useRef<number | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
@@ -337,6 +362,110 @@ export default function MessagesPage() {
       node.scrollTo({ top: node.scrollHeight, behavior })
     }, 0)
   }, [])
+
+  const getSenderName = (senderId: number, msg?: ChatMessage) => {
+    if (senderId === user?.id) return user?.fullName || 'Tôi'
+    if (msg?.senderName) return msg.senderName
+    if ((msg as any)?.sender?.fullName) return (msg as any).sender.fullName
+    if ((msg as any)?.sender?.name) return (msg as any).sender.name
+
+    if (selectedConversation) {
+      const member = selectedConversation.members?.find(m => m.userId === senderId)
+      if (member) return member.fullName
+    }
+    return `Người dùng ${senderId}`
+  }
+
+  const handleSummarizeChat = async () => {
+    if (!token || !selectedConversationId) return
+    setIsSummarizing(true)
+    setChatSummary(null)
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-50).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || '',
+        timestamp: m.createdAt
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        setChatNotice('Chưa có tin nhắn văn bản nào để tóm tắt.')
+        return
+      }
+
+      const res = await api.summarizeChat(token, recentMsgs)
+      setChatSummary(res.summary)
+      setChatSummaryCollapsed(false)
+    } catch (error) {
+      setChatNotice('Không thể tóm tắt đoạn chat.')
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
+
+  const handleSuggestReplies = async () => {
+    if (!token || !selectedConversationId) return
+    setIsSuggesting(true)
+    setReplySuggestions([])
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-10).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || ''
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        return
+      }
+
+      const res = await api.suggestReplies(token, recentMsgs, user?.fullName || 'Tôi')
+      setReplySuggestions(res.suggestions || [])
+    } catch (error) {
+      setChatNotice('Không thể lấy gợi ý trả lời.')
+    } finally {
+      setIsSuggesting(false)
+    }
+  }
+
+  const handleAnalyzeSentiment = async () => {
+    if (!token || !selectedConversationId) return
+    setIsAnalyzingSentiment(true)
+    setSentimentResult(null)
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-50).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || '',
+        timestamp: m.createdAt
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        setChatNotice('Chưa có tin nhắn văn bản nào để phân tích.')
+        return
+      }
+
+      const res = await api.analyzeSentiment(token, recentMsgs)
+      setSentimentResult(res)
+      setSentimentCollapsed(false)
+    } catch (error) {
+      setChatNotice('Không thể phân tích cảm xúc.')
+    } finally {
+      setIsAnalyzingSentiment(false)
+    }
+  }
+
+  const handleTranslateMessage = async (msgId: string, text: string) => {
+    if (!token || !text) return
+    setTranslatingIds(prev => ({ ...prev, [msgId]: true }))
+    try {
+      const res = await api.translateMessage(token, text, 'vi')
+      setTranslatedMessages(prev => ({ ...prev, [msgId]: res.translatedText }))
+    } catch (error) {
+      setChatNotice('Không thể dịch tin nhắn.')
+    } finally {
+      setTranslatingIds(prev => ({ ...prev, [msgId]: false }))
+    }
+  }
 
   useEffect(() => {
     try {
@@ -389,6 +518,8 @@ export default function MessagesPage() {
     onLockedConversation: setPendingLockedConversationId,
   })
 
+  const [mobileShowList, setMobileShowList] = useState(true)
+
   const refreshConversations = useCallback(async () => {
     if (!token) return
     setConversations(await loadChatConversations(token))
@@ -409,7 +540,7 @@ export default function MessagesPage() {
 
       return true
     },
-    [conversations, refreshConversations, token]
+    [conversations, token]
   )
 
   const handleOpenConversation = useCallback(
@@ -419,6 +550,7 @@ export default function MessagesPage() {
         if (!allowed) return
         routeOpenConversation(conversationId)
         markConversationRead(conversationId)
+        setMobileShowList(false)
       })()
     },
     [markConversationRead, requestConversationAccess, routeOpenConversation]
@@ -533,6 +665,15 @@ export default function MessagesPage() {
   }
 
   useEffect(() => {
+    if (conversations.length > 0) setIsLoadingConversations(false)
+  }, [conversations.length])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsLoadingConversations(false), 4000)
+    return () => clearTimeout(timer)
+  }, [token])
+
+  useEffect(() => {
     if (!token || !selectedConversationId) return
 
     setLoadingMessages(true)
@@ -627,7 +768,9 @@ export default function MessagesPage() {
 
     socket.on('message:deleted', (payload: { conversationId: string; messageId?: string }) => {
       if (!payload?.messageId) return
-      removeMessageFromConversation(String(payload.conversationId), String(payload.messageId))
+      const convId = String(payload.conversationId)
+      const msgId = String(payload.messageId)
+      setMessages(convId, (messagesByConversation[convId] || []).filter((m) => m.id !== msgId))
       refreshConversations().catch(() => undefined)
     })
 
@@ -1329,18 +1472,10 @@ export default function MessagesPage() {
     }
   }
 
-  const handleUpdateGroupProfile = async () => {
-    if (!selectedGroup || !canAddMembers) return
-    setGroupNameDialogOpen(true)
-  }
-
-  const handleSubmitGroupName = async (nextName: string) => {
+  const handleUpdateGroupProfile = async (payload: { name: string; avatarUrl?: string | null }) => {
     if (!token || !selectedGroup || !canAddMembers) return
     try {
-      await api.updateGroupProfile(token, selectedGroup.id, {
-        name: nextName.trim(),
-        avatarUrl: selectedGroup.avatarUrl || null,
-      })
+      await api.updateGroupProfile(token, selectedGroup.id, { name: payload.name, avatarUrl: payload.avatarUrl ?? selectedGroup.avatarUrl ?? null })
       await refreshConversations()
       setChatNotice('Đã cập nhật tên nhóm.')
       toast({ title: 'Đã cập nhật tên nhóm' })
@@ -2758,15 +2893,27 @@ export default function MessagesPage() {
     }
 
     return (
-      <p className={styles.messageText}>
+      <div className={styles.messageText}>
         {forwarded ? <small className={styles.forwardTagInline}>[Đã chuyển tiếp] </small> : null}
         {msg.text ? renderRichMessageText(msg.text) : ''}
-      </p>
+        {translatedMessages[msg.id] && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+            <strong style={{ fontSize: '0.8em', color: 'var(--color-primary-dark)', display: 'block', marginBottom: 4 }}>
+              <Languages size={12} style={{ display: 'inline', marginBottom: -2 }} /> Bản dịch AI:
+            </strong>
+            <p>{translatedMessages[msg.id]}</p>
+          </div>
+        )}
+      </div>
     )
   }
+  const activeRailTab = showNotificationsDrawer ? 'notifications' as const
+    : showNewMessageModal ? 'newMessage' as const
+    : showCreateGroupModal ? 'createGroup' as const
+    : 'messages' as const
   return (
     <div className={styles.page}>
-      <div className={styles.layout}>
+      <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''} ${!showDetailsPanelDesktop ? styles.layoutNarrow : ''}`}>
         <MessagesSidebar
           initials={initials}
           userId={user?.id}
@@ -2775,6 +2922,8 @@ export default function MessagesPage() {
           notifications={notifications}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
+          isLoadingConversations={isLoadingConversations}
+          activeRailTab={activeRailTab}
           onOpenConversation={handleOpenConversation}
           onShowNotifications={() => setShowNotificationsDrawer(true)}
           onShowNewMessage={() => setShowNewMessageModal(true)}
@@ -2796,6 +2945,9 @@ export default function MessagesPage() {
           ].filter(Boolean).join(' ')}
         >
           <header className={styles.chatHeader}>
+            <button type="button" className={styles.backToListBtn} onClick={() => setMobileShowList(true)} aria-label="Quay lại danh sách">
+              <ArrowLeft size={18} />
+            </button>
             <div className={styles.chatIdentity}>
               <div className={styles.chatHeaderAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
               <div>
@@ -2812,6 +2964,26 @@ export default function MessagesPage() {
               </div>
             </div>
             <div className={styles.chatActions}>
+              <button
+                type="button"
+                className={chatSummary ? styles.chatActionActive : undefined}
+                onClick={handleSummarizeChat}
+                disabled={isSummarizing || !selectedConversationId}
+                title="Tóm tắt đoạn chat (AI)"
+                aria-label="Tóm tắt"
+              >
+                <Wand2 size={16} />
+              </button>
+              <button
+                type="button"
+                className={sentimentResult ? styles.chatActionActive : undefined}
+                onClick={handleAnalyzeSentiment}
+                disabled={isAnalyzingSentiment || !selectedConversationId}
+                title="Phân tích cảm xúc (AI)"
+                aria-label="Phân tích cảm xúc"
+              >
+                <BrainCircuit size={16} />
+              </button>
               <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
                 <Video size={16} />
               </button>
@@ -2847,10 +3019,15 @@ export default function MessagesPage() {
                 type="button"
                 title="Xem chi tiết cuộc trò chuyện"
                 aria-label="Xem chi tiết cuộc trò chuyện"
+                className={showDetailsPanelDesktop ? styles.chatActionActive : undefined}
                 disabled={!selectedConversation}
                 onClick={() => {
-                  setRightPanelSection('overview')
-                  setShowSettingsDrawer(true)
+                  if (window.innerWidth > 1180) {
+                    setShowDetailsPanelDesktop(v => !v)
+                  } else {
+                    setRightPanelSection('overview')
+                    setShowSettingsDrawer(true)
+                  }
                 }}
               >
                 <Info size={16} />
@@ -2892,6 +3069,81 @@ export default function MessagesPage() {
               Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phí trước khi cần kết bạn.
             </div>
           ) : null}
+
+          {chatSummary && (
+            <div className={`${styles.aiCard} ${chatSummaryCollapsed ? styles.aiCardCollapsed : ''}`}>
+              <div className={styles.aiCardHead}>
+                <span className={styles.aiCardTitle}>
+                  <Sparkles size={12} /> Tóm tắt AI
+                </span>
+                <div className={styles.aiCardControls}>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title={chatSummaryCollapsed ? 'Mở rộng' : 'Thu gọn'}
+                    onClick={() => setChatSummaryCollapsed(c => !c)}
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title="Đóng"
+                    onClick={() => { setChatSummary(null); setChatSummaryCollapsed(false) }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+              <div className={styles.aiCardBody}>{chatSummary}</div>
+            </div>
+          )}
+
+          {sentimentResult && (
+            <div
+              className={`${styles.aiCard} ${sentimentCollapsed ? styles.aiCardCollapsed : ''}`}
+              data-sentiment={sentimentResult.sentiment}
+            >
+              <div className={styles.aiCardHead}>
+                <span className={styles.aiCardTitle}>
+                  <BrainCircuit size={12} />
+                  {sentimentResult.sentiment === 'positive' ? '✨ Tích cực' : sentimentResult.sentiment === 'negative' ? '🌧️ Tiêu cực' : '⚖️ Trung lập'}
+                  <span className={styles.aiCardScore}>{Math.round(sentimentResult.score * 100)}%</span>
+                </span>
+                <div className={styles.aiCardControls}>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title={sentimentCollapsed ? 'Mở rộng' : 'Thu gọn'}
+                    onClick={() => setSentimentCollapsed(c => !c)}
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title="Đóng"
+                    onClick={() => { setSentimentResult(null); setSentimentCollapsed(false) }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+              <div className={styles.aiCardBody}>
+                <div className={styles.aiScoreBar}>
+                  <div className={styles.aiScoreBarFill} style={{ width: `${sentimentResult.score * 100}%` }} />
+                </div>
+                {sentimentResult.emotions && sentimentResult.emotions.length > 0 && (
+                  <div className={styles.aiEmotionTags}>
+                    {sentimentResult.emotions.map((emo, idx) => (
+                      <span key={idx} className={styles.aiEmotionTag}>{emo}</span>
+                    ))}
+                  </div>
+                )}
+                <p className={styles.aiDetail}>"{sentimentResult.detail}"</p>
+              </div>
+            </div>
+          )}
 
           {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
             <div className={styles.pinnedBanner}>
@@ -2936,51 +3188,107 @@ export default function MessagesPage() {
 
           {chatNotice ? <p className={styles.chatNotice}>{chatNotice}</p> : null}
 
-          <MessageThread
-            userId={user?.id}
-            selectedConversation={selectedConversation}
-            virtualSlice={virtualSlice}
-            messagesWrapRef={messagesWrapRef}
-            loadingOlderMessages={loadingOlderMessages || loadingMessages}
-            typingUserIds={typingUserIds}
-            busyActionId={busyActionId}
-            pinnedMessageIds={pinnedMessageIds}
-            reactionPickerMessageId={reactionPickerMessageId}
-            setReactionPickerMessageId={setReactionPickerMessageId}
-            openMessageActions={openMessageActions}
-            handleReaction={handleReaction}
-            renderMessagePreview={renderMessagePreview}
-            getMessageReadLabel={getMessageReadLabel}
-            onLoadOlderMessages={loadOlderMessages}
-            onScroll={(event) => {
-              const element = event.currentTarget
-              const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
-              setShowJumpToLatest(fromBottom > 260)
-            }}
-          />
+          {(callStatus || incomingCall) && (
+            <div className={styles.callBanner}>
+              {callStatus ? <p>{callStatus}</p> : null}
+              {incomingCall ? (
+                <div className={styles.callBannerActions}>
+                  <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
+                    Chấp nhận
+                  </button>
+                  <button type="button" onClick={handleDeclineIncomingCall} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
+                    Từ chối
+                  </button>
+                </div>
+              ) : null}
+              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+                <PhoneOff size={14} />
+                Kết thúc
+              </button>
+            </div>
+          )}
 
-          <MessageComposer
-            message={message}
-            setMessage={setMessage}
-            handleSend={handleSend}
-            handleFileSelected={handleFileSelected}
-            handlePickAttachment={handlePickAttachment}
-            handlePickAttachmentType={handlePickAttachmentType}
-            busyUploading={busyUploading}
-            isSendingMessage={isSendingMessage}
-            composerMenuOpen={composerMenuOpen}
-            setComposerMenuOpen={setComposerMenuOpen}
-            showEmojiPanel={showEmojiPanel}
-            setShowEmojiPanel={setShowEmojiPanel}
-            showStickerPanel={showStickerPanel}
-            setShowStickerPanel={setShowStickerPanel}
-            onSendSticker={handleSendSticker}
-            attachmentDraft={attachmentDraft}
-            onRemoveAttachment={clearAttachmentDraft}
-            fileInputRef={fileInputRef as any}
-            imageInputRef={imageInputRef as any}
-            videoInputRef={videoInputRef as any}
-          />
+          {!selectedConversationId ? (
+            <div className={styles.noConversationPlaceholder}>
+              <Send size={36} />
+              <p>Chọn một cuộc trò chuyện để bắt đầu nhắn tin</p>
+            </div>
+          ) : (
+            <MessageThread
+              userId={user?.id}
+              selectedConversation={selectedConversation}
+              virtualSlice={virtualSlice}
+              messagesWrapRef={messagesWrapRef}
+              loadingOlderMessages={loadingOlderMessages || loadingMessages}
+              typingUserIds={typingUserIds}
+              busyActionId={busyActionId}
+              pinnedMessageIds={pinnedMessageIds}
+              reactionPickerMessageId={reactionPickerMessageId}
+              setReactionPickerMessageId={setReactionPickerMessageId}
+              openMessageActions={openMessageActions}
+              handleReaction={handleReaction}
+              renderMessagePreview={renderMessagePreview}
+              getMessageReadLabel={getMessageReadLabel}
+              onLoadOlderMessages={loadOlderMessages}
+              onScroll={(event) => {
+                const element = event.currentTarget
+                const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
+                setShowJumpToLatest(fromBottom > 260)
+              }}
+            />
+          )}
+
+          {replySuggestions.length > 0 && (
+            <div className={styles.aiSuggestBar}>
+              <span className={styles.aiSuggestLabel}><Sparkles size={12} /> Gợi ý:</span>
+              <div className={styles.aiSuggestList}>
+                {replySuggestions.map((suggestion, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={styles.aiSuggestBtn}
+                    onClick={() => { setMessage(suggestion); setReplySuggestions([]) }}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={styles.aiCardBtn}
+                title="Đóng gợi ý"
+                onClick={() => setReplySuggestions([])}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
+          {selectedConversationId ? (
+            <MessageComposer
+              message={message}
+              setMessage={setMessage}
+              handleSend={handleSend}
+              handleFileSelected={handleFileSelected}
+              handlePickAttachment={handlePickAttachment}
+              handlePickAttachmentType={handlePickAttachmentType}
+              busyUploading={busyUploading}
+              isSendingMessage={isSendingMessage}
+              composerMenuOpen={composerMenuOpen}
+              setComposerMenuOpen={setComposerMenuOpen}
+              showEmojiPanel={showEmojiPanel}
+              setShowEmojiPanel={setShowEmojiPanel}
+              showStickerPanel={showStickerPanel}
+              setShowStickerPanel={setShowStickerPanel}
+              onSendSticker={handleSendSticker}
+              attachmentDraft={attachmentDraft}
+              onRemoveAttachment={clearAttachmentDraft}
+              fileInputRef={fileInputRef}
+              imageInputRef={imageInputRef}
+              videoInputRef={videoInputRef}
+              onSuggestReplies={handleSuggestReplies}
+              isSuggesting={isSuggesting}
+            />
+          ) : null}
 
           {showJumpToLatest ? (
             <button
@@ -2996,50 +3304,315 @@ export default function MessagesPage() {
             </button>
           ) : null}
 
-          <MessagesOverlays
-            userId={user?.id}
-            conversations={conversations}
-            selectedConversationId={selectedConversationId}
-            actionMenu={actionMenu}
-            activeActionMessage={activeActionMessage}
-            pinnedMessageIds={pinnedMessageIds}
-            forwardingMessageId={forwardingMessageId}
-            showNewMessageModal={showNewMessageModal}
-            newMessageKeyword={newMessageKeyword}
-            searchUsersResult={searchUsersResult}
-            showNotificationsDrawer={showNotificationsDrawer}
-            notifications={notifications}
-            showCreateGroupModal={showCreateGroupModal}
-            groupName={groupName}
-            groupSearchKeyword={groupSearchKeyword}
-            filteredCreateGroupInviteCandidates={filteredCreateGroupInviteCandidates}
-            groupMemberIds={groupMemberIds}
-            busyActionId={busyActionId}
-            creatingGroup={creatingGroup}
-            acceptedFriendsCount={acceptedFriends.length}
-            setForwardingMessageId={setForwardingMessageId}
-            setActionMenu={setActionMenu}
-            setShowNewMessageModal={setShowNewMessageModal}
-            setNewMessageKeyword={setNewMessageKeyword}
-            handleCreateConversationWithUser={handleCreateConversationWithUser}
-            setShowNotificationsDrawer={setShowNotificationsDrawer}
-            handleOpenNotificationConversation={handleOpenNotificationConversation}
-            handleAcceptFromNotification={handleAcceptFromNotification}
-            setShowCreateGroupModal={setShowCreateGroupModal}
-            handleCreateGroupConversation={handleCreateGroupConversation}
-            setGroupName={setGroupName}
-            setGroupSearchKeyword={setGroupSearchKeyword}
-            toggleGroupMember={toggleGroupMember}
-            handleTogglePinMessage={handleTogglePinMessage}
-            handleReportMessage={handleReportMessage}
-            handleRecall={handleRecall}
-            handleDeleteMessage={handleDeleteMessage}
-            handleForward={handleForward}
-          />
+          {showNewMessageModal ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Tin nhắn mới</h3>
+                <input
+                  value={newMessageKeyword}
+                  onChange={(event) => setNewMessageKeyword(event.target.value)}
+                  placeholder="Nhập tên bạn bè hoặc email đăng ký"
+                />
+                <div className={styles.overlayList}>
+                  {searchUsersResult.map((item) => (
+                    <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)} title={`Tạo hội thoại với ${item.name}`} aria-label={`Tạo hội thoại với ${item.name}`}>
+                      <span className={styles.listEntryIdentity}>
+                        <span className={styles.listEntryAvatar}>{getAvatarInitial(item.name)}</span>
+                        <span className={styles.listEntryMeta}>
+                          <strong className={styles.listEntryTitle}>{item.name}</strong>
+                          <small className={styles.listEntrySubtitle}>ID {item.id}</small>
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                  {searchUsersResult.length === 0 ? <p>Không có kết quả phù hợp.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showNotificationsDrawer ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Thông báo nâng cao</h3>
+                <div className={styles.overlayList}>
+                  {notifications.map((item) => {
+                    const meta = parseNotificationMeta(item)
+                    const conversationId = meta?.conversationId
+                    const canAccept = item.type === 'friend-request' && !item.is_read && Boolean(meta?.requesterId || meta?.friendshipId)
+                    return (
+                      <div key={item.id} className={styles.notifyCard}>
+                        <button
+                          type="button"
+                          className={styles.notifyMainBtn}
+                          onClick={() => handleOpenNotificationConversation(conversationId)}
+                        >
+                          <span className={styles.listEntryIdentity}>
+                            <span className={styles.listEntryAvatar}>{getAvatarInitial(item.title)}</span>
+                            <span className={styles.listEntryMeta}>
+                              <strong className={styles.listEntryTitle}>{item.title}</strong>
+                              <span className={styles.listEntrySubtitle}>{item.body || 'Thông báo hệ thống'}</span>
+                              <small className={styles.listEntrySubtitle}>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                            </span>
+                          </span>
+                        </button>
+                        <div className={styles.notifyActions}>
+                          {conversationId ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenNotificationConversation(conversationId)}
+                            >
+                              Mở đoạn chat
+                            </button>
+                          ) : null}
+                          {canAccept ? (
+                            <button
+                              type="button"
+                              className={styles.notifyAcceptBtn}
+                              disabled={busyActionId === `notif-${item.id}`}
+                              onClick={() => {
+                                void handleAcceptFromNotification(item)
+                              }}
+                            >
+                              {busyActionId === `notif-${item.id}` ? 'Đang đồng ý...' : 'Đồng ý'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {forwardingMessageId ? (
+            <div className={styles.forwardDialogBackdrop}>
+              <div className={styles.forwardDialog}>
+                <h3>Chuyển tiếp tin nhắn</h3>
+                <p>Chọn cuộc trò chuyện để chuyển tiếp:</p>
+                <div className={styles.forwardList}>
+                  {conversations
+                    .filter((conv) => conv.id !== selectedConversationId)
+                    .map((conv) => (
+                      <button key={conv.id} type="button" onClick={() => handleForward(conv.id)} title={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`} aria-label={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`}>
+                        <span className={styles.listEntryIdentity}>
+                          <span className={styles.listEntryAvatar}>{getAvatarInitial(getConversationDisplayName(conv, user?.id))}</span>
+                          <span className={styles.listEntryMeta}>
+                            <strong className={styles.listEntryTitle}>{getConversationDisplayName(conv, user?.id)}</strong>
+                            <small className={styles.listEntrySubtitle}>ID {conv.id}</small>
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                </div>
+                <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)} title="Hủy chuyển tiếp" aria-label="Hủy chuyển tiếp">
+                  Hủy
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showCreateGroupModal ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Tạo nhóm chat</h3>
+                <input
+                  value={groupName}
+                  onChange={(event) => setGroupName(event.target.value)}
+                  placeholder="Nhập tên nhóm"
+                />
+                <input
+                  value={groupSearchKeyword}
+                  onChange={(event) => setGroupSearchKeyword(event.target.value)}
+                  placeholder="Tìm bạn bè để thêm vào nhóm"
+                />
+                <div className={styles.overlayList}>
+                  {filteredCreateGroupInviteCandidates.map((friend) => {
+                    const checked = groupMemberIds.includes(friend.id)
+                    return (
+                      <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chọn ${friend.fullName}`} aria-label={`Chọn ${friend.fullName}`}>
+                        <span className={styles.listEntryIdentity}>
+                          <span className={styles.listEntryAvatar}>{getAvatarInitial(friend.fullName)}</span>
+                          <span className={styles.listEntryMeta}>
+                            <strong className={styles.listEntryTitle}>{checked ? '✓ ' : ''}{friend.fullName}</strong>
+                            <span className={styles.listEntrySubtitle}>{friend.email || friend.phone || `ID ${friend.id}`}</span>
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                  {acceptedFriends.length === 0 ? <p>Bạn chưa có bạn bè để tạo nhóm.</p> : null}
+                  {acceptedFriends.length > 0 && filteredCreateGroupInviteCandidates.length === 0 ? <p>Không tìm thấy bạn bè phù hợp.</p> : null}
+                </div>
+                <button
+                  type="button"
+                  className={styles.overlayCloseBtn}
+                  disabled={!groupName.trim() || groupMemberIds.length === 0 || creatingGroup}
+                  onClick={handleCreateGroupConversation}
+                >
+                  {creatingGroup ? 'Đang tạo nhóm...' : 'Tạo nhóm'}
+                </button>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeCall ? (
+            <div className={styles.callOverlay}>
+              <div className={styles.callBackdropGlow} />
+              <div className={styles.callTopBar}>
+                <div>
+                  <small>Call in progress</small>
+                  <h3>{activeCall.withName}</h3>
+                  <p className={styles.callParticipantCount}>
+                    {callParticipantProfiles.length} người đang tham gia
+                  </p>
+                </div>
+                <div className={styles.callBadge}>{callAnswered ? formattedCallTime : 'Đổ chuông...'}</div>
+              </div>
+              {callParticipantProfiles.length > 0 ? (
+                <div className={styles.callParticipantList}>
+                  {callParticipantProfiles.map((member) => (
+                    <div key={member.userId} className={styles.callParticipantItem}>
+                      {member.avatarUrl ? (
+                        <img src={member.avatarUrl} alt={member.name} />
+                      ) : (
+                        <span>{(member.name[0] || 'U').toUpperCase()}</span>
+                      )}
+                      <strong>{member.name}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className={styles.callMainVideo}>
+                {remoteStreams.length > 0 ? (
+                  <div className={styles.remoteGrid}>
+                    {remoteStreams.map((item) => (
+                      <div key={item.userId} className={styles.remoteVideoCard}>
+                        <video
+                          autoPlay
+                          playsInline
+                          ref={(node) => {
+                            if (!node) return
+                            node.srcObject = item.stream
+                          }}
+                        />
+                        <span className={styles.remoteVideoLabel}>
+                          {callParticipantProfiles.find((member) => member.userId === item.userId)?.name || `Người dùng #${item.userId}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.callAvatarBig}>{(activeCall.withName[0] || 'U').toUpperCase()}</div>
+                )}
+              </div>
+              <div className={styles.callMiniVideo}>
+                <video ref={localVideoRef} autoPlay muted playsInline className={styles.localVideo} />
+                <span>Bạn</span>
+              </div>
+              <div className={styles.callControls}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const stream = localStreamRef.current
+                    if (!stream) return
+                    const next = !mutedMic
+                    stream.getAudioTracks().forEach((track) => {
+                      track.enabled = !next
+                    })
+                    setMutedMic(next)
+                  }}
+                  title="Bật tắt micro"
+                  aria-label="Bật tắt micro"
+                >
+                  <Phone size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const stream = localStreamRef.current
+                    if (!stream) return
+                    const next = !mutedCam
+                    stream.getVideoTracks().forEach((track) => {
+                      track.enabled = !next
+                    })
+                    setMutedCam(next)
+                  }}
+                  title="Bật tắt camera"
+                  aria-label="Bật tắt camera"
+                >
+                  <Video size={16} />
+                </button>
+                <button type="button" title="Mời người khác" aria-label="Mời người khác">
+                  <UserPlus size={16} />
+                </button>
+                <button type="button" className={styles.endCallOverlayBtn} onClick={handleEndCall} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+                  <PhoneOff size={16} />
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {actionMenu && activeActionMessage ? (
+            <div ref={actionMenuRef} className={styles.actionMenu}>
+              <div className={styles.actionMenuHeader}>
+                <span className={styles.listEntryAvatar}>{getAvatarInitial(getSenderName(activeActionMessage.senderId, activeActionMessage))}</span>
+                <div className={styles.actionMenuMeta}>
+                  <strong>{getSenderName(activeActionMessage.senderId, activeActionMessage)}</strong>
+                  <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
+                </div>
+              </div>
+              {(() => {
+                const isActionMsgRecalled = !!(activeActionMessage.isDeleted || (activeActionMessage.meta as Record<string, unknown>)?.recalled)
+                return (
+                  <>
+                    {!isActionMsgRecalled ? (
+                      <>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'like'); setActionMenu(null) }} title="Thích" aria-label="Thích">Thích</button>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'love'); setActionMenu(null) }} title="Yêu thích" aria-label="Yêu thích">Yêu thích</button>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'care'); setActionMenu(null) }} title="Quan tâm" aria-label="Quan tâm">Quan tâm</button>
+                        <button type="button" onClick={() => { setForwardingMessageId(activeActionMessage.id); setActionMenu(null) }}>Chuyển tiếp</button>
+                        <button type="button" onClick={() => { void handleTogglePinMessage(activeActionMessage); setActionMenu(null) }}>
+                          {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
+                        </button>
+                      </>
+                    ) : null}
+                    {activeActionMessage.text && !translatedMessages[activeActionMessage.id] && !isActionMsgRecalled ? (
+                      <button
+                        type="button"
+                        onClick={() => { handleTranslateMessage(activeActionMessage.id, activeActionMessage.text!); setActionMenu(null) }}
+                        disabled={translatingIds[activeActionMessage.id]}
+                      >
+                        <Languages size={14} style={{ display: 'inline', marginRight: 4, marginBottom: -2 }} />
+                        {translatingIds[activeActionMessage.id] ? 'Đang dịch...' : 'Dịch (AI)'}
+                      </button>
+                    ) : null}
+                    {activeActionMessage.senderId === user?.id ? (
+                      <button type="button" onClick={() => { handleRecall(activeActionMessage); setActionMenu(null) }}>Thu hồi</button>
+                    ) : null}
+                    {activeActionMessage.senderId === user?.id ? (
+                      <button type="button" onClick={() => { handleDeleteMessage(activeActionMessage); setActionMenu(null) }}>Xóa</button>
+                    ) : null}
+                  </>
+                )
+              })()}
+            </div>
+          ) : null}
         </section>
 
         {showSettingsDrawer ? <button type="button" className={styles.settingsBackdrop} aria-label="Đóng cài đặt hội thoại" onClick={() => setShowSettingsDrawer(false)} /> : null}
-        <aside className={`${styles.detailsPanel} ${showSettingsDrawer ? styles.detailsPanelOpen : ''}`}>
+        <aside className={`${styles.detailsPanel}${showSettingsDrawer ? ` ${styles.detailsPanelOpen}` : ''}${!showDetailsPanelDesktop ? ` ${styles.detailsPanelHidden}` : ''}`}>
           <div className={styles.detailsBody}>
           <ConversationDetailsPanel
             selectedConversation={selectedConversation}
@@ -3075,7 +3648,6 @@ export default function MessagesPage() {
             onRoundBubblesChange={handleSetRoundBubbles}
             handleUpdateNickname={handleUpdateNickname}
             handleUpdateGroupProfile={handleUpdateGroupProfile}
-            handleUpdateGroupAvatar={handleUpdateGroupAvatar}
             handleBlockPeer={handleBlockPeer}
             handleUnblockPeer={handleUnblockPeer}
             handleOpenHideConversation={handleOpenHideConversation}
@@ -3086,7 +3658,10 @@ export default function MessagesPage() {
             pinnedMessages={pinnedMessages}
             sharedContent={sharedContent}
             loadingSharedContent={loadingSharedContent}
-            onClose={() => setShowSettingsDrawer(false)}
+            onClose={() => {
+              setShowSettingsDrawer(false)
+              setShowDetailsPanelDesktop(false)
+            }}
           />
           </div>
         </aside>
@@ -3238,7 +3813,7 @@ export default function MessagesPage() {
           identity={selectedGroup ? { name: selectedGroup.name || 'Nhóm chat', avatarUrl: selectedGroup.avatarUrl } : undefined}
           submitLabel="Lưu"
           validate={(value) => (!value.trim() ? 'Tên nhóm không được để trống.' : null)}
-          onSubmit={handleSubmitGroupName}
+          onSubmit={(nextName) => handleUpdateGroupProfile({ name: nextName })}
         />
         <InputDialog
           open={lockDialogOpen}

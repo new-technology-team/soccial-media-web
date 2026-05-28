@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Eye, EyeOff, MessageCircleOff, RefreshCcw, Search, ShieldAlert, Trash2, UserX } from 'lucide-react'
@@ -58,7 +58,7 @@ export default function AdminPostManagementPage() {
       })
       setPosts(res.posts)
     } catch (err) {
-      toast({ title: 'Không thể tải danh sách bài viết', description: err instanceof Error ? err.message : 'Vui lòng thử lại.', type: 'error' })
+      toast({ title: 'Không thể tải danh sách bài viết', description: err instanceof Error ? err.message : 'Vui lòng thử lại.', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -78,7 +78,7 @@ export default function AdminPostManagementPage() {
   const updateStatus = async (post: FeedPost, status: PostStatus) => {
     if (!token) return
     await api.updateAdminPost(token, post.id, { status })
-    toast({ title: status === 'hidden' ? `Đã ẩn bài viết #${post.id}` : `Đã khôi phục bài viết #${post.id}`, description: 'Thay đổi đã được ghi nhận cho moderation workflow.', type: 'success' })
+    toast({ title: status === 'hidden' ? `Đã ẩn bài viết #${post.id}` : `Đã khôi phục bài viết #${post.id}`, description: 'Thay đổi đã được ghi nhận cho moderation workflow.' })
     await loadPosts()
   }
 
@@ -90,7 +90,7 @@ export default function AdminPostManagementPage() {
       onConfirm: async () => {
         if (!token) return
         await api.deleteAdminPost(token, post.id)
-        toast({ title: `Đã xóa bài viết vi phạm #${post.id}`, type: 'success' })
+        toast({ title: `Đã xóa bài viết vi phạm #${post.id}` })
         setConfirm(null)
         await loadPosts()
       },
@@ -159,9 +159,9 @@ export default function AdminPostManagementPage() {
                     items={[
                       { label: 'Quick inspect', icon: <Eye size={15} />, onClick: () => setExpanded(isExpanded ? null : post.id) },
                       { label: 'Hide post', icon: <EyeOff size={15} />, onClick: () => void updateStatus(post, 'hidden') },
-                      { label: 'Disable comments', icon: <MessageCircleOff size={15} />, onClick: () => toast({ title: `Đã tắt bình luận bài viết #${post.id}`, type: 'info' }) },
-                      { label: 'Limit reach', icon: <ShieldAlert size={15} />, onClick: () => toast({ title: `Đã giới hạn phân phối bài viết #${post.id}`, type: 'warning' }) },
-                      { label: 'Warning user', icon: <UserX size={15} />, onClick: () => toast({ title: `Đã gửi cảnh báo tới ${post.authorName}`, type: 'warning' }) },
+                      { label: 'Disable comments', icon: <MessageCircleOff size={15} />, onClick: () => toast({ title: `Đã tắt bình luận bài viết #${post.id}` }) },
+                      { label: 'Limit reach', icon: <ShieldAlert size={15} />, onClick: () => toast({ title: `Đã giới hạn phân phối bài viết #${post.id}` }) },
+                      { label: 'Warning user', icon: <UserX size={15} />, onClick: () => toast({ title: `Đã gửi cảnh báo tới ${post.authorName}` }) },
                       { label: 'Soft delete', icon: <Trash2 size={15} />, danger: true, onClick: () => deletePost(post) },
                     ]}
                   />
