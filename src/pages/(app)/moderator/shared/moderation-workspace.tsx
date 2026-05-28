@@ -1,8 +1,7 @@
 ﻿'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle2, FileText, Search, ShieldAlert, UserRound } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, Search, ShieldAlert, UserRound } from 'lucide-react'
 
 import { api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
@@ -55,10 +54,13 @@ type NormalizedReport = {
   resolvedBy: number | null
   assignedTo: number | null
   reporterLabel: string
+  reviewerLabel: string
+  assigneeLabel: string
   targetLabel: string
   targetPreview: string
   mediaUrl: string | null
   originalContent: string
+  targetContent: string | null
 }
 
 const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
@@ -130,10 +132,13 @@ const normalizeReport = (report: ReportRecord, index = 0): NormalizedReport => {
   const reason = String(report.reason || report.description || report.note || 'Không có mô tả')
   const description = String(report.description || report.details || reason)
   const targetLabel = REPORT_TYPE_LABEL[reportType]
-  const reporterLabel = String(report.reporterName || report.reporter || report.userName || report.userId || 'Người dùng ẩn danh')
+  const reporterLabel = String(report.reporterName || report.reporter || report.userName || (report.userId ? `Người dùng #${report.userId}` : 'Ẩn danh'))
+  const reviewerLabel = String(report.reviewerName || (report.reviewerId ? `Mod #${report.reviewerId}` : 'Chưa có'))
+  const assigneeLabel = String(report.assigneeName || (report.assignedTo ? `Mod #${report.assignedTo}` : 'Chưa nhận'))
   const originalContent = String(
-    report.originalContent || report.sourceContent || report.content || report.targetContent || report.message || report.summary || description,
+    report.originalContent || report.sourceContent || report.content || report.targetContent || report.message || report.summary || '',
   )
+  const targetContent = report.targetContent !== undefined ? (report.targetContent ? String(report.targetContent) : null) : null
   const createdAt = String(report.createAt || report.createdAt || report.created_at || '')
   const updatedAt = String(report.updatedAt || report.updated_at || createdAt || '')
 
@@ -154,10 +159,13 @@ const normalizeReport = (report: ReportRecord, index = 0): NormalizedReport => {
     resolvedBy: report.resolvedBy ? Number(report.resolvedBy) : null,
     assignedTo: report.assignedTo ? Number(report.assignedTo) : null,
     reporterLabel,
+    reviewerLabel,
+    assigneeLabel,
     targetLabel,
     targetPreview: String(report.targetPreview || report.targetTitle || report.subject || rawTargetId || `${targetLabel} #${rawTargetId}`),
     mediaUrl: report.mediaUrl ? String(report.mediaUrl) : null,
     originalContent,
+    targetContent,
   }
 }
 
@@ -166,6 +174,21 @@ const formatTime = (value: string) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('vi-VN')
+}
+
+const formatRelativeTime = (value: string) => {
+  if (!value) return 'Không rõ'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const diffMs = Date.now() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+  if (diffMins < 1) return 'Vừa xong'
+  if (diffMins < 60) return `${diffMins} phút trước`
+  if (diffHours < 24) return `${diffHours} giờ trước`
+  if (diffDays < 7) return `${diffDays} ngày trước`
+  return date.toLocaleDateString('vi-VN')
 }
 
 const getTargetActionOptions = (reportType: ReportType): Array<{ value: TargetAction; label: string }> => {
@@ -207,7 +230,6 @@ export default function ModeratorReportWorkspace({
   initialReportId = null,
   defaultMode = 'queue',
 }: WorkspaceProps) {
-  const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const [reports, setReports] = useState<NormalizedReport[]>([])
@@ -313,14 +335,6 @@ export default function ModeratorReportWorkspace({
   const pageSize = 8
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const visibleReports = filtered.slice((page - 1) * pageSize, page * pageSize)
-
-  const handleBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      navigate(-1)
-      return
-    }
-    navigate('/moderator/dashboard', { replace: true })
-  }
 
   const refreshOne = (nextReport: ReportRecord) => {
     const normalized = normalizeReport(nextReport)
@@ -431,10 +445,6 @@ export default function ModeratorReportWorkspace({
             <h1>{title}</h1>
             <p>{description}</p>
           </div>
-          <button type="button" className={styles.backButton} onClick={handleBack}>
-            <ArrowLeft size={16} />
-            Quay về
-          </button>
         </div>
         <div className={styles.summaryGrid}>
           <div className={styles.summaryCard}><span>Chờ xử lý</span><strong>{summary.pending}</strong></div>
@@ -516,28 +526,44 @@ export default function ModeratorReportWorkspace({
           <article key={report.reportId} className={styles.card}>
             <div className={styles.cardTop}>
               <div className={styles.cardTitle}>
-                <b>#{report.reportId} - {report.targetLabel}</b>
-                <small>{report.targetPreview}</small>
-              </div>
-              <div className={styles.tagRow}>
-                <span className={`${styles.tag} ${REPORT_STATUS_CLASS[report.status]}`}>{REPORT_STATUS_LABEL[report.status]}</span>
-                <span className={styles.tag}>{report.severity.toUpperCase()}</span>
-                <span className={styles.tag}>AI {report.aiScore}%</span>
+                <div className={styles.tagRow}>
+                  <span className={`${styles.tag} ${REPORT_STATUS_CLASS[report.status]}`}>{REPORT_STATUS_LABEL[report.status]}</span>
+                  <span className={styles.tag}>{REPORT_TYPE_LABEL[report.reportType]}</span>
+                  {report.severity !== 'low' ? <span className={`${styles.tag} ${styles[`sev_${report.severity}`]}`}>{report.severity.toUpperCase()}</span> : null}
+                </div>
               </div>
             </div>
 
             <div className={styles.cardBody}>
-              <div>{report.reason}</div>
-              <div className={styles.muted}>Người report: {report.reporterLabel} · Tạo lúc: {formatTime(report.createdAt)}</div>
-              <div className={styles.muted}>Phân công: {report.assignedTo ? `#${report.assignedTo}` : 'Chưa phân công'} · Cập nhật: {formatTime(report.updatedAt)}</div>
+              <div className={styles.cardReason}>{report.reason}</div>
+              {report.targetContent ? (
+                <div className={styles.contentPreview}>
+                  "{report.targetContent.slice(0, 160)}{report.targetContent.length > 160 ? '…' : ''}"
+                </div>
+              ) : report.originalContent && report.originalContent !== report.reason ? (
+                <div className={styles.contentPreview}>
+                  "{report.originalContent.slice(0, 160)}{report.originalContent.length > 160 ? '…' : ''}"
+                </div>
+              ) : null}
+              <div className={styles.cardMeta}>
+                <span>Báo cáo bởi: <strong>{report.reporterLabel}</strong></span>
+                <span>{formatRelativeTime(report.createdAt)}</span>
+              </div>
+              <div className={styles.cardMeta}>
+                {report.assignedTo ? (
+                  <span className={styles.assignedBadge}>Đang xử lý: <strong>{report.assigneeLabel}</strong></span>
+                ) : (
+                  <span className={styles.unassigned}>Chưa có người nhận</span>
+                )}
+              </div>
             </div>
 
             <div className={styles.cardActions}>
               <button type="button" className={styles.actionButton} onClick={() => void openDetail(report.reportId)}>
-                <Search size={15} /> Xem xét
+                <Search size={15} /> Xem chi tiết
               </button>
               <button type="button" className={`${styles.actionButton} ${styles.primaryButton}`} onClick={() => openActionModal(report)}>
-                <ShieldAlert size={15} /> Thực thi
+                <ShieldAlert size={15} /> Xử lý
               </button>
               <button
                 type="button"
@@ -546,11 +572,8 @@ export default function ModeratorReportWorkspace({
                 disabled={assigningReportId === report.reportId || report.assignedTo === user?.id}
               >
                 <UserRound size={15} />
-                {report.assignedTo === user?.id ? 'Đã nhận' : assigningReportId === report.reportId ? 'Đang nhận...' : 'Nhận xử lý'}
+                {report.assignedTo === user?.id ? 'Đã nhận' : assigningReportId === report.reportId ? 'Đang nhận...' : 'Nhận'}
               </button>
-              <Link to={`/moderator/report-detail/${report.reportId}`} className={styles.actionLink}>
-                <FileText size={15} /> Mở trang chi tiết
-              </Link>
             </div>
           </article>
         ))}
@@ -601,37 +624,41 @@ export default function ModeratorReportWorkspace({
               <div className={styles.tagRow}>
                 <span className={`${styles.tag} ${REPORT_STATUS_CLASS[selectedReport.status]}`}>{REPORT_STATUS_LABEL[selectedReport.status]}</span>
                 <span className={styles.tag}>{REPORT_TYPE_LABEL[selectedReport.reportType]}</span>
-                <span className={styles.tag}>AI {selectedReport.aiScore}%</span>
+                {selectedReport.severity !== 'low' ? <span className={`${styles.tag} ${styles[`sev_${selectedReport.severity}`]}`}>{selectedReport.severity.toUpperCase()}</span> : null}
               </div>
               <h2>{selectedReport.reason}</h2>
-              <p className={styles.muted}>{selectedReport.description}</p>
+              {selectedReport.description && selectedReport.description !== selectedReport.reason ? (
+                <p className={styles.muted}>{selectedReport.description}</p>
+              ) : null}
             </div>
 
+            {selectedReport.targetContent ? (
+              <div className={styles.targetContentBlock}>
+                <span>Nội dung bị báo cáo ({REPORT_TYPE_LABEL[selectedReport.reportType].toLowerCase()})</span>
+                <blockquote>{selectedReport.targetContent}</blockquote>
+              </div>
+            ) : null}
+
             <div className={styles.metaGrid}>
-              <div className={styles.metaCard}><span>Đối tượng</span><b>{selectedReport.targetLabel} #{selectedReport.targetId || 'Không rõ'}</b></div>
-              <div className={styles.metaCard}><span>Người report</span><b>{selectedReport.reporterLabel}</b></div>
-              <div className={styles.metaCard}><span>Thời gian tạo</span><b>{formatTime(selectedReport.createdAt)}</b></div>
-              <div className={styles.metaCard}><span>Cập nhật cuối</span><b>{formatTime(selectedReport.updatedAt)}</b></div>
-              <div className={styles.metaCard}><span>Reviewer</span><b>{selectedReport.reviewerId ? `#${selectedReport.reviewerId}` : 'Chưa có'}</b></div>
-              <div className={styles.metaCard}><span>Resolved by</span><b>{selectedReport.resolvedBy ? `#${selectedReport.resolvedBy}` : 'Chưa có'}</b></div>
+              <div className={styles.metaCard}><span>Người báo cáo</span><b>{selectedReport.reporterLabel}</b></div>
+              <div className={styles.metaCard}><span>Thời gian gửi</span><b>{formatTime(selectedReport.createdAt)}</b></div>
+              <div className={styles.metaCard}><span>Người xem xét</span><b>{selectedReport.reviewerLabel}</b></div>
+              <div className={styles.metaCard}><span>Người xử lý</span><b>{selectedReport.assigneeLabel}</b></div>
             </div>
 
             {selectedReport.mediaUrl ? (
               <div className={styles.mediaPreview}>
-                <span className={styles.muted}>Media đính kèm</span>
+                <span className={styles.muted}>Ảnh/media đính kèm</span>
                 <img src={selectedReport.mediaUrl} alt="Report media preview" />
               </div>
             ) : null}
 
-            <div className={styles.metaCard}>
-              <span>Nội dung gốc</span>
-              <b>{selectedReport.originalContent}</b>
-            </div>
-
-            <div className={styles.metaCard}>
-              <span>Ghi chú xử lý</span>
-              <b>{selectedReport.resolutionNote || 'Chưa có ghi chú xử lý'}</b>
-            </div>
+            {selectedReport.resolutionNote ? (
+              <div className={styles.metaCard}>
+                <span>Ghi chú xử lý</span>
+                <b>{selectedReport.resolutionNote}</b>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </AppDialog>

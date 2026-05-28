@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import TopNavbar from '@/components/navigation/top-navbar'
+import ModeratorNav from '@/components/navigation/moderator-nav'
 import RouteGuard from '@/components/navigation/route-guard'
 import { Toaster } from '@/components/ui/toaster'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
   const hideMainNavbar = pathname.startsWith('/admin') || pathname.startsWith('/moderator') || pathname.startsWith('/auth/admin-login')
+  const isModeratorArea = pathname.startsWith('/moderator')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   useEffect(() => {
@@ -30,9 +32,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
       {!hideMainNavbar ? <TopNavbar /> : null}
-      <main style={!isOnline ? { paddingTop: 36 } : undefined}>
-        <RouteGuard>{children}</RouteGuard>
-      </main>
+      {isModeratorArea ? (
+        <div style={{ display: 'flex', minHeight: '100vh' }}>
+          <ModeratorNav />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <RouteGuard>{children}</RouteGuard>
+          </div>
+        </div>
+      ) : (
+        <main style={!isOnline ? { paddingTop: 36 } : undefined}>
+          <RouteGuard>{children}</RouteGuard>
+        </main>
+      )}
       <Toaster />
     </>
   )

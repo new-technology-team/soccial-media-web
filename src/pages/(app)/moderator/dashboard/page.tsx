@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
   FileWarning,
-  LogOut,
   MessageCircleWarning,
   MessageSquareWarning,
   Search,
@@ -73,48 +72,6 @@ const typeLabels: Record<ReportType, string> = {
   message: 'Tin nhắn',
 }
 
-const fallbackReports: ModerationReport[] = [
-  {
-    id: 'RPT-1042',
-    type: 'post',
-    status: 'pending',
-    severity: 'high',
-    priority: 2,
-    reason: 'Bài viết bị báo cáo vì nội dung công kích và quấy rối.',
-    aiScore: 88,
-    createdAt: '12 phút trước',
-    subject: 'Bài viết công khai cần kiểm tra',
-    reporter: 'Cộng đồng',
-    assignee: 'Chưa phân công',
-  },
-  {
-    id: 'RPT-1034',
-    type: 'comment',
-    status: 'pending',
-    severity: 'medium',
-    priority: 3,
-    reason: 'Bình luận có ngôn từ độc hại trong thảo luận công khai.',
-    aiScore: 81,
-    createdAt: '44 phút trước',
-    subject: 'Bình luận bị báo cáo',
-    reporter: '2 báo cáo',
-    assignee: 'Chưa phân công',
-  },
-  {
-    id: 'RPT-1031',
-    type: 'message',
-    status: 'pending',
-    severity: 'critical',
-    priority: 1,
-    reason: 'Tin nhắn riêng có dấu hiệu đe dọa người dùng.',
-    aiScore: 96,
-    createdAt: '2 phút trước',
-    subject: 'Tin nhắn nguy cơ cao',
-    reporter: '3 báo cáo',
-    assignee: 'Chưa phân công',
-  },
-]
-
 const cx = (...items: Array<string | false | null | undefined>) => items.filter(Boolean).join(' ')
 
 const severityFromReason = (reason: string, index: number): Severity => {
@@ -152,14 +109,12 @@ const normalizeReports = (items: Array<Record<string, unknown>> | undefined): Mo
     }
   })
 
-  return reports.length ? reports : fallbackReports
+  return reports
 }
 
 export default function ModeratorDashboard() {
-  const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
-  const clearAuth = useAuthStore((state) => state.clearAuth)
   const [stats, setStats] = useState<Record<string, number>>({})
   const [rawReports, setRawReports] = useState<Array<Record<string, unknown>>>([])
   const [filters, setFilters] = useState<FilterState>({
@@ -215,11 +170,6 @@ export default function ModeratorDashboard() {
       })
   }, [filters, reports])
 
-  const handleLogout = () => {
-    clearAuth()
-    navigate('/auth/login', { replace: true })
-  }
-
   if (user?.role !== 'admin' && user?.role !== 'moderator') {
     return <div className={styles.denied}>Bạn không có quyền truy cập.</div>
   }
@@ -228,13 +178,6 @@ export default function ModeratorDashboard() {
     <main className={styles.page} aria-label="Moderator dashboard">
       <header className={styles.commandHeader}>
         <div className={styles.headerCopy}>
-          <div className={styles.headerTop}>
-            <span className={styles.modPill}>Moderator Center</span>
-            <button type="button" className={styles.logoutBtn} onClick={handleLogout}>
-              <LogOut size={16} />
-              Đăng xuất
-            </button>
-          </div>
           <h1>Trung tâm kiểm duyệt ZChat</h1>
           <p>Quản lý báo cáo realtime theo 4 nhóm nghiệp vụ: bài viết, tài khoản, bình luận và tin nhắn.</p>
         </div>
@@ -381,8 +324,8 @@ function ReportCard({ report }: { report: ModerationReport }) {
       <div className={styles.reportFooter}>
         <span>Người xử lý: {report.assignee || 'Chưa phân công'}</span>
         <div>
-          <Link to="/moderator/reports">Xem xét</Link>
-          <Link to="/moderator/reports">Thực thi</Link>
+          <Link to={`/moderator/report-detail/${report.id}`}>Xem chi tiết</Link>
+          <Link to="/moderator/reports">Xử lý ngay</Link>
         </div>
       </div>
     </article>

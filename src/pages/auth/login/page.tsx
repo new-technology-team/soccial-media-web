@@ -142,8 +142,13 @@ export default function LoginPage() {
     try {
       const payload = await api.login(formData.emailOrPhone.trim(), formData.password)
       setAuth(payload)
-      if (payload.user.role === 'admin') {
+      const role = (payload.user.role || '').toLowerCase()
+      if (role === 'admin') {
         navigate('/admin/dashboard')
+        return
+      }
+      if (role === 'moderator') {
+        navigate('/moderator/dashboard')
         return
       }
       navigate('/feed')

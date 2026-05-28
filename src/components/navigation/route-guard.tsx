@@ -12,6 +12,7 @@ const moderatorRoutePermissions: Array<{ prefix: string; permission: string }> =
   { prefix: '/moderator/reports', permission: 'manage_reports' },
   { prefix: '/moderator/dashboard', permission: 'manage_reports' },
 ]
+const MODERATOR_BLOCKED_PREFIXES = ['/settings', '/profile/edit']
 
 const firstAllowedModeratorPath = (permissions?: string[]) => {
   if (!permissions?.length || permissions.includes('manage_reports')) return '/moderator/dashboard'
@@ -36,15 +37,22 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
   }, [])
 
   const hasPermission = useMemo(() => {
+    const role = (user?.role || '').toLowerCase()
+
+    // Block moderators from user-only pages
+    if (role === 'moderator' && MODERATOR_BLOCKED_PREFIXES.some((p) => pathname.startsWith(p))) {
+      return false
+    }
+
     if (!isRestrictedPath(pathname)) return true
     if (!user) return false
 
     if (pathname.startsWith('/admin')) {
-      return user.role === 'admin'
+      return role === 'admin'
     }
 
-    if (user.role === 'admin') return true
-    if (user.role !== 'moderator') return false
+    if (role === 'admin') return true
+    if (role !== 'moderator') return false
 
     const required = moderatorRoutePermissions.find((item) => pathname.startsWith(item.prefix))?.permission
     if (!required) return true
@@ -71,7 +79,8 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
     }
 
     if (!hasPermission) {
-      navigate(user.role === 'moderator' ? firstAllowedModeratorPath(user.permissions) : '/feed', { replace: true })
+      const role = (user?.role || '').toLowerCase()
+      navigate(role === 'moderator' ? firstAllowedModeratorPath(user.permissions) : '/feed', { replace: true })
     }
   }, [hasPermission, mounted, pathname, navigate, user])
 

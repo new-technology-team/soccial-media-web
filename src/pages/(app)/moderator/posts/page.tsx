@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 
 import { api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
@@ -14,14 +14,16 @@ const POST_STATUS_LABEL: Record<string, string> = {
   deleted: 'Đã xóa',
 }
 
+const PAGE_SIZE = 20
+
 export default function ModeratorPostsPage() {
-  const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const [posts, setPosts] = useState<FeedPost[]>([])
   const [keyword, setKeyword] = useState('')
   const [action, setAction] = useState<{ post: FeedPost; status: 'published' | 'hidden' | 'deleted'; title: string } | null>(null)
   const [reason, setReason] = useState('')
+  const [page, setPage] = useState(1)
 
   const loadPosts = async () => {
     if (!token) return
@@ -38,6 +40,9 @@ export default function ModeratorPostsPage() {
     return posts.filter((post) => post.status !== 'deleted' && (!q || [post.content, post.authorName, post.id].join(' ').toLowerCase().includes(q)))
   }, [keyword, posts])
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const visiblePosts = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   const submit = async () => {
     if (!token || !action) return
     await api.moderatePost(token, action.post.id, { status: action.status, resolutionNote: reason || 'Cập nhật từ trang kiểm duyệt bài viết' })
@@ -49,7 +54,6 @@ export default function ModeratorPostsPage() {
             ? `Đã xóa bài viết vi phạm #${action.post.id}`
             : `Đã khôi phục bài viết #${action.post.id}`,
       description: 'Hành động kiểm duyệt đã được ghi nhận và đồng bộ realtime.',
-      variant: 'success',
     })
     setAction(null)
     setReason('')
@@ -66,9 +70,6 @@ export default function ModeratorPostsPage() {
           <h1>Bài viết bị báo cáo</h1>
           <p>Ẩn bài viết, xóa bài viết vi phạm, khôi phục nội dung phù hợp và ghi lý do xử lý.</p>
         </div>
-        <button type="button" className={styles.secondary} onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/moderator/dashboard'))}>
-          ← Quay về
-        </button>
       </header>
       <section className={styles.toolbar}>
         <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Tìm kiếm bài viết..." />
@@ -78,7 +79,7 @@ export default function ModeratorPostsPage() {
         <table className={styles.table}>
           <thead><tr><th>Bài viết</th><th>Tác giả</th><th>Trạng thái</th><th>Tương tác</th><th>Thao tác</th></tr></thead>
           <tbody>
-            {filtered.map((post) => (
+            {visiblePosts.map((post) => (
               <tr key={post.id}>
                 <td><b>#{post.id}</b><br /><small>{post.content || 'Không có nội dung'}</small></td>
                 <td>{post.authorName}</td>
@@ -97,6 +98,13 @@ export default function ModeratorPostsPage() {
           </tbody>
         </table>
         {filtered.length === 0 ? <p className={styles.empty}>Không có dữ liệu</p> : null}
+        {totalPages > 1 ? (
+          <div className={styles.pagination}>
+            <button type="button" className={styles.secondary} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>← Trước</button>
+            <span>Trang {page} / {totalPages} ({filtered.length} bài)</span>
+            <button type="button" className={styles.secondary} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Sau →</button>
+          </div>
+        ) : null}
       </section>
 
       <AppDialog

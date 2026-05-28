@@ -1,4 +1,4 @@
-import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff, Volume2, Minimize2, MonitorUp, UserPlus, Users, LockKeyhole } from 'lucide-react'
+import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff, Volume2, VolumeX, Minimize2, MonitorUp, UserPlus, Users, LockKeyhole } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { cn } from '@/utils'
@@ -123,7 +123,7 @@ export function IncomingCallModal({ name, avatarUrl, callType, mode = 'private',
           <button type="button" className={cn(styles.button, styles.danger)} onClick={onDecline}>
             <PhoneOff size={18} /> Từ chối
           </button>
-          <button type="button" className={cn(styles.button, styles.accept)} onClick={onAccept}>
+          <button type="button" className={cn(styles.button, styles.accept)} onClick={() => onAccept?.()}>
             <Phone size={18} /> {group ? 'Tham gia' : 'Trả lời'}
           </button>
         </div>
@@ -159,16 +159,18 @@ type ControlsProps = {
   callType: CallKind
   mutedMic: boolean
   mutedCam: boolean
+  mutedSpeaker?: boolean
   cameraAvailable?: boolean
   mode?: CallMode
   onToggleMic: () => void
   onToggleCamera: () => void
+  onToggleSpeaker?: () => void
   onMinimize: () => void
   onEnd: () => void
   onShowParticipants?: () => void
 }
 
-export function CallControls({ callType, mutedMic, mutedCam, cameraAvailable = true, mode = 'private', onToggleMic, onToggleCamera, onMinimize, onEnd, onShowParticipants }: ControlsProps) {
+export function CallControls({ callType, mutedMic, mutedCam, mutedSpeaker = false, cameraAvailable = true, mode = 'private', onToggleMic, onToggleCamera, onToggleSpeaker, onMinimize, onEnd, onShowParticipants }: ControlsProps) {
   return (
     <div className={styles.controls}>
       <button type="button" className={cn(styles.controlButton, mutedMic && styles.controlButtonActive)} onClick={onToggleMic}>
@@ -179,9 +181,9 @@ export function CallControls({ callType, mutedMic, mutedCam, cameraAvailable = t
         {mutedCam || callType === 'voice' || !cameraAvailable ? <VideoOff size={20} /> : <Video size={20} />}
         <small>{mutedCam ? 'Bật camera' : 'Tắt camera'}</small>
       </button>
-      <button type="button" className={styles.controlButton}>
-        <Volume2 size={20} />
-        <small>Loa</small>
+      <button type="button" className={cn(styles.controlButton, mutedSpeaker && styles.controlButtonActive)} onClick={onToggleSpeaker}>
+        {mutedSpeaker ? <VolumeX size={20} /> : <Volume2 size={20} />}
+        <small>{mutedSpeaker ? 'Bật loa' : 'Tắt loa'}</small>
       </button>
       {mode === 'group' ? (
         <>
@@ -223,9 +225,11 @@ type ActiveProps = {
   remoteStreams?: Array<{ userId: number; stream: MediaStream }>
   mutedMic: boolean
   mutedCam: boolean
+  mutedSpeaker?: boolean
   cameraAvailable?: boolean
   onToggleMic: () => void
   onToggleCamera: () => void
+  onToggleSpeaker?: () => void
   onMinimize: () => void
   onEnd: () => void
 }
@@ -249,10 +253,10 @@ export function ActiveCallWindow(props: ActiveProps) {
 
       <main className={styles.stage}>
         {mode === 'group' ? (
-          <GroupCallGrid participants={props.participants} />
+          <GroupCallGrid participants={props.participants} mutedSpeaker={props.mutedSpeaker} />
         ) : props.callType === 'video' ? (
           <div className={styles.videoStage}>
-            {remote ? <StreamVideo stream={remote} className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
+            {remote ? <StreamVideo stream={remote} muted={props.mutedSpeaker} className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
             <div className={styles.localPreview}>
               <StreamVideo stream={props.localStream} muted className={styles.localVideo} />
             </div>
@@ -272,9 +276,11 @@ export function ActiveCallWindow(props: ActiveProps) {
         mode={mode}
         mutedMic={props.mutedMic}
         mutedCam={props.mutedCam}
+        mutedSpeaker={props.mutedSpeaker}
         cameraAvailable={props.cameraAvailable}
         onToggleMic={props.onToggleMic}
         onToggleCamera={props.onToggleCamera}
+        onToggleSpeaker={props.onToggleSpeaker}
         onMinimize={props.onMinimize}
         onEnd={props.onEnd}
         onShowParticipants={() => setDrawerOpen((value) => !value)}
@@ -283,21 +289,21 @@ export function ActiveCallWindow(props: ActiveProps) {
   )
 }
 
-export function GroupCallGrid({ participants }: { participants: CallParticipant[] }) {
+export function GroupCallGrid({ participants, mutedSpeaker }: { participants: CallParticipant[]; mutedSpeaker?: boolean }) {
   return (
     <div className={styles.grid}>
       {participants.map((participant) => (
-        <GroupParticipantTile key={participant.userId} participant={participant} />
+        <GroupParticipantTile key={participant.userId} participant={participant} mutedSpeaker={mutedSpeaker} />
       ))}
     </div>
   )
 }
 
-export function GroupParticipantTile({ participant }: { participant: CallParticipant }) {
+export function GroupParticipantTile({ participant, mutedSpeaker }: { participant: CallParticipant; mutedSpeaker?: boolean }) {
   const showVideo = participant.stream && !participant.cameraOff
   return (
     <article className={cn(styles.tile, participant.speaking && styles.tileSpeaking)}>
-      {showVideo ? <StreamVideo stream={participant.stream} muted={participant.isLocal} className={styles.remoteVideo} /> : <Avatar name={participant.name} avatarUrl={participant.avatarUrl} className={styles.tileAvatar} />}
+      {showVideo ? <StreamVideo stream={participant.stream} muted={participant.isLocal || mutedSpeaker} className={styles.remoteVideo} /> : <Avatar name={participant.name} avatarUrl={participant.avatarUrl} className={styles.tileAvatar} />}
       <div className={styles.tileMeta}>
         <span>{participant.name}</span>
         <div className={styles.tileBadges}>
