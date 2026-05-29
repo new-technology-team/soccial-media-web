@@ -239,6 +239,9 @@ export default function ModeratorReportWorkspace({
   const [typeFilter, setTypeFilter] = useState<ReportType | 'all'>(allowedTypes?.[0] || 'all')
   const [severityFilter, setSeverityFilter] = useState<Severity>('all')
   const [sortMode, setSortMode] = useState<SortMode>('priority')
+  const [historyModerator, setHistoryModerator] = useState('all')
+  const [historyDateFrom, setHistoryDateFrom] = useState('')
+  const [historyDateTo, setHistoryDateTo] = useState('')
   const [page, setPage] = useState(1)
   const [selectedReport, setSelectedReport] = useState<NormalizedReport | null>(null)
   const [actionReport, setActionReport] = useState<NormalizedReport | null>(null)
@@ -309,6 +312,17 @@ export default function ModeratorReportWorkspace({
         if (statusFilter !== 'all' && report.status !== statusFilter) return false
         if (typeFilter !== 'all' && report.reportType !== typeFilter) return false
         if (severityFilter !== 'all' && report.severity !== severityFilter) return false
+        if (defaultMode === 'history' && historyModerator !== 'all' && String(report.resolvedBy || report.reviewerId || report.assignedTo || '') !== historyModerator) return false
+        if (defaultMode === 'history' && historyDateFrom) {
+          const created = new Date(report.updatedAt || report.createdAt).getTime()
+          const from = new Date(historyDateFrom).getTime()
+          if (!Number.isNaN(created) && !Number.isNaN(from) && created < from) return false
+        }
+        if (defaultMode === 'history' && historyDateTo) {
+          const created = new Date(report.updatedAt || report.createdAt).getTime()
+          const to = new Date(`${historyDateTo}T23:59:59`).getTime()
+          if (!Number.isNaN(created) && !Number.isNaN(to) && created > to) return false
+        }
         if (!query) return true
         return [report.reason, report.description, report.targetPreview, report.originalContent, report.reporterLabel, report.targetId]
           .join(' ')
@@ -321,7 +335,16 @@ export default function ModeratorReportWorkspace({
         const priorityB = SEVERITY_RANK[b.severity as Exclude<Severity, 'all'>] || 99
         return priorityA - priorityB || b.aiScore - a.aiScore
       })
-  }, [allowedTypes, defaultMode, reports, search, severityFilter, sortMode, statusFilter, typeFilter])
+  }, [allowedTypes, defaultMode, historyDateFrom, historyDateTo, historyModerator, reports, search, severityFilter, sortMode, statusFilter, typeFilter])
+
+  const moderatorOptions = useMemo(() => {
+    const entries = new Map<string, string>()
+    reports.forEach((report) => {
+      const id = report.resolvedBy || report.reviewerId || report.assignedTo
+      if (id) entries.set(String(id), report.reviewerLabel !== 'Chưa có' ? report.reviewerLabel : report.assigneeLabel)
+    })
+    return Array.from(entries.entries())
+  }, [reports])
 
   const summary = useMemo(() => {
     return {
@@ -432,6 +455,32 @@ export default function ModeratorReportWorkspace({
     setActionNote(report.resolutionNote || '')
   }
 
+  const exportCsv = () => {
+    const header = ['report_id', 'type', 'status', 'severity', 'reporter', 'target', 'ai_confidence', 'created_at', 'updated_at', 'note']
+    const rows = filtered.map((report) => [
+      report.reportId,
+      report.reportType,
+      report.status,
+      report.severity,
+      report.reporterLabel,
+      report.targetId,
+      report.aiScore,
+      report.createdAt,
+      report.updatedAt,
+      report.resolutionNote || '',
+    ])
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `zchat-moderation-audit-${new Date().toISOString().slice(0, 10)}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (!canAccess) {
     return <div className={styles.denied}>Bạn không có quyền truy cập.</div>
   }
@@ -501,6 +550,17 @@ export default function ModeratorReportWorkspace({
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
+        {defaultMode === 'history' ? (
+          <>
+            <select className={styles.select} value={historyModerator} onChange={(event) => setHistoryModerator(event.target.value)} aria-label="Lọc theo moderator" title="Lọc theo moderator">
+              <option value="all">Tất cả moderator</option>
+              {moderatorOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+            <input className={styles.input} type="date" value={historyDateFrom} onChange={(event) => setHistoryDateFrom(event.target.value)} aria-label="Từ ngày" title="Từ ngày" />
+            <input className={styles.input} type="date" value={historyDateTo} onChange={(event) => setHistoryDateTo(event.target.value)} aria-label="Đến ngày" title="Đến ngày" />
+            <button type="button" className={styles.exportButton} onClick={exportCsv}>Export CSV</button>
+          </>
+        ) : null}
       </section>
 
       <section className={styles.listHeader}>
@@ -518,7 +578,7 @@ export default function ModeratorReportWorkspace({
         </select>
       </section>
 
-      <section className={styles.list}>
+      <section className={`${styles.list} ${defaultMode === 'history' ? styles.timelineList : ''}`}>
         {loading ? <div className={styles.loadingState}>Đang tải danh sách báo cáo...</div> : null}
         {!loading && visibleReports.length === 0 ? <div className={styles.emptyState}>Không có báo cáo phù hợp với bộ lọc hiện tại.</div> : null}
 
@@ -644,6 +704,8 @@ export default function ModeratorReportWorkspace({
               <div className={styles.metaCard}><span>Thời gian gửi</span><b>{formatTime(selectedReport.createdAt)}</b></div>
               <div className={styles.metaCard}><span>Người xem xét</span><b>{selectedReport.reviewerLabel}</b></div>
               <div className={styles.metaCard}><span>Người xử lý</span><b>{selectedReport.assigneeLabel}</b></div>
+              <div className={styles.metaCard}><span>AI confidence</span><b>{selectedReport.aiScore}%</b><div className={styles.muted}>Severity: {selectedReport.severity.toUpperCase()}</div></div>
+              <div className={styles.metaCard}><span>Moderation history</span><b>{selectedReport.status}</b><div className={styles.muted}>Updated: {formatTime(selectedReport.updatedAt)}</div></div>
             </div>
 
             {selectedReport.mediaUrl ? (
@@ -692,6 +754,12 @@ export default function ModeratorReportWorkspace({
               <b>#{actionReport.reportId} - {actionReport.targetLabel}</b>
               <div className={styles.muted}>{actionReport.reason}</div>
             </div>
+
+            {actionType !== 'none' ? (
+              <div className={styles.confirmWarning}>
+                This action can change or remove reported content. Review the preview and confirm intentionally.
+              </div>
+            ) : null}
 
             <div className={styles.formRow}>
               <label htmlFor="target-action">Hành động thực thi</label>

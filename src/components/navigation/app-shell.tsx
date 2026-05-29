@@ -33,7 +33,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       )}
       {!hideMainNavbar ? <TopNavbar /> : null}
       {isModeratorArea ? (
-        <div style={{ display: 'flex', minHeight: '100vh' }}>
+        <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc' }}>
           <ModeratorNav />
           <div style={{ flex: 1, minWidth: 0 }}>
             <RouteGuard>{children}</RouteGuard>

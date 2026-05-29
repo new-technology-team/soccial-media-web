@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Clock3, Eye, MoreVertical, ShieldAlert, UserRound, X } from 'lucide-react'
 
 import { api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
 import { toast } from '@/hooks/use-toast'
 import type { User } from '@/types'
-import styles from '../../admin/admin-console.module.css'
+import styles from './page.module.css'
 
 const ACCOUNT_LABEL: Record<string, string> = {
-  active: 'Đang hoạt động',
-  warning: 'Đã cảnh cáo',
-  restricted: 'Bị hạn chế',
-  temp_locked: 'Tạm khóa',
-  locked: 'Đã khóa',
-  hidden: 'Đã ẩn',
-  deleted: 'Đã xóa',
+  active: 'Dang hoat dong',
+  warning: 'Da canh cao',
+  restricted: 'Bi han che',
+  temp_locked: 'Tam khoa',
+  locked: 'Da khoa',
+  hidden: 'Da an',
+  deleted: 'Da xoa',
 }
 
 type ActionType = 'warn' | 'restrict' | 'temp-lock' | 'restore'
@@ -27,6 +28,8 @@ export default function ModeratorUsersPage() {
   const [keyword, setKeyword] = useState('')
   const [action, setAction] = useState<{ user: User; type: ActionType; title: string } | null>(null)
   const [reason, setReason] = useState('')
+  const [actionMenuUserId, setActionMenuUserId] = useState<number | null>(null)
+  const [detailUser, setDetailUser] = useState<User | null>(null)
 
   const loadUsers = async () => {
     if (!token) return
@@ -51,13 +54,11 @@ export default function ModeratorUsersPage() {
     else if (action.type === 'restore') await api.restoreModerationUser(token, action.user.id)
     toast({
       title:
-        action.type === 'warn' ? `Đã cảnh cáo "${action.user.fullName}"`
-        : action.type === 'restrict' ? `Đã hạn chế tài khoản "${action.user.fullName}"`
-        : action.type === 'temp-lock' ? `Đã tạm khóa tài khoản "${action.user.fullName}"`
-        : `Đã khôi phục tài khoản "${action.user.fullName}"`,
-      description: action.type === 'restore'
-        ? 'Tài khoản đã được khôi phục về trạng thái hoạt động bình thường.'
-        : 'Hành động kiểm duyệt đã được ghi nhận.',
+        action.type === 'warn' ? `Warned ${action.user.fullName}`
+        : action.type === 'restrict' ? `Restricted ${action.user.fullName}`
+        : action.type === 'temp-lock' ? `Temporarily locked ${action.user.fullName}`
+        : `Restored ${action.user.fullName}`,
+      description: 'Moderation action has been recorded.',
     })
     setAction(null)
     setReason('')
@@ -66,29 +67,29 @@ export default function ModeratorUsersPage() {
 
   const canRestore = (status: string) => status === 'restricted' || status === 'temp_locked' || status === 'warning'
 
-  if (me?.role !== 'admin' && me?.role !== 'moderator') return <div className={styles.denied}>Bạn không có quyền truy cập.</div>
+  if (me?.role !== 'admin' && me?.role !== 'moderator') return <div className={styles.denied}>Ban khong co quyen truy cap.</div>
 
   return (
     <main className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Kiểm duyệt viên</p>
-          <h1>Quản lý người dùng</h1>
-          <p>Xem và xử lý tài khoản vi phạm trong hệ thống. Cảnh cáo, hạn chế, tạm khóa hoặc khôi phục tài khoản.</p>
+          <p className={styles.eyebrow}>Moderator Center</p>
+          <h1>User moderation</h1>
+          <p>Review risky accounts, open a user detail drawer, and apply actions from a compact action menu.</p>
         </div>
       </header>
       <section className={styles.toolbar}>
-        <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Tìm kiếm tài khoản..." />
-        <button type="button" className={styles.secondary} onClick={loadUsers}>Làm mới</button>
+        <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Search accounts..." />
+        <button type="button" className={styles.secondary} onClick={loadUsers}>Refresh</button>
       </section>
       <section className={styles.panel}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th>Tài khoản</th>
-              <th>Trạng thái</th>
-              <th>Lịch sử vi phạm</th>
-              <th>Thao tác</th>
+              <th>Account</th>
+              <th>Status</th>
+              <th>Moderation history</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -104,54 +105,92 @@ export default function ModeratorUsersPage() {
                   </span>
                 </td>
                 <td>
-                  {item.warningCount || 0} cảnh cáo<br />
-                  <small>{item.restrictionReason || 'Không có ghi chú'}</small>
+                  {item.warningCount || 0} warnings<br />
+                  <small>{item.restrictionReason || 'No active moderation note'}</small>
                 </td>
                 <td>
                   <div className={styles.actions}>
-                    <Link className={styles.secondary} to={`/profile/${item.id}`} target="_blank" rel="noopener noreferrer">Xem hồ sơ</Link>
-                    <button type="button" className={styles.secondary} onClick={() => setAction({ user: item, type: 'warn', title: 'Cảnh cáo người dùng?' })}>Cảnh cáo</button>
-                    <button type="button" className={styles.secondary} onClick={() => setAction({ user: item, type: 'restrict', title: 'Hạn chế tài khoản?' })}>Hạn chế</button>
-                    <button type="button" className={styles.danger} onClick={() => setAction({ user: item, type: 'temp-lock', title: 'Tạm khóa tài khoản?' })}>Tạm khóa</button>
-                    {canRestore(item.accountStatus) ? (
-                      <button type="button" className={styles.secondary} onClick={() => setAction({ user: item, type: 'restore', title: 'Khôi phục tài khoản?' })}>Khôi phục</button>
-                    ) : null}
+                    <button type="button" className={styles.secondary} onClick={() => setDetailUser(item)}><Eye size={15} /> Detail</button>
+                    <div className={styles.menuWrap}>
+                      <button type="button" className={styles.iconButton} onClick={() => setActionMenuUserId((current) => current === item.id ? null : item.id)} aria-label="Open action menu">
+                        <MoreVertical size={16} />
+                      </button>
+                      {actionMenuUserId === item.id ? (
+                        <div className={styles.actionMenu}>
+                          <Link to={`/profile/${item.id}`} target="_blank" rel="noopener noreferrer">View profile</Link>
+                          <button type="button" onClick={() => { setAction({ user: item, type: 'warn', title: 'Warn user?' }); setActionMenuUserId(null) }}>Warn</button>
+                          <button type="button" onClick={() => { setAction({ user: item, type: 'restrict', title: 'Restrict account?' }); setActionMenuUserId(null) }}>Restrict</button>
+                          <button type="button" className={styles.menuDanger} onClick={() => { setAction({ user: item, type: 'temp-lock', title: 'Temporarily lock account?' }); setActionMenuUserId(null) }}>Temp lock</button>
+                          {canRestore(item.accountStatus) ? (
+                            <button type="button" onClick={() => { setAction({ user: item, type: 'restore', title: 'Restore account?' }); setActionMenuUserId(null) }}>Restore</button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {filtered.length === 0 ? <p className={styles.empty}>Không có dữ liệu</p> : null}
+        {filtered.length === 0 ? <p className={styles.empty}>No users match the current search.</p> : null}
       </section>
 
       <AppDialog
         open={Boolean(action)}
         onOpenChange={(open) => !open && setAction(null)}
         title={action?.title || ''}
-        description={
-          action?.type === 'restore'
-            ? 'Khôi phục tài khoản về trạng thái hoạt động bình thường.'
-            : 'Vui lòng ghi lý do xử lý để người dùng và quản trị viên có thể tra cứu.'
-        }
+        description={action?.type === 'restore' ? 'Restore this account to normal active status.' : 'Add a moderation note for audit history.'}
         footer={
           <>
-            <DialogButton variant="secondary" onClick={() => setAction(null)}>Hủy</DialogButton>
-            <DialogButton variant="destructive" onClick={() => void submit()}>Xác nhận</DialogButton>
+            <DialogButton variant="secondary" onClick={() => setAction(null)}>Cancel</DialogButton>
+            <DialogButton variant="destructive" onClick={() => void submit()}>Confirm</DialogButton>
           </>
         }
       >
         <div className={styles.modalForm}>
           {action?.type !== 'restore' ? (
             <label>
-              Lý do xử lý
-              <textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Nhập lý do xử lý..." />
+              Moderation reason
+              <textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Write reason..." />
             </label>
           ) : (
-            <p>Tài khoản <strong>{action?.user.fullName}</strong> sẽ được đặt lại về trạng thái hoạt động bình thường và xóa lý do hạn chế.</p>
+            <p>Account <strong>{action?.user.fullName}</strong> will be restored to normal active status.</p>
           )}
         </div>
       </AppDialog>
+
+      {detailUser ? (
+        <aside className={styles.drawerBackdrop} role="presentation" onClick={() => setDetailUser(null)}>
+          <section className={styles.drawer} role="dialog" aria-label="User detail" onClick={(event) => event.stopPropagation()}>
+            <header className={styles.drawerHeader}>
+              <div>
+                <p className={styles.eyebrow}>User detail</p>
+                <h2>{detailUser.fullName}</h2>
+              </div>
+              <button type="button" onClick={() => setDetailUser(null)} aria-label="Close"><X size={17} /></button>
+            </header>
+            <div className={styles.userHero}>
+              {detailUser.avatarUrl ? <img src={detailUser.avatarUrl} alt={detailUser.fullName} /> : <span>{(detailUser.fullName[0] || 'U').toUpperCase()}</span>}
+              <div>
+                <b>{detailUser.email || detailUser.phone || `ID ${detailUser.id}`}</b>
+                <small>{ACCOUNT_LABEL[detailUser.accountStatus] || detailUser.accountStatus}</small>
+              </div>
+            </div>
+            <div className={styles.historyList}>
+              <h3><Clock3 size={16} /> Moderation history</h3>
+              <article>
+                <ShieldAlert size={15} />
+                <span><b>{detailUser.warningCount || 0} warnings</b><small>{detailUser.restrictionReason || 'No current restriction note.'}</small></span>
+              </article>
+              <article>
+                <UserRound size={15} />
+                <span><b>Account status</b><small>{ACCOUNT_LABEL[detailUser.accountStatus] || detailUser.accountStatus}</small></span>
+              </article>
+            </div>
+          </section>
+        </aside>
+      ) : null}
     </main>
   )
 }
