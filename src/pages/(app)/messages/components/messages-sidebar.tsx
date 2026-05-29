@@ -1,4 +1,4 @@
-import { Bell, BellOff, CirclePlus, Info, LockKeyhole, MessageCircle, Pin, Search, Send, UserPlus, Users } from 'lucide-react'
+import { Bell, BellOff, CirclePlus, FileText, Film, Image, Info, LockKeyhole, MessageCircle, Mic, Pin, Search, Send, SmilePlus, UserPlus, Users } from 'lucide-react'
 
 import { formatVietnamTime, getConversationDisplayName } from '@/services/messages/formatters'
 import type { Conversation, NotificationItem } from '@/types'
@@ -125,6 +125,17 @@ export function MessagesSidebar({
                           ? lastMessage.fileName || 'Đã gửi tệp đính kèm'
                           : lastMessage.text || ''
             const previewLine = lastMessage ? `${senderName}: ${previewText}` : previewText
+            const previewIcon = lastMessage?.type === 'image'
+              ? <Image size={13} />
+              : lastMessage?.type === 'video'
+                ? <Film size={13} />
+                : lastMessage?.type === 'audio'
+                  ? <Mic size={13} />
+                  : lastMessage?.type === 'sticker' || lastMessage?.viewerReaction
+                    ? <SmilePlus size={13} />
+                    : lastMessage?.mediaUrl
+                      ? <FileText size={13} />
+                      : null
             const directPeer = conv.type === 'direct' ? conv.members.find((member) => member.userId !== userId) || null : null
             const avatarUrl = conv.avatarUrl || (conv.type === 'direct' ? directPeer?.avatarUrl || sender?.avatarUrl || null : null)
             const isOnline = Boolean(directPeer?.online)
@@ -148,7 +159,7 @@ export function MessagesSidebar({
                 )}
               >
                 <div className={styles.convAvatar}>
-                  {avatarUrl ? <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" /> : fallback}
+                  {avatarUrl ? <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : fallback}
                   <span className={cn(styles.presenceDot, isOnline ? styles.presenceDotOnline : styles.presenceDotOffline)} />
                 </div>
                 <div className={styles.convText}>
@@ -164,7 +175,7 @@ export function MessagesSidebar({
                     )}
                     <small>{statusLabel}</small>
                   </div>
-                  <p>{previewLine}</p>
+                  <p className={styles.convPreviewLine}>{previewIcon}{previewLine}</p>
                   {conv.unreadCount > 0 ? (
                     <div className={styles.convFooter}>
                       <span className={styles.convUnreadBadge}>{conv.unreadCount} chua doc</span>

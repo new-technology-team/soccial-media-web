@@ -1164,12 +1164,12 @@ export default function MessagesPage() {
         const names = otherMembers
           .filter((member) => readByIds.has(Number(member.userId)))
           .map((member) => member.fullName)
-        if (selectedConversation.type === 'direct') return names.length ? 'Đã xem' : message.status === 'delivered' ? 'Đã nhận' : 'Đã gửi'
-        if (names.length > 0) return `Đã xem bởi ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
+        if (selectedConversation.type === 'direct') return names.length ? '✓✓ Seen' : message.status === 'delivered' ? '✓✓ Delivered' : '✓ Sent'
+        if (names.length > 0) return `✓✓ Seen by ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
       }
 
       const sentAt = new Date(message.createdAt).getTime()
-      if (Number.isNaN(sentAt)) return 'Đã gửi'
+      if (Number.isNaN(sentAt)) return '✓ Sent'
 
       const otherMembers = selectedConversation.members.filter((member) => member.userId !== user.id)
       const seenCount = otherMembers.filter((member) => {
@@ -1178,9 +1178,9 @@ export default function MessagesPage() {
         return !Number.isNaN(readAt) && readAt >= sentAt
       }).length
 
-      if (seenCount === 0) return message.status === 'delivered' ? 'Đã nhận' : 'Đã gửi'
-      if (selectedConversation.type === 'direct' || seenCount >= otherMembers.length) return 'Đã xem'
-      return `Đã xem bởi ${seenCount}`
+      if (seenCount === 0) return message.status === 'delivered' ? '✓✓ Delivered' : '✓ Sent'
+      if (selectedConversation.type === 'direct' || seenCount >= otherMembers.length) return '✓✓ Seen'
+      return `✓✓ Seen by ${seenCount}`
     },
     [selectedConversation, user?.id]
   )
@@ -3040,8 +3040,21 @@ export default function MessagesPage() {
               <ArrowLeft size={18} />
             </button>
             <div className={styles.chatIdentity}>
-              <div className={styles.chatHeaderAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
-              <div>
+              <div className={styles.chatHeaderAvatar}>
+                {selectedConversation?.avatarUrl || directPeer?.avatarUrl ? (
+                  <img
+                    src={selectedConversation?.avatarUrl || directPeer?.avatarUrl || ''}
+                    alt={selectedName}
+                    loading="lazy"
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none'
+                    }}
+                  />
+                ) : null}
+                <span>{(selectedName[0] || 'C').toUpperCase()}</span>
+                {directPeer ? <i className={directPeer.online ? styles.presenceDotOnline : styles.presenceDotOffline} /> : null}
+              </div>
+              <div className={styles.chatIdentityText}>
                 <h2>
                   {directPeer ? <Link to={`/profile/${directPeer.id}`}>{selectedName}</Link> : selectedName}
                 </h2>
@@ -3060,26 +3073,30 @@ export default function MessagesPage() {
                 className={chatSummary ? styles.chatActionActive : undefined}
                 onClick={handleSummarizeChat}
                 disabled={isSummarizing || !selectedConversationId}
+                data-tooltip="Summarize chat"
+                data-tooltip-description="Create an AI summary"
                 title="Tóm tắt đoạn chat (AI)"
                 aria-label="Tóm tắt"
               >
-                <Wand2 size={16} />
+                <Wand2 size={18} />
               </button>
               <button
                 type="button"
                 className={sentimentResult ? styles.chatActionActive : undefined}
                 onClick={handleAnalyzeSentiment}
                 disabled={isAnalyzingSentiment || !selectedConversationId}
+                data-tooltip="Analyze sentiment"
+                data-tooltip-description="Review conversation tone"
                 title="Phân tích cảm xúc (AI)"
                 aria-label="Phân tích cảm xúc"
               >
-                <BrainCircuit size={16} />
+                <BrainCircuit size={18} />
               </button>
               <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
-                <Video size={16} />
+                <Video size={18} />
               </button>
               <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gọi thoại" aria-label="Gọi thoại">
-                <Phone size={16} />
+                <Phone size={18} />
               </button>
               <button type="button" onClick={() => setCallSettingsOpen(true)} title="Cài đặt cuộc gọi" aria-label="Cài đặt cuộc gọi">
                 <Info size={16} />
@@ -3090,6 +3107,8 @@ export default function MessagesPage() {
                 title="Tìm tin nhắn"
                 aria-label="Tìm tin nhắn"
                 disabled={!selectedConversation}
+                data-tooltip="Search"
+                data-tooltip-description="Find messages in this conversation"
                 onClick={() => setShowMessageFilters((value) => !value)}
               >
                 <Search size={16} />
@@ -3099,6 +3118,8 @@ export default function MessagesPage() {
                 title="Thêm người vào cuộc trò chuyện"
                 aria-label="Thêm người vào cuộc trò chuyện"
                 disabled={!selectedGroup || !canAddMembers}
+                data-tooltip="Add Friend"
+                data-tooltip-description="Add people to this conversation"
                 onClick={() => {
                   setRightPanelSection('manage')
                   setShowSettingsDrawer(true)
@@ -3112,6 +3133,8 @@ export default function MessagesPage() {
                 aria-label="Xem chi tiết cuộc trò chuyện"
                 className={showDetailsPanelDesktop ? styles.chatActionActive : undefined}
                 disabled={!selectedConversation}
+                data-tooltip="Conversation Info"
+                data-tooltip-description="Open custom chat features"
                 onClick={() => {
                   if (window.innerWidth > 1180) {
                     setShowDetailsPanelDesktop(v => !v)

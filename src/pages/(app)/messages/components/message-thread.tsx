@@ -86,7 +86,7 @@ export function MessageThread({
         <p className={styles.virtualHint}>Đang hiển thị các tin nhắn mới nhất. Cuộn lên để tải thêm lịch sử.</p>
       ) : null}
 
-      {virtualSlice.items.map((msg) => {
+      {virtualSlice.items.map((msg, index) => {
         if (msg.type === 'call-history') {
           return <CallHistoryMessage key={msg.id} text={msg.text || 'Cuộc gọi đã kết thúc'} />
         }
@@ -97,6 +97,13 @@ export function MessageThread({
         const sender = selectedConversation?.members.find((member) => member.userId === msg.senderId) || null
         const senderName = sender?.fullName || msg.senderName || `Người dùng #${msg.senderId}`
         const readLabel = mine ? getMessageReadLabel(msg) : null
+        const previousMessage = virtualSlice.items[index - 1]
+        const nextMessage = virtualSlice.items[index + 1]
+        const groupedWithPrevious = Boolean(previousMessage && previousMessage.type !== 'call-history' && previousMessage.senderId === msg.senderId)
+        const groupedWithNext = Boolean(nextMessage && nextMessage.type !== 'call-history' && nextMessage.senderId === msg.senderId)
+        const isGroupConversation = selectedConversation?.type === 'group'
+        const showSenderName = !mine && isGroupConversation && !groupedWithPrevious
+        const showAvatar = !mine && !groupedWithNext
         const reactionNames = reactionItems
           .map((reaction) => {
             const reactor = selectedConversation?.members.find((member) => member.userId === reaction.userId) || null
@@ -106,21 +113,31 @@ export function MessageThread({
           .join(', ')
 
         return (
-          <div key={msg.id} className={cn(styles.messageRow, mine && styles.messageRowMine)}>
-            <div className={styles.messageAvatar}>
-              {sender?.avatarUrl ? <img src={sender.avatarUrl} alt={senderName} className={styles.messageAvatarImage} loading="lazy" /> : (senderName[0] || 'U').toUpperCase()}
-            </div>
+          <div
+            key={msg.id}
+            className={cn(
+              styles.messageRow,
+              mine && styles.messageRowMine,
+              groupedWithPrevious && styles.messageRowGrouped,
+              groupedWithNext && styles.messageRowHasNext
+            )}
+          >
+            {showAvatar ? (
+              <div className={styles.messageAvatar}>
+                {sender?.avatarUrl ? <img src={sender.avatarUrl} alt={senderName} className={styles.messageAvatarImage} loading="lazy" /> : (senderName[0] || 'U').toUpperCase()}
+              </div>
+            ) : (
+              <div className={styles.messageAvatarSpacer} aria-hidden="true" />
+            )}
 
             <div className={styles.messageBlock}>
-              <div className={styles.senderRow}>
-                {mine ? (
-                  <span className={styles.senderSelf}>{senderName}</span>
-                ) : (
+              {showSenderName ? (
+                <div className={styles.senderRow}>
                   <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
                     {senderName}
                   </Link>
-                )}
-              </div>
+                </div>
+              ) : null}
 
               <div
                 className={cn(

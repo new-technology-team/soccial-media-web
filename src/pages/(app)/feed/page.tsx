@@ -6,11 +6,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Bell,
   CircleHelp,
+  Check,
+  Copy,
   Dot,
   Ellipsis,
+  Globe2,
   Heart,
   House,
   Image as ImageIcon,
+  Link2,
+  Lock,
   MessageCircle,
   MessagesSquare,
   MoreHorizontal,
@@ -18,6 +23,7 @@ import {
   Settings,
   Share2,
   Smile,
+  UserCheck,
   UserRound,
   UserPlus,
   X,
@@ -26,7 +32,7 @@ import {
 import { api, isAuthExpiredError } from '@/api/client'
 import { ConfirmDialog, ReportDialog } from '@/components/dialogs'
 import Sidebar from '@/components/navigation/sidebar'
-import type { FeedComment, FeedPost } from '@/types'
+import type { Conversation, FeedComment, FeedPost } from '@/types'
 import { useAuthStore } from '@/contexts/auth-store'
 import { useSocialRealtime } from '@/hooks/use-social-realtime'
 import { toast } from '@/hooks/use-toast'
@@ -110,6 +116,12 @@ type CommentPaging = {
   hasMore: boolean
 }
 
+type ShareAudience = 'public' | 'friends' | 'only-me'
+type ShareMode = 'profile' | 'group' | 'message' | 'copy'
+type ShareRecipient =
+  | { kind: 'conversation'; id: string; name: string; avatarUrl?: string | null; type: 'direct' | 'group' }
+  | { kind: 'user'; id: number; name: string; avatarUrl?: string | null; type: 'direct' }
+
 export default function FeedPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -141,7 +153,14 @@ export default function FeedPage() {
   const [loadingMoreComments, setLoadingMoreComments] = useState<Record<number, boolean>>({})
   const [commentPaging, setCommentPaging] = useState<Record<number, CommentPaging>>({})
   const [shareTargetPostId, setShareTargetPostId] = useState<number | null>(null)
-  const [shareConversations, setShareConversations] = useState<Array<{ id: string; name: string | null }>>([])
+  const [shareConversations, setShareConversations] = useState<Conversation[]>([])
+  const [shareMode, setShareMode] = useState<ShareMode>('profile')
+  const [shareAudience, setShareAudience] = useState<ShareAudience>('public')
+  const [shareCaption, setShareCaption] = useState('')
+  const [shareSearch, setShareSearch] = useState('')
+  const [shareUserResults, setShareUserResults] = useState<Array<{ id: number; name: string; avatarUrl: string | null }>>([])
+  const [shareRecipients, setShareRecipients] = useState<ShareRecipient[]>([])
+  const [isSharing, setIsSharing] = useState(false)
   const [activePostMenuId, setActivePostMenuId] = useState<number | null>(null)
   const [hiddenPostIds, setHiddenPostIds] = useState<Record<number, boolean>>({})
   const [editingPostId, setEditingPostId] = useState<number | null>(null)
@@ -314,12 +333,41 @@ export default function FeedPage() {
 
     api
       .listConversations(token)
-      .then((result) => setShareConversations(result.conversations.map((item) => ({ id: item.id, name: item.name }))))
+      .then((result) => setShareConversations(result.conversations))
       .catch((error) => {
         if (handleAuthExpired(error)) return
         console.error('Failed to load conversations for sharing', error)
       })
   }, [handleAuthExpired, shareTargetPostId, token])
+
+  useEffect(() => {
+    const q = shareSearch.trim()
+    if (!token || q.length < 2 || shareMode !== 'message') {
+      setShareUserResults([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.searchUsers(token, q)
+        setShareUserResults(
+          (result.users || [])
+            .map((item) => ({
+              id: Number(item.id || item.userId || 0),
+              name: String(item.full_name || item.fullName || item.displayName || 'Người dùng'),
+              avatarUrl: (item.avatarUrl || item.avatar_url || null) as string | null,
+            }))
+            .filter((item) => item.id > 0)
+            .slice(0, 8)
+        )
+      } catch (error) {
+        if (handleAuthExpired(error)) return
+        setShareUserResults([])
+      }
+    }, 240)
+
+    return () => clearTimeout(timer)
+  }, [handleAuthExpired, shareMode, shareSearch, token])
 
   useEffect(() => {
     const timer = setInterval(() => setTimeTick((prev) => prev + 1), 30000)
@@ -361,6 +409,19 @@ export default function FeedPage() {
     [filteredPosts, visiblePostsCount]
   )
   const hasMorePosts = visiblePostsCount < filteredPosts.length
+  const activeSharePost = useMemo(
+    () => posts.find((post) => post.id === shareTargetPostId) || null,
+    [posts, shareTargetPostId]
+  )
+  const filteredShareConversations = useMemo(() => {
+    const q = shareSearch.trim().toLowerCase()
+    return shareConversations.filter((conversation) => {
+      const label = conversation.name || conversation.members.map((member) => member.fullName).join(', ') || `Cuộc trò chuyện ${conversation.id}`
+      if (shareMode === 'group' && conversation.type !== 'group') return false
+      if (!q) return true
+      return label.toLowerCase().includes(q)
+    })
+  }, [shareConversations, shareMode, shareSearch])
 
   useEffect(() => {
     if (!hasMorePosts) return
@@ -696,10 +757,25 @@ export default function FeedPage() {
 
   const handleShare = async (post: FeedPost) => {
     try {
-      setShareTargetPostId((prev) => (prev === post.id ? null : post.id))
+      setShareTargetPostId(post.id)
+      setShareMode('profile')
+      setShareAudience('public')
+      setShareCaption('')
+      setShareSearch('')
+      setShareRecipients([])
+      setShareUserResults([])
     } catch (error) {
       console.error('Failed to share post', error)
     }
+  }
+
+  const closeShareModal = () => {
+    setShareTargetPostId(null)
+    setShareSearch('')
+    setShareRecipients([])
+    setShareCaption('')
+    setShareUserResults([])
+    setIsSharing(false)
   }
 
   const handleShareToProfile = async (post: FeedPost) => {
@@ -708,20 +784,44 @@ export default function FeedPage() {
       return
     }
 
+    setIsSharing(true)
     try {
       await api.createPost(token, {
-        content: '',
+        content: shareCaption.trim(),
         sharedPostId: post.id,
-        visibility: 'public',
+        visibility: shareAudience === 'only-me' ? 'private' : 'public',
       })
       const refreshed = await api.listFeed(token)
       setPosts(dedupePostsById(refreshed.posts))
       setErrorText('Đã chia sẻ lên trang cá nhân.')
-      setShareTargetPostId(null)
+      closeShareModal()
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to share to profile', error)
+    } finally {
+      setIsSharing(false)
     }
+  }
+
+  const sendSharedPostToConversation = async (post: FeedPost, conversationId: string) => {
+    if (!token) return
+    await api.sendMessagePayload(token, conversationId, {
+      type: 'text',
+      text: `${me?.fullName || 'Bạn của bạn'} đã chia sẻ một bài viết của ${post.authorName}`,
+      mediaUrl: post.mediaUrl || undefined,
+      meta: {
+        sharedPost: {
+          id: post.id,
+          authorId: post.authorId,
+          authorName: post.authorName,
+          authorAvatar: post.authorAvatar,
+          content: post.content.slice(0, 240),
+          mediaUrl: post.mediaUrl,
+          reactionCount: post.reactionCount,
+          commentCount: post.commentCount,
+        },
+      },
+    })
   }
 
   const handleShareToConversation = async (post: FeedPost, conversationId: string) => {
@@ -731,28 +831,46 @@ export default function FeedPage() {
     }
 
     try {
-      await api.sendMessagePayload(token, conversationId, {
-        type: 'text',
-        text: `${me?.fullName || 'Bạn của bạn'} đã chia sẻ một bài viết của ${post.authorName}`,
-        mediaUrl: post.mediaUrl || undefined,
-        meta: {
-          sharedPost: {
-            id: post.id,
-            authorId: post.authorId,
-            authorName: post.authorName,
-            authorAvatar: post.authorAvatar,
-            content: post.content.slice(0, 240),
-            mediaUrl: post.mediaUrl,
-            reactionCount: post.reactionCount,
-            commentCount: post.commentCount,
-          },
-        },
-      })
+      await sendSharedPostToConversation(post, conversationId)
       setErrorText('Đã chia sẻ bài viết vào tin nhắn.')
-      setShareTargetPostId(null)
+      closeShareModal()
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to share to conversation', error)
+    }
+  }
+
+  const toggleShareRecipient = (recipient: ShareRecipient) => {
+    const key = `${recipient.kind}-${recipient.id}`
+    setShareRecipients((prev) =>
+      prev.some((item) => `${item.kind}-${item.id}` === key)
+        ? prev.filter((item) => `${item.kind}-${item.id}` !== key)
+        : [...prev, recipient]
+    )
+  }
+
+  const handleShareToRecipients = async (post: FeedPost) => {
+    if (!token) {
+      navigate('/auth/login')
+      return
+    }
+    if (shareRecipients.length === 0) return
+
+    setIsSharing(true)
+    try {
+      for (const recipient of shareRecipients) {
+        const conversationId = recipient.kind === 'conversation'
+          ? recipient.id
+          : (await api.createDirectConversation(token, recipient.id)).conversation.id
+        await sendSharedPostToConversation(post, conversationId)
+      }
+      setErrorText(`Đã gửi bài viết tới ${shareRecipients.length} nơi nhận.`)
+      closeShareModal()
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      console.error('Failed to share to recipients', error)
+    } finally {
+      setIsSharing(false)
     }
   }
 
@@ -761,7 +879,7 @@ export default function FeedPage() {
     try {
       await navigator.clipboard.writeText(url)
       setErrorText('Đã sao chép liên kết bài viết.')
-      setShareTargetPostId(null)
+      closeShareModal()
     } catch (error) {
       console.error('Failed to copy link', error)
     }
@@ -1403,31 +1521,6 @@ export default function FeedPage() {
                   </button>
                 </div>
 
-                {!isGuestView && shareTargetPostId === post.id ? (
-                  <div className={styles.sharePanel}>
-                    <button type="button" onClick={() => handleShareToProfile(post)}>
-                      Chia sẻ lên trang cá nhân
-                    </button>
-                    <button type="button" onClick={() => handleCopyLink(post.id)}>
-                      Sao chép liên kết
-                    </button>
-                    {shareConversations.length > 0 ? (
-                      <div className={styles.shareToMessageList}>
-                        <p>Chia sẻ qua tin nhắn:</p>
-                        {shareConversations.slice(0, 6).map((conv) => (
-                          <button
-                            key={conv.id}
-                            type="button"
-                            onClick={() => handleShareToConversation(post, conv.id)}
-                          >
-                            {conv.name || `Cuộc trò chuyện ${conv.id}`}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
                 {!isGuestView ? (
                   <div className={styles.commentBar}>
                     <input
@@ -1574,6 +1667,176 @@ export default function FeedPage() {
               {reactionViewers[reactionViewerPostId]?.length === 0 ? <p>Chưa có lượt cảm xúc.</p> : null}
               {!reactionViewers[reactionViewerPostId] ? <p>Đang tải danh sách...</p> : null}
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeSharePost ? (
+        <div className={styles.shareModalOverlay} role="presentation" onClick={closeShareModal}>
+          <section className={styles.shareModal} role="dialog" aria-modal="true" aria-label="Chia sẻ bài viết" onClick={(event) => event.stopPropagation()}>
+            <header className={styles.shareModalHeader}>
+              <div>
+                <h2>Chia sẻ bài viết</h2>
+                <p>Gửi bài viết gốc dưới dạng thẻ đầy đủ, không phải đường dẫn trần.</p>
+              </div>
+              <button type="button" onClick={closeShareModal} aria-label="Đóng">
+                <X size={18} />
+              </button>
+            </header>
+
+            <article className={styles.shareOriginalPost}>
+              <div className={styles.sharePostAuthor}>
+                {activeSharePost.authorAvatar ? <img src={activeSharePost.authorAvatar} alt={activeSharePost.authorName} /> : <span>{(activeSharePost.authorName[0] || 'U').toUpperCase()}</span>}
+                <div>
+                  <b>{activeSharePost.authorName}</b>
+                  <small>{formatTime(activeSharePost.createdAt)} · Bài viết gốc</small>
+                </div>
+              </div>
+              {activeSharePost.content ? <p>{activeSharePost.content}</p> : null}
+              {activeSharePost.mediaUrl ? (
+                <div className={styles.shareMediaGrid}>
+                  {isVideoMediaUrl(activeSharePost.mediaUrl) ? <video src={activeSharePost.mediaUrl} muted /> : <img src={activeSharePost.mediaUrl} alt="Post media" />}
+                </div>
+              ) : null}
+              <div className={styles.sharePostStats}>
+                <span>{Number(activeSharePost.reactionCount || 0)} cảm xúc</span>
+                <span>{Number(activeSharePost.commentCount || 0)} bình luận</span>
+              </div>
+            </article>
+
+            <div className={styles.shareActionGrid}>
+              {[
+                { key: 'profile' as ShareMode, icon: <UserRound size={18} />, title: 'Share to my profile', text: 'Đăng lên dòng thời gian của bạn' },
+                { key: 'group' as ShareMode, icon: <MessagesSquare size={18} />, title: 'Share to a group', text: 'Chọn nhóm trò chuyện để gửi' },
+                { key: 'message' as ShareMode, icon: <MessageCircle size={18} />, title: 'Send via message', text: 'Gửi cho nhiều người hoặc nhóm' },
+                { key: 'copy' as ShareMode, icon: <Copy size={18} />, title: 'Copy link', text: 'Sao chép liên kết bài viết' },
+              ].map((action) => (
+                <button
+                  key={action.key}
+                  type="button"
+                  className={`${styles.shareActionCard} ${shareMode === action.key ? styles.shareActionCardActive : ''}`}
+                  onClick={() => {
+                    setShareMode(action.key)
+                    setShareSearch('')
+                  }}
+                >
+                  {action.icon}
+                  <span>
+                    <b>{action.title}</b>
+                    <small>{action.text}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {shareMode === 'profile' ? (
+              <div className={styles.shareModePanel}>
+                <div className={styles.audienceGrid}>
+                  {[
+                    { key: 'public' as ShareAudience, icon: <Globe2 size={16} />, label: 'Public', text: 'Ai cũng có thể xem' },
+                    { key: 'friends' as ShareAudience, icon: <UserCheck size={16} />, label: 'Friends', text: 'Ưu tiên bạn bè của bạn' },
+                    { key: 'only-me' as ShareAudience, icon: <Lock size={16} />, label: 'Only Me', text: 'Chỉ bạn xem được' },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`${styles.audienceCard} ${shareAudience === item.key ? styles.audienceCardActive : ''}`}
+                      onClick={() => setShareAudience(item.key)}
+                    >
+                      {item.icon}
+                      <span><b>{item.label}</b><small>{item.text}</small></span>
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  className={styles.shareCaption}
+                  value={shareCaption}
+                  onChange={(event) => setShareCaption(event.target.value)}
+                  placeholder="Thêm cảm nghĩ của bạn..."
+                />
+                <button type="button" className={styles.sharePrimaryBtn} disabled={isSharing} onClick={() => void handleShareToProfile(activeSharePost)}>
+                  {isSharing ? 'Đang chia sẻ...' : 'Share'}
+                </button>
+              </div>
+            ) : null}
+
+            {shareMode === 'group' || shareMode === 'message' ? (
+              <div className={styles.shareModePanel}>
+                <div className={styles.shareSearchBox}>
+                  <MessageCircle size={16} />
+                  <input
+                    value={shareSearch}
+                    onChange={(event) => setShareSearch(event.target.value)}
+                    placeholder={shareMode === 'group' ? 'Tìm nhóm...' : 'Tìm người dùng hoặc nhóm...'}
+                  />
+                </div>
+                {shareRecipients.length > 0 ? (
+                  <div className={styles.recipientChips}>
+                    {shareRecipients.map((recipient) => (
+                      <button key={`${recipient.kind}-${recipient.id}`} type="button" onClick={() => toggleShareRecipient(recipient)}>
+                        {recipient.name}<X size={13} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className={styles.recipientList}>
+                  {filteredShareConversations.slice(0, 8).map((conversation) => {
+                    const label = conversation.name || conversation.members.map((member) => member.fullName).join(', ') || `Cuộc trò chuyện ${conversation.id}`
+                    const recipient: ShareRecipient = { kind: 'conversation', id: conversation.id, name: label, avatarUrl: conversation.avatarUrl, type: conversation.type }
+                    const selected = shareRecipients.some((item) => item.kind === 'conversation' && item.id === conversation.id)
+                    return (
+                      <button key={conversation.id} type="button" className={selected ? styles.recipientSelected : ''} onClick={() => toggleShareRecipient(recipient)}>
+                        {conversation.avatarUrl ? <img src={conversation.avatarUrl} alt={label} /> : <span>{(label[0] || 'C').toUpperCase()}</span>}
+                        <b>{label}</b>
+                        <small>{conversation.type === 'group' ? 'Group' : 'Message'}</small>
+                        {selected ? <Check size={16} /> : null}
+                      </button>
+                    )
+                  })}
+                  {shareMode === 'message' ? shareUserResults.map((person) => {
+                    const recipient: ShareRecipient = { kind: 'user', id: person.id, name: person.name, avatarUrl: person.avatarUrl, type: 'direct' }
+                    const selected = shareRecipients.some((item) => item.kind === 'user' && item.id === person.id)
+                    return (
+                      <button key={`user-${person.id}`} type="button" className={selected ? styles.recipientSelected : ''} onClick={() => toggleShareRecipient(recipient)}>
+                        {person.avatarUrl ? <img src={person.avatarUrl} alt={person.name} /> : <span>{(person.name[0] || 'U').toUpperCase()}</span>}
+                        <b>{person.name}</b>
+                        <small>User</small>
+                        {selected ? <Check size={16} /> : null}
+                      </button>
+                    )
+                  }) : null}
+                </div>
+                <button type="button" className={styles.sharePrimaryBtn} disabled={isSharing || shareRecipients.length === 0} onClick={() => void handleShareToRecipients(activeSharePost)}>
+                  {isSharing ? 'Đang gửi...' : `Send ${shareRecipients.length ? `(${shareRecipients.length})` : ''}`}
+                </button>
+              </div>
+            ) : null}
+
+            {shareMode === 'copy' ? (
+              <div className={styles.shareModePanel}>
+                <div className={styles.copyPreview}>
+                  <Link2 size={18} />
+                  <span>{`${window.location.origin}/posts/${activeSharePost.id}`}</span>
+                </div>
+                <button type="button" className={styles.sharePrimaryBtn} onClick={() => void handleCopyLink(activeSharePost.id)}>
+                  Copy link
+                </button>
+              </div>
+            ) : null}
+
+            <aside className={styles.finalSharePreview}>
+              <b>Realtime preview</b>
+              {shareCaption && shareMode === 'profile' ? <p>{shareCaption}</p> : null}
+              <div className={styles.sharedPostEmbed}>
+                <div className={styles.sharedPostAuthor}>
+                  {activeSharePost.authorAvatar ? <img src={activeSharePost.authorAvatar} alt={activeSharePost.authorName} /> : <span>{(activeSharePost.authorName[0] || 'U').toUpperCase()}</span>}
+                  <b>{activeSharePost.authorName}</b>
+                </div>
+                {activeSharePost.content ? <p>{activeSharePost.content}</p> : null}
+                {activeSharePost.mediaUrl ? <img src={activeSharePost.mediaUrl} alt="Shared post preview" /> : null}
+                <small>{Number(activeSharePost.reactionCount || 0)} cảm xúc · {Number(activeSharePost.commentCount || 0)} bình luận</small>
+              </div>
+            </aside>
           </section>
         </div>
       ) : null}
