@@ -48,10 +48,12 @@ export default function AdminDashboard() {
     }
   }, [recentReports])
 
-  const trend = useMemo(() => {
-    const base = Number(stats.totalUsers || 8)
-    return [0.35, 0.48, 0.44, 0.62, 0.7, 0.86, 1].map((ratio) => Math.max(2, Math.round(base * ratio)))
-  }, [stats.totalUsers])
+  const dashboardBars = useMemo(() => [
+    Number(stats.totalUsers || 0),
+    Number(stats.totalPosts || 0),
+    Number(stats.pendingReports || 0),
+    Number(stats.resolvedReports || 0),
+  ], [stats])
 
   if (user?.role !== 'admin') return <div className={styles.empty}>Bạn không có quyền truy cập.</div>
 
@@ -59,21 +61,25 @@ export default function AdminDashboard() {
     <AdminPage
       eyebrow="Operations center"
       title="Tổng quan vận hành ZChat"
-      description="Theo dõi sức khỏe hệ thống, tăng trưởng người dùng, hàng đợi kiểm duyệt và hoạt động realtime trong một trung tâm điều hành."
+      description="Theo dõi số liệu thật của hệ thống, hàng đợi kiểm duyệt và hoạt động realtime trong một trung tâm điều hành."
       actions={<Link className={styles.button} to="/admin/reports"><Flag size={15} /> Xử lý báo cáo</Link>}
     >
       {error ? <div className={styles.empty}>{error}</div> : null}
 
       <section className={styles.grid}>
-        <MetricCard label="Người dùng" value={stats.totalUsers} meta="+12% so với chu kỳ trước" icon={<Users size={16} />} tone="success" />
-        <MetricCard label="Bài viết" value={stats.totalPosts} meta="Nội dung đang được index" icon={<Activity size={16} />} tone="info" />
+        <MetricCard label="Người dùng" value={stats.totalUsers} meta="Tổng từ API admin/dashboard" icon={<Users size={16} />} tone="success" />
+        <MetricCard label="Bài viết" value={stats.totalPosts} meta="Tổng bài viết hiện có" icon={<Activity size={16} />} tone="info" />
         <MetricCard label="Báo cáo chờ xử lý" value={stats.pendingReports} meta="Realtime từ report queue" icon={<AlertTriangle size={16} />} tone="warning" />
-        <MetricCard label="System health" value="99.9%" meta="API, DB, Socket ổn định" icon={<Server size={16} />} tone="success" />
+        <MetricCard label="Audit events" value={stats.systemActivities} meta="Hoạt động hệ thống" icon={<Server size={16} />} tone="success" />
       </section>
 
       <section className={styles.grid3}>
-        <Panel title="User growth" description="Tăng trưởng người dùng trong 7 mốc gần nhất.">
-          {loading ? <div className={styles.skeleton} style={{ height: 160 }} /> : <MiniBars values={trend} />}
+        <Panel title="Real platform totals" description="Số liệu thật từ API dashboard, hiển thị trực tiếp trên biểu đồ.">
+          {loading ? (
+            <div className={styles.skeleton} style={{ height: 160 }} />
+          ) : (
+            <MiniBars values={dashboardBars} labels={['Users', 'Posts', 'Pending', 'Resolved']} />
+          )}
         </Panel>
 
         <Panel title="Moderation pulse" description="Tình trạng hàng đợi kiểm duyệt realtime.">
@@ -123,12 +129,12 @@ export default function AdminDashboard() {
         </Panel>
       </section>
 
-      <Panel title="System health" description="Các tín hiệu để admin ra quyết định nhanh.">
+      <Panel title="System totals" description="Các tín hiệu thật để admin ra quyết định nhanh.">
         <section className={styles.grid}>
           <MetricCard label="Cuộc gọi" value={stats.totalCalls} meta="WebRTC signaling" icon={<Activity size={16} />} />
           <MetricCard label="Hoạt động hệ thống" value={stats.systemActivities} meta="Audit events" icon={<TrendingUp size={16} />} />
-          <MetricCard label="Toxic trend" value="Low" meta="AI moderation score ổn định" icon={<ShieldCheck size={16} />} tone="success" />
-          <MetricCard label="SLA moderation" value="24m" meta="Trung bình xử lý báo cáo" icon={<CheckCircle2 size={16} />} tone="success" />
+          <MetricCard label="Báo cáo chờ" value={stats.pendingReports} meta="Report queue" icon={<ShieldCheck size={16} />} tone="warning" />
+          <MetricCard label="Đã xử lý" value={stats.resolvedReports} meta="Resolved reports" icon={<CheckCircle2 size={16} />} tone="success" />
         </section>
       </Panel>
     </AdminPage>

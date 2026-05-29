@@ -168,12 +168,24 @@ export function ActionMenu({ items, label = 'Mở menu thao tác' }: { items: Ac
   )
 }
 
-export function MiniBars({ values }: { values: number[] }) {
-  const max = Math.max(...values, 1)
+export function MiniBars({ values, labels }: { values: number[]; labels?: string[] }) {
+  const normalized = values.map((value) => (Number.isFinite(Number(value)) ? Number(value) : 0))
+  const max = Math.max(...normalized, 1)
+  const aria = normalized
+    .map((value, index) => `${labels?.[index] || `Bar ${index + 1}`}: ${value.toLocaleString('vi-VN')}`)
+    .join(', ')
+
   return (
-    <div className={styles.chart} aria-hidden="true">
-      {values.map((value, index) => (
-        <span key={`${value}-${index}`} className={styles.bar} style={{ height: `${Math.max(12, (value / max) * 100)}%` }} />
+    <div className={styles.chart} role="img" aria-label={`Chart values: ${aria}`}>
+      {normalized.map((value, index) => (
+        <span
+          key={`${labels?.[index] || 'bar'}-${index}`}
+          className={styles.bar}
+          style={{ height: `${Math.max(16, (value / max) * 100)}%` }}
+        >
+          <b>{value.toLocaleString('vi-VN')}</b>
+          {labels?.[index] ? <i>{labels[index]}</i> : null}
+        </span>
       ))}
     </div>
   )

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BarChart3, Flag, Hash, MessageSquare, TrendingUp, Users } from 'lucide-react'
+import { Activity, BarChart3, Flag, MessageSquare, Phone, TrendingUp, Users } from 'lucide-react'
 
 import { api } from '@/api/client'
-import { AdminPage, MetricCard, MiniBars, Panel, StatusBadge, adminStyles as styles } from '@/components/admin/admin-ui'
+import { AdminPage, MetricCard, MiniBars, Panel, adminStyles as styles } from '@/components/admin/admin-ui'
 import { useAuthStore } from '@/contexts/auth-store'
+
+const realNumber = (value: unknown) => (Number.isFinite(Number(value)) ? Number(value) : 0)
 
 export default function AdminStatisticsPage() {
   const token = useAuthStore((state) => state.accessToken)
@@ -15,15 +17,22 @@ export default function AdminStatisticsPage() {
     api.adminStatistics(token).then((res) => setStats(res.stats || {})).catch(() => undefined)
   }, [token])
 
-  const series = useMemo(() => {
-    const users = Number(stats.totalUsers || 10)
-    const posts = Number(stats.totalPosts || 12)
-    return {
-      users: [0.24, 0.34, 0.46, 0.52, 0.66, 0.78, 1].map((n) => Math.round(users * n)),
-      posts: [0.18, 0.3, 0.44, 0.6, 0.72, 0.88, 1].map((n) => Math.round(posts * n)),
-      reports: [2, 4, 3, 7, 5, Number(stats.pendingReports || 3), Number(stats.resolvedReports || 6)],
-    }
-  }, [stats])
+  const series = useMemo(() => ({
+    platform: [
+      realNumber(stats.totalUsers),
+      realNumber(stats.totalPosts),
+      realNumber(stats.totalComments),
+      realNumber(stats.totalReactions),
+    ],
+    reports: [
+      realNumber(stats.pendingReports),
+      realNumber(stats.resolvedReports),
+    ],
+    operations: [
+      realNumber(stats.systemActivities),
+      realNumber(stats.totalCalls),
+    ],
+  }), [stats])
 
   if (me?.role !== 'admin') return <div className={styles.empty}>Bạn không có quyền truy cập.</div>
 
@@ -31,54 +40,60 @@ export default function AdminStatisticsPage() {
     <AdminPage
       eyebrow="Advanced analytics"
       title="Thống kê hệ thống"
-      description="Dashboard phân tích tăng trưởng, engagement, báo cáo/ngày, top hashtag, active hours và toxic content trends."
+      description="Dashboard phân tích số liệu thật từ hệ thống admin: người dùng, nội dung, tương tác, báo cáo và audit log."
     >
       <section className={styles.grid}>
         <MetricCard label="Người dùng" value={stats.totalUsers} icon={<Users size={16} />} />
         <MetricCard label="Bài viết" value={stats.totalPosts} icon={<MessageSquare size={16} />} />
         <MetricCard label="Tương tác" value={stats.totalReactions} icon={<TrendingUp size={16} />} tone="success" />
-        <MetricCard label="Báo cáo/ngày" value={stats.pendingReports} icon={<Flag size={16} />} tone="warning" />
+        <MetricCard label="Báo cáo chờ xử lý" value={stats.pendingReports} icon={<Flag size={16} />} tone="warning" />
       </section>
 
       <section className={styles.grid3}>
-        <Panel title="User growth" description="Line-style growth proxy từ số liệu hiện tại.">
-          <MiniBars values={series.users} />
+        <Panel title="Platform totals" description="Số liệu thật từ API admin/statistics, không nội suy xu hướng.">
+          <MiniBars values={series.platform} labels={['Users', 'Posts', 'Comments', 'Reactions']} />
         </Panel>
-        <Panel title="Posts/day" description="Nhịp xuất bản nội dung gần đây.">
-          <MiniBars values={series.posts} />
+        <Panel title="Reports status" description="Tổng số báo cáo đang chờ và đã xử lý.">
+          <MiniBars values={series.reports} labels={['Pending', 'Resolved']} />
         </Panel>
       </section>
 
       <section className={styles.grid3}>
-        <Panel title="Reports trend" description="Xu hướng báo cáo và áp lực moderation.">
-          <MiniBars values={series.reports} />
+        <Panel title="Operations activity" description="Audit log và cuộc gọi theo số liệu hệ thống.">
+          <MiniBars values={series.operations} labels={['Audit logs', 'Calls']} />
         </Panel>
-        <Panel title="Top hashtags" description="Hashtag đang tạo nhiều tương tác.">
-          <div id="hashtags" className={styles.activityList}>
-            {['#zchat', '#friends', '#daily', '#community', '#safechat'].map((tag, index) => (
-              <div className={styles.activityItem} key={tag}>
-                <span><Hash size={15} /> {tag}</span>
-                <StatusBadge value={index < 2 ? 'success' : 'info'} label={`${Math.max(12, 48 - index * 7)}k reach`} />
-              </div>
-            ))}
-          </div>
-        </Panel>
-      </section>
-
-      <Panel title="Active hours heatmap" description="Bản đồ nhiệt giờ hoạt động và nội dung độc hại.">
-        <section className={styles.grid}>
-          {['00-06', '06-12', '12-18', '18-24'].map((slot, index) => (
+        <Panel title="Real system totals" description="Các chỉ số thật thay cho heatmap/phân tích giả lập.">
+          <section className={styles.grid}>
             <MetricCard
-              key={slot}
-              label={slot}
-              value={`${[18, 43, 68, 82][index]}%`}
-              meta={index > 2 ? 'Toxic trend cần theo dõi' : 'Engagement ổn định'}
+              label="Bình luận"
+              value={stats.totalComments}
+              meta="Tổng comment hiện có"
               icon={<BarChart3 size={16} />}
-              tone={index > 2 ? 'warning' : 'info'}
             />
-          ))}
-        </section>
-      </Panel>
+            <MetricCard
+              label="Audit logs"
+              value={stats.systemActivities}
+              meta="Hoạt động hệ thống"
+              icon={<Activity size={16} />}
+              tone="success"
+            />
+            <MetricCard
+              label="Cuộc gọi"
+              value={stats.totalCalls}
+              meta="WebRTC/signaling"
+              icon={<Phone size={16} />}
+              tone="info"
+            />
+            <MetricCard
+              label="Đã xử lý"
+              value={stats.resolvedReports}
+              meta="Báo cáo hoàn tất"
+              icon={<Flag size={16} />}
+              tone="success"
+            />
+          </section>
+        </Panel>
+      </section>
     </AdminPage>
   )
 }
