@@ -3,12 +3,15 @@ import { io, type Socket } from 'socket.io-client'
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
   import.meta.env.NEXT_PUBLIC_SOCKET_URL ||
-  'http://localhost:5000'
+  (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '')
 
 let socketInstance: Socket | null = null
 
 export const connectSocket = (token: string, userId?: number) => {
-  if (socketInstance?.connected) {
+  if (socketInstance) {
+    if (!socketInstance.connected) {
+      socketInstance.connect()
+    }
     return socketInstance
   }
 

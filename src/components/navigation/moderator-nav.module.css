@@ -1,0 +1,132 @@
+.nav {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  min-width: 220px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 54%, #15803d 100%);
+  color: #ecfdf5;
+  padding: 16px 10px;
+  gap: 12px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  box-shadow: 12px 0 32px rgba(21, 128, 61, 0.16);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.brandIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 18px;
+}
+
+.brandLabel {
+  min-width: 0;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.82);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 750;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+
+.item svg,
+.logout svg {
+  flex: 0 0 auto;
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  transform: translateX(2px);
+}
+
+.item.active {
+  background: #fff;
+  color: #15803d;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(20, 83, 45, 0.2);
+}
+
+.logout {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.logout:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+@media (max-width: 900px) {
+  .nav {
+    width: 64px;
+    min-width: 64px;
+    padding: 14px 8px;
+  }
+
+  .brandLabel,
+  .item span,
+  .logout span {
+    display: none;
+  }
+
+  .brand {
+    justify-content: center;
+    padding: 8px 0 14px;
+  }
+
+  .item,
+  .logout {
+    justify-content: center;
+    padding: 0;
+  }
+}

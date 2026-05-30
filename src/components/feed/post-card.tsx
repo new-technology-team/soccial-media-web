@@ -20,10 +20,34 @@ interface PostCardProps {
   post: FeedPost
 }
 
+function renderContent(content: string) {
+  const parts = content.split(/(#[^\s#.,!?;:]+)/g)
+  return parts.map((part, i) =>
+    part.startsWith('#') ? (
+      <Link key={i} to={`/explore?q=${encodeURIComponent(part)}`} className="text-primary hover:underline">
+        {part}
+      </Link>
+    ) : (
+      part
+    )
+  )
+}
+
 export default function PostCard({ post }: PostCardProps) {
   const token = useAuthStore((state) => state.accessToken)
   const [liked, setLiked] = useState(Boolean(post.viewerReaction))
   const [likeCount, setLikeCount] = useState(post.reactionCount)
+  const [reportDone, setReportDone] = useState(false)
+
+  const handleReport = async () => {
+    if (!token || reportDone) return
+    try {
+      await api.submitReport(token, { targetType: 'post', targetId: post.id, reason: 'inappropriate' })
+      setReportDone(true)
+    } catch {
+      // silently ignore
+    }
+  }
 
   const handleLike = async () => {
     if (!token) return
@@ -86,15 +110,15 @@ export default function PostCard({ post }: PostCardProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>Báo cáo bài viết</DropdownMenuItem>
-            <DropdownMenuItem>Lưu bài viết</DropdownMenuItem>
-            <DropdownMenuItem>Sao chép liên kết</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void handleReport()} disabled={reportDone}>{reportDone ? 'Đã báo cáo' : 'Báo cáo bài viết'}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => alert('Tính năng đang phát triển')}>Lưu bài viết</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(`${window.location.origin}/posts/${post.id}`)}>Sao chép liên kết</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <p className="text-foreground whitespace-pre-wrap leading-relaxed">{post.content}</p>
+        <p className="text-foreground whitespace-pre-wrap leading-relaxed">{renderContent(post.content)}</p>
         <Link to={`/posts/${post.id}`} className="text-sm font-medium text-primary hover:underline">
           Xem chi tiết bài viết
         </Link>

@@ -2,7 +2,7 @@
 
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { Search, Upload, FileText, PlayCircle } from 'lucide-react'
+import { Search, Upload, FileText, PlayCircle, X } from 'lucide-react'
 import { api, isAuthExpiredError } from '@/api/client'
 import type { FeedPost } from '@/types'
 import { useAuthStore } from '@/contexts/auth-store'
@@ -28,6 +28,7 @@ export default function MediaPage() {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | 'image' | 'video' | 'doc'>('all')
   const [scope, setScope] = useState<'sent' | 'community'>('sent')
+  const [lightboxUrl, setLightboxUrl] = useState<{ url: string; type: MediaType } | null>(null)
 
   useEffect(() => {
     api
@@ -106,7 +107,15 @@ export default function MediaPage() {
 
       <section className={styles.grid}>
         {filteredItems.map((item) => (
-          <article key={item.id} className={`${styles.card} ${item.large ? styles.cardLarge : ''} ${styles[item.color]}`}>
+          <article
+            key={item.id}
+            className={`${styles.card} ${item.large ? styles.cardLarge : ''} ${styles[item.color]}`}
+            onClick={() => (item.type === 'image' || item.type === 'video') ? setLightboxUrl({ url: item.mediaUrl, type: item.type }) : undefined}
+            style={(item.type === 'image' || item.type === 'video') ? { cursor: 'pointer' } : undefined}
+          >
+            {item.type === 'image' ? (
+              <img src={item.mediaUrl} alt={item.title} className={styles.cardThumb} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+            ) : null}
             {item.type === 'video' ? <PlayCircle className={styles.videoIcon} size={18} /> : null}
             {item.type === 'doc' ? <FileText size={26} /> : null}
             {item.type === 'file' ? <Upload size={26} /> : null}
@@ -118,6 +127,19 @@ export default function MediaPage() {
         ))}
         {filteredItems.length === 0 ? <p className={styles.empty}>Chưa có media phù hợp với bộ lọc hiện tại.</p> : null}
       </section>
+
+      {lightboxUrl ? (
+        <div className={styles.lightbox} onClick={() => setLightboxUrl(null)}>
+          <button type="button" className={styles.lightboxClose} onClick={() => setLightboxUrl(null)}>
+            <X size={22} />
+          </button>
+          {lightboxUrl.type === 'video' ? (
+            <video src={lightboxUrl.url} controls className={styles.lightboxMedia} onClick={(e) => e.stopPropagation()} />
+          ) : (
+            <img src={lightboxUrl.url} alt="preview" className={styles.lightboxMedia} onClick={(e) => e.stopPropagation()} />
+          )}
+        </div>
+      ) : null}
 
       <Link to="/feed?compose=1" className={styles.uploadBtn}>
         <Upload size={18} />

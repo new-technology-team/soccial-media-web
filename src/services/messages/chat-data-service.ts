@@ -15,6 +15,10 @@ export const loadChatNotifications = async (token: string): Promise<MessageNotif
   const result = await api.notifications(token)
   return (result.notifications || [])
     .filter((item) => item.type === 'missed-call' || item.type === 'message' || item.type === 'friend-request')
+    .map((item) => ({
+      ...item,
+      id: Number(item.id),
+    }))
     .slice(0, 40)
 }
 

@@ -1,4 +1,4 @@
-import { Bell, BellOff, CirclePlus, Info, MessageCircle, Pin, Search, Send, UserPlus, Users } from 'lucide-react'
+import { Bell, BellOff, CirclePlus, FileText, Film, Image, Info, LockKeyhole, MessageCircle, Mic, Pin, Search, Send, SmilePlus, UserPlus, Users } from 'lucide-react'
 
 import { formatVietnamTime, getConversationDisplayName } from '@/services/messages/formatters'
 import type { Conversation, NotificationItem } from '@/types'
@@ -13,6 +13,8 @@ type MessagesSidebarProps = {
   notifications: NotificationItem[]
   searchTerm: string
   setSearchTerm: (value: string) => void
+  isLoadingConversations?: boolean
+  activeRailTab: 'messages' | 'newMessage' | 'createGroup' | 'notifications'
   onOpenConversation: (conversationId: string) => void
   onShowNotifications: () => void
   onShowNewMessage: () => void
@@ -27,11 +29,21 @@ export function MessagesSidebar({
   notifications,
   searchTerm,
   setSearchTerm,
+  isLoadingConversations = false,
+  activeRailTab,
   onOpenConversation,
   onShowNotifications,
   onShowNewMessage,
   onShowCreateGroup,
 }: MessagesSidebarProps) {
+  const q = searchTerm.trim().toLowerCase()
+  const visibleConversations = conversations.filter((conv) => {
+    const name = getConversationDisplayName(conv, userId).toLowerCase()
+    const searchable = [name, conv.name || '', String(conv.id)].join(' ').toLowerCase()
+    if (!q) return !conv.isHidden
+    return searchable.includes(q)
+  })
+
   return (
     <>
       <aside className={styles.rail}>
@@ -39,16 +51,16 @@ export function MessagesSidebar({
           <MessageCircle size={23} />
         </div>
         <nav className={styles.railNav}>
-          <button type="button" className={cn(styles.railBtn, styles.railBtnActive)} title="Tin nhắn" aria-label="Tin nhắn">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'messages' && styles.railBtnActive)} title="Tin nhắn" aria-label="Tin nhắn">
             <Send size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowNewMessage} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'newMessage' && styles.railBtnActive)} onClick={onShowNewMessage} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
             <UserPlus size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowCreateGroup} title="Tạo nhóm" aria-label="Tạo nhóm">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'createGroup' && styles.railBtnActive)} onClick={onShowCreateGroup} title="Tạo nhóm" aria-label="Tạo nhóm">
             <CirclePlus size={16} />
           </button>
-          <button type="button" className={styles.railBtn} onClick={onShowNotifications} title="Thông báo" aria-label="Thông báo">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'notifications' && styles.railBtnActive)} onClick={onShowNotifications} title="Thông báo" aria-label="Thông báo">
             <Bell size={16} />
           </button>
           <button type="button" className={cn(styles.railBtn, styles.railBottomBtn)} title="Thông tin" aria-label="Thông tin">
@@ -80,7 +92,15 @@ export function MessagesSidebar({
         </div>
 
         <div className={styles.convList}>
-          {conversations.map((conv) => {
+          {isLoadingConversations ? (
+            <>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className={styles.convSkeleton} aria-hidden="true" />
+              ))}
+            </>
+          ) : null}
+
+          {visibleConversations.map((conv) => {
             const isActive = conv.id === selectedConversationId
             const name = getConversationDisplayName(conv, userId)
             const fallback = (name[0] || 'C').toUpperCase()
@@ -105,6 +125,17 @@ export function MessagesSidebar({
                           ? lastMessage.fileName || 'Đã gửi tệp đính kèm'
                           : lastMessage.text || ''
             const previewLine = lastMessage ? `${senderName}: ${previewText}` : previewText
+            const previewIcon = lastMessage?.type === 'image'
+              ? <Image size={13} />
+              : lastMessage?.type === 'video'
+                ? <Film size={13} />
+                : lastMessage?.type === 'audio'
+                  ? <Mic size={13} />
+                  : lastMessage?.type === 'sticker' || lastMessage?.viewerReaction
+                    ? <SmilePlus size={13} />
+                    : lastMessage?.mediaUrl
+                      ? <FileText size={13} />
+                      : null
             const directPeer = conv.type === 'direct' ? conv.members.find((member) => member.userId !== userId) || null : null
             const avatarUrl = conv.avatarUrl || (conv.type === 'direct' ? directPeer?.avatarUrl || sender?.avatarUrl || null : null)
             const isOnline = Boolean(directPeer?.online)
@@ -128,12 +159,12 @@ export function MessagesSidebar({
                 )}
               >
                 <div className={styles.convAvatar}>
-                  {avatarUrl ? <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" /> : fallback}
+                  {avatarUrl ? <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : fallback}
                   <span className={cn(styles.presenceDot, isOnline ? styles.presenceDotOnline : styles.presenceDotOffline)} />
                 </div>
                 <div className={styles.convText}>
                   <div className={styles.convLineTop}>
-                    <strong>{name} {conv.isPinned ? <Pin size={11} /> : null} {conv.isMuted ? <BellOff size={11} /> : null}</strong>
+                    <strong>{name} {conv.isPinned ? <Pin size={11} /> : null} {conv.isMuted ? <BellOff size={11} /> : null} {conv.isHidden ? <LockKeyhole size={11} /> : null} {conv.isLocked ? <LockKeyhole size={11} /> : null}</strong>
                     <span>{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
                   </div>
                   <div className={styles.convStatusLine}>
@@ -144,7 +175,7 @@ export function MessagesSidebar({
                     )}
                     <small>{statusLabel}</small>
                   </div>
-                  <p>{previewLine}</p>
+                  <p className={styles.convPreviewLine}>{previewIcon}{previewLine}</p>
                   {conv.unreadCount > 0 ? (
                     <div className={styles.convFooter}>
                       <span className={styles.convUnreadBadge}>{conv.unreadCount} chua doc</span>

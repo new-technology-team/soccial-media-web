@@ -6,13 +6,16 @@ import { useParams } from 'react-router-dom'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
+import { connectSocket } from '@/services/socket'
 import type { FeedComment, FeedPost } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
 
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>()
   const postId = String(params.id || '').trim()
   const token = useAuthStore((state) => state.accessToken)
+  const me = useAuthStore((state) => state.user)
 
   const [post, setPost] = useState<FeedPost | null>(null)
   const [comments, setComments] = useState<FeedComment[]>([])
@@ -46,6 +49,70 @@ export default function PostDetailPage() {
     loadData()
   }, [postId, token])
 
+  useEffect(() => {
+    if (!token || !me?.id || !postId) return
+    const socket = connectSocket(token, me.id)
+
+    const isThisPost = (value: unknown) => String(value || '') === String(postId)
+    const onPostUpdated = (payload: { post?: FeedPost }) => {
+      if (payload?.post && isThisPost(payload.post.id)) setPost(payload.post)
+    }
+    const onPostDeleted = (payload: { postId?: number | string }) => {
+      if (isThisPost(payload?.postId)) setPost(null)
+    }
+    const onPostReaction = (payload: { postId?: number | string; actorId?: number | string; reaction?: string | null; reactionCount?: number }) => {
+      if (!isThisPost(payload?.postId)) return
+      setPost((current) =>
+        current
+          ? {
+              ...current,
+              reactionCount: Number(payload.reactionCount ?? current.reactionCount),
+              viewerReaction: String(payload.actorId || '') === String(me.id) ? payload.reaction || null : current.viewerReaction,
+            }
+          : current
+      )
+    }
+    const onCommentCreated = (payload: { postId?: number | string; comment?: FeedComment; commentCount?: number }) => {
+      if (!isThisPost(payload?.postId)) return
+      if (payload.comment) {
+        setComments((prev) =>
+          prev.some((item) => String(item.id) === String(payload.comment?.id)) ? prev : [...prev, payload.comment as FeedComment]
+        )
+      }
+      setPost((current) => (current ? { ...current, commentCount: Number(payload.commentCount ?? current.commentCount + 1) } : current))
+    }
+    const onCommentDeleted = (payload: { postId?: number | string; commentId?: number | string; commentCount?: number }) => {
+      if (!isThisPost(payload?.postId)) return
+      setComments((prev) => prev.filter((item) => String(item.id) !== String(payload.commentId)))
+      setPost((current) => (current ? { ...current, commentCount: Number(payload.commentCount ?? Math.max(0, current.commentCount - 1)) } : current))
+    }
+    const onAvatarUpdated = (payload: { userId?: number | string; avatarUrl?: string }) => {
+      const avatarUrl = payload?.avatarUrl?.startsWith('/uploads/') ? `/backend${payload.avatarUrl}` : payload?.avatarUrl || null
+      setPost((current) =>
+        current && String(current.authorId) === String(payload?.userId) ? { ...current, authorAvatar: avatarUrl } : current
+      )
+      setComments((prev) =>
+        prev.map((comment) => (String(comment.userId) === String(payload?.userId) ? { ...comment, authorAvatar: avatarUrl } : comment))
+      )
+    }
+
+    socket.on('post:updated', onPostUpdated)
+    socket.on('post:deleted', onPostDeleted)
+    socket.on('post:reaction', onPostReaction)
+    socket.on('comment:created', onCommentCreated)
+    socket.on('comment:deleted', onCommentDeleted)
+    socket.on('user:avatar-updated', onAvatarUpdated)
+
+    return () => {
+      socket.off('post:updated', onPostUpdated)
+      socket.off('post:deleted', onPostDeleted)
+      socket.off('post:reaction', onPostReaction)
+      socket.off('comment:created', onCommentCreated)
+      socket.off('comment:deleted', onCommentDeleted)
+      socket.off('user:avatar-updated', onAvatarUpdated)
+    }
+  }, [me?.id, postId, token])
+
   const createdAtText = useMemo(() => {
     if (!post) return ''
     return new Date(post.createdAt).toLocaleString('vi-VN')
@@ -55,7 +122,10 @@ export default function PostDetailPage() {
     if (!token || !commentInput.trim() || !postId) return
     try {
       const response = await api.addComment(token, postId, commentInput.trim())
-      setComments((prev) => [...prev, response.comment])
+      setComments((prev) =>
+        prev.some((item) => String(item.id) === String(response.comment.id)) ? prev : [...prev, response.comment]
+      )
+      setPost((current) => (current ? { ...current, commentCount: current.commentCount + 1 } : current))
       setCommentInput('')
     } catch (error) {
       console.error('Không thể thêm bình luận', error)
@@ -70,7 +140,14 @@ export default function PostDetailPage() {
           <p>Xem nội dung đầy đủ và toàn bộ bình luận theo thời gian thực.</p>
         </div>
 
-        {loading && <div className={styles.infoCard}>Đang tải dữ liệu...</div>}
+        {loading && (
+          <div className={styles.infoCard}>
+            <Skeleton style={{ height: 192, borderRadius: 12, marginBottom: 12 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12, marginBottom: 8 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12, marginBottom: 8 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12 }} />
+          </div>
+        )}
 
         {!loading && !post && <div className={styles.infoCard}>Không tìm thấy bài viết.</div>}
 
@@ -146,4 +223,3 @@ export default function PostDetailPage() {
     </div>
   )
 }
-

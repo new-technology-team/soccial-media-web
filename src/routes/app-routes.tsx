@@ -9,8 +9,12 @@ import FriendsPage from '@/pages/(app)/friends/page'
 import MediaPage from '@/pages/(app)/media/page'
 import MessagesPage from '@/pages/(app)/messages/page'
 import ModeratorDashboardPage from '@/pages/(app)/moderator/dashboard/page'
+import ModeratorCommentsPage from '@/pages/(app)/moderator/comments/page'
 import ModeratorPostsPage from '@/pages/(app)/moderator/posts/page'
+import ModeratorMessagesPage from '@/pages/(app)/moderator/messages/page'
+import ModeratorHistoryPage from '@/pages/(app)/moderator/history/page'
 import ModeratorReportsPage from '@/pages/(app)/moderator/reports/page'
+import ModeratorReportDetailPage from '@/pages/(app)/moderator/report-detail/[id]/page'
 import ModeratorUsersPage from '@/pages/(app)/moderator/users/page'
 import NotificationsPage from '@/pages/(app)/notifications/page'
 import PostDetailPage from '@/pages/(app)/posts/[id]/page'
@@ -58,7 +62,11 @@ export function renderAppRoutes() {
       <Route path="/moderator/dashboard" element={<ModeratorDashboardPage />} />
       <Route path="/moderator/posts" element={<ModeratorPostsPage />} />
       <Route path="/moderator/users" element={<ModeratorUsersPage />} />
+      <Route path="/moderator/comments" element={<ModeratorCommentsPage />} />
+      <Route path="/moderator/messages" element={<ModeratorMessagesPage />} />
+      <Route path="/moderator/history" element={<ModeratorHistoryPage />} />
       <Route path="/moderator/reports" element={<ModeratorReportsPage />} />
+      <Route path="/moderator/report-detail/:id" element={<ModeratorReportDetailPage />} />
     </Route>
   )
 }

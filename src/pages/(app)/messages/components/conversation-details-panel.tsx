@@ -31,9 +31,29 @@ type ConversationDetailsPanelProps = {
   handleDissolveGroup: () => void | Promise<void>
   handleToggleConversationPin: () => void | Promise<void>
   handleToggleConversationMute: () => void | Promise<void>
+  handleUpdateConversationPreferences: (payload: {
+    backgroundUrl?: string | null
+    themeColor?: string | null
+    autoDeleteAfterSeconds?: number | null
+    hidden?: boolean
+    locked?: boolean
+    hiddenPassword?: string | null
+    lockedPassword?: string | null
+  }) => void | Promise<void>
+  largeText: boolean
+  roundBubbles: boolean
+  onLargeTextChange: (value: boolean) => void
+  onRoundBubblesChange: (value: boolean) => void
   handleUpdateNickname: (userId: number) => void | Promise<void>
-  handleUpdateGroupProfile: () => void | Promise<void>
+  handleUpdateGroupProfile: (payload: { name: string; avatarUrl?: string | null }) => void | Promise<void>
   handleBlockPeer: () => void | Promise<void>
+  handleUnblockPeer: () => void | Promise<void>
+  handleOpenHideConversation: () => void
+  handleOpenLockConversation: () => void
+  handleOpenAutoDeleteSettings: () => void
+  handleOpenReportConversation: () => void
+  isDirectPeerBlocked: boolean
+  pinnedMessages: ChatMessage[]
   sharedContent: { photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }
   loadingSharedContent: boolean
   onClose?: () => void

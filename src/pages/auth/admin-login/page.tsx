@@ -43,14 +43,16 @@ export default function AdminLoginPage() {
 
     try {
       const payload = await api.login(formData.emailOrPhone, formData.password)
-      if (payload.user.role !== 'admin') {
+      const role = (payload.user.role || '').toLowerCase()
+      if (role !== 'admin' && role !== 'moderator') {
         clearAuth()
-        setError('Tài khoản này không có quyền truy cập khu vực quản trị admin.')
+        setError('Tài khoản này không có quyền truy cập khu vực quản trị hoặc kiểm duyệt.')
         return
       }
 
       setAuth(payload)
-      const nextPath = searchParams.get('next') || '/admin/dashboard'
+      const fallbackPath = role === 'admin' ? '/admin/dashboard' : '/moderator/dashboard'
+      const nextPath = searchParams.get('next') || fallbackPath
       navigate(nextPath)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Thông tin đăng nhập admin không hợp lệ.')
@@ -63,9 +65,9 @@ export default function AdminLoginPage() {
     <div className={styles.loginWrap}>
       <div className={`${styles.panel} ${styles.adminPanel}`}>
         <header>
-          <p className={styles.adminBadge}>Admin Only</p>
-          <h2 className={styles.heading}>Đăng nhập quản trị</h2>
-          <p className={styles.subheading}>Khu vực dành riêng cho tài khoản admin hệ thống</p>
+          <p className={styles.adminBadge}>Staff Only</p>
+          <h2 className={styles.heading}>Đăng nhập vận hành</h2>
+          <p className={styles.subheading}>Khu vực dành riêng cho admin và kiểm duyệt viên</p>
         </header>
 
         <div className={styles.alertSpace}>
@@ -86,7 +88,7 @@ export default function AdminLoginPage() {
                 id="emailOrPhone"
                 name="emailOrPhone"
                 type="text"
-                placeholder="admin@zchat.local"
+                placeholder="admin hoặc moderator"
                 value={formData.emailOrPhone}
                 onChange={handleChange}
                 disabled={isLoading}
@@ -118,7 +120,7 @@ export default function AdminLoginPage() {
           </div>
 
           <button type="submit" className={styles.submit} disabled={isLoading}>
-            {isLoading ? 'Đang đăng nhập...' : 'Vào khu quản trị'}
+            {isLoading ? 'Đang đăng nhập...' : 'Vào khu vận hành'}
           </button>
 
           <p className={styles.switchText}>
@@ -128,9 +130,8 @@ export default function AdminLoginPage() {
       </div>
 
       <aside className={styles.loginNotes}>
-        <p>Trang này dành riêng cho quản trị viên. Hệ thống sẽ chặn nếu tài khoản không phải vai trò admin.</p>
+        <p>Trang này dành riêng cho admin và kiểm duyệt viên. Tài khoản user thường sẽ bị chặn khỏi khu vực vận hành.</p>
       </aside>
     </div>
   )
 }
-

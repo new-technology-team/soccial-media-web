@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { Dispatch, MouseEvent, MutableRefObject, ReactNode, SetStateAction, UIEvent } from 'react'
 
 import { formatVietnamTime, getMessageReactionItems, getMessageReactionMeta } from '@/services/messages/formatters'
+import { CallHistoryMessage } from '@/components/call'
 import type { ChatMessage, Conversation } from '@/types'
 import { cn } from '@/utils'
 import styles from '../page.module.css'
@@ -85,12 +86,24 @@ export function MessageThread({
         <p className={styles.virtualHint}>Đang hiển thị các tin nhắn mới nhất. Cuộn lên để tải thêm lịch sử.</p>
       ) : null}
 
-      {virtualSlice.items.map((msg) => {
+      {virtualSlice.items.map((msg, index) => {
+        if (msg.type === 'call-history') {
+          return <CallHistoryMessage key={msg.id} text={msg.text || 'Cuộc gọi đã kết thúc'} />
+        }
+
         const mine = msg.senderId === userId
         const reactionItems = getMessageReactionItems(msg)
+        const isRecalled = !!(msg.isDeleted || (msg.meta && (msg.meta as Record<string, unknown>).recalled))
         const sender = selectedConversation?.members.find((member) => member.userId === msg.senderId) || null
         const senderName = sender?.fullName || msg.senderName || `Người dùng #${msg.senderId}`
         const readLabel = mine ? getMessageReadLabel(msg) : null
+        const previousMessage = virtualSlice.items[index - 1]
+        const nextMessage = virtualSlice.items[index + 1]
+        const groupedWithPrevious = Boolean(previousMessage && previousMessage.type !== 'call-history' && previousMessage.senderId === msg.senderId)
+        const groupedWithNext = Boolean(nextMessage && nextMessage.type !== 'call-history' && nextMessage.senderId === msg.senderId)
+        const isGroupConversation = selectedConversation?.type === 'group'
+        const showSenderName = !mine && isGroupConversation && !groupedWithPrevious
+        const showAvatar = !mine && !groupedWithNext
         const reactionNames = reactionItems
           .map((reaction) => {
             const reactor = selectedConversation?.members.find((member) => member.userId === reaction.userId) || null
@@ -100,21 +113,31 @@ export function MessageThread({
           .join(', ')
 
         return (
-          <div key={msg.id} className={cn(styles.messageRow, mine && styles.messageRowMine)}>
-            <div className={styles.messageAvatar}>
-              {sender?.avatarUrl ? <img src={sender.avatarUrl} alt={senderName} className={styles.messageAvatarImage} loading="lazy" /> : (senderName[0] || 'U').toUpperCase()}
-            </div>
+          <div
+            key={msg.id}
+            className={cn(
+              styles.messageRow,
+              mine && styles.messageRowMine,
+              groupedWithPrevious && styles.messageRowGrouped,
+              groupedWithNext && styles.messageRowHasNext
+            )}
+          >
+            {showAvatar ? (
+              <div className={styles.messageAvatar}>
+                {sender?.avatarUrl ? <img src={sender.avatarUrl} alt={senderName} className={styles.messageAvatarImage} loading="lazy" /> : (senderName[0] || 'U').toUpperCase()}
+              </div>
+            ) : (
+              <div className={styles.messageAvatarSpacer} aria-hidden="true" />
+            )}
 
             <div className={styles.messageBlock}>
-              <div className={styles.senderRow}>
-                {mine ? (
-                  <span className={styles.senderSelf}>{senderName}</span>
-                ) : (
+              {showSenderName ? (
+                <div className={styles.senderRow}>
                   <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
                     {senderName}
                   </Link>
-                )}
-              </div>
+                </div>
+              ) : null}
 
               <div
                 className={cn(
@@ -142,7 +165,7 @@ export function MessageThread({
                 {renderMessagePreview(msg)}
                 {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
 
-                {reactionItems.length > 0 ? (
+                {!isRecalled && reactionItems.length > 0 ? (
                   <div className={styles.reactionsPill} title={reactionNames}>
                     {reactionItems.slice(0, 4).map((reaction, index) => {
                       const reactor = selectedConversation?.members.find((member) => member.userId === reaction.userId) || null
@@ -167,20 +190,22 @@ export function MessageThread({
               </div>
 
               <div className={cn(styles.messageFooter, mine && styles.messageFooterMine)}>
-                <button
-                  type="button"
-                  className={cn(styles.reactionTrigger, msg.viewerReaction && styles.reactionTriggerActive)}
-                  title="Thả cảm xúc"
-                  aria-label="Thả cảm xúc"
-                  onClick={() => setReactionPickerMessageId((current) => (current === msg.id ? null : msg.id))}
-                >
-                  {msg.viewerReaction ? <ReactionIcon type={msg.viewerReaction} size={14} /> : <Smile size={14} />}
-                </button>
+                {!isRecalled ? (
+                  <button
+                    type="button"
+                    className={cn(styles.reactionTrigger, msg.viewerReaction && styles.reactionTriggerActive)}
+                    title="Thả cảm xúc"
+                    aria-label="Thả cảm xúc"
+                    onClick={() => setReactionPickerMessageId((current) => (current === msg.id ? null : msg.id))}
+                  >
+                    {msg.viewerReaction ? <ReactionIcon type={msg.viewerReaction} size={14} /> : <Smile size={14} />}
+                  </button>
+                ) : null}
                 <span className={styles.messageTime}>{formatVietnamTime(msg.createdAt)}</span>
                 {readLabel ? <span className={styles.readLabel}>{readLabel}</span> : null}
               </div>
 
-              {reactionPickerMessageId === msg.id ? (
+              {!isRecalled && reactionPickerMessageId === msg.id ? (
                 <div className={styles.reactionPicker}>
                   {MESSAGE_REACTION_ICONS.map((reaction) => (
                     <button

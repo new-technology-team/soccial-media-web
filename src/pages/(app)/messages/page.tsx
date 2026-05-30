@@ -1,11 +1,12 @@
 'use client'
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import {
   BadgeCheck,
   BadgeQuestionMark,
+  ArrowLeft,
   Bell,
   BicepsFlexed,
   CirclePlus,
@@ -29,14 +30,42 @@ import {
   ThumbsUp,
   UserPlus,
   Video,
+  Wand2,
+  BrainCircuit,
+  ChevronDown,
+  Languages,
+  X,
   Zap,
   type LucideIcon,
 } from 'lucide-react'
 import styles from './page.module.css'
 import { ApiError, api } from '@/api/client'
+import {
+  ActiveCallWindow,
+  CallHistoryMessage,
+  CallSettingsPanel,
+  IncomingCallModal,
+  MinimizedCallPill,
+  OutgoingCallModal,
+  type CallParticipant,
+  type CallSettings,
+  type CallState,
+} from '@/components/call'
+import {
+  AppDialog,
+  AutoDeleteMessageDialog,
+  ConfirmDialog,
+  InputDialog,
+  NotificationMuteDialog,
+  ReportDialog,
+  UploadImageDialog,
+  type MuteOptionValue,
+} from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
 import { useChatStore } from '@/contexts/chat-store'
-import { useCallStore, type IncomingCallState } from '@/contexts/call-store'
+import { useCallStore, type IncomingCallState, type ActiveCall } from '@/contexts/call-store'
+import { callSession } from '@/services/call-session'
+import { toast } from '@/hooks/use-toast'
 import { connectSocket, getSocket } from '@/services/socket'
 import { useConversationRouting } from '@/hooks/use-conversation-routing'
 import { fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
@@ -61,16 +90,41 @@ import { MessagesSidebar } from './components/messages-sidebar'
 import { MessageThread } from './components/message-thread'
 import { MessagesOverlays } from './components/messages-overlays'
 
-type ActiveCall = {
-  type: 'voice' | 'video'
-  withName: string
-  startedAt: number
-}
+// ActiveCall type is imported from call-store
 
 type AttachmentDraft = {
   file: File
   type: 'image' | 'video' | 'audio' | 'file'
   previewUrl: string | null
+}
+
+type ConfirmModalState = {
+  title: string
+  description: string
+  confirmLabel: string
+  destructive?: boolean
+  icon?: 'warning' | 'lock'
+  onConfirm: () => void | Promise<void>
+}
+
+type NicknameDialogState = {
+  memberId: number
+  name: string
+  avatarUrl?: string | null
+  currentValue: string
+}
+
+type ReportDialogState = {
+  targetType: 'user' | 'message' | 'group'
+  targetId: number | string
+  title: string
+}
+
+type ConversationUiPrefs = {
+  largeText: boolean
+  roundBubbles: boolean
+  themeColor?: string | null
+  backgroundUrl?: string | null
 }
 
 const RTC_CONFIG: RTCConfiguration = {
@@ -79,14 +133,33 @@ const RTC_CONFIG: RTCConfiguration = {
     { urls: 'stun:stun1.l.google.com:19302' },
     ...(import.meta.env.VITE_TURN_URL
       ? [
-          {
-            urls: import.meta.env.VITE_TURN_URL,
-            username: import.meta.env.VITE_TURN_USERNAME,
-            credential: import.meta.env.VITE_TURN_CREDENTIAL,
-          },
-        ]
+        {
+          urls: import.meta.env.VITE_TURN_URL,
+          username: import.meta.env.VITE_TURN_USERNAME,
+          credential: import.meta.env.VITE_TURN_CREDENTIAL,
+        },
+      ]
       : []),
   ],
+}
+
+const CALL_RING_TIMEOUT_MS = 60_000
+const GROUP_CALL_RING_TIMEOUT_MS = 60_000
+
+const DEFAULT_CALL_SETTINGS: CallSettings = {
+  sound: true,
+  vibration: true,
+  floatingWindow: true,
+  autoTimeout: true,
+  allowVoice: true,
+  allowVideo: true,
+  allowGroup: true,
+  ringGroup: true,
+  missedNotifications: true,
+  showSpeaker: true,
+  autoMuteOnJoin: false,
+  autoCameraOffOnJoin: false,
+  blockStrangers: false,
 }
 
 const MESSAGE_ICON_TOKENS: Record<string, { label: string; Icon: LucideIcon }> = {
@@ -159,14 +232,28 @@ export default function MessagesPage() {
   } = useChatStore()
   const [message, setMessage] = useState('')
   const [callStatus, setCallStatus] = useState<string | null>(null)
+  const [callState, setCallState] = useState<CallState>(() => useCallStore.getState().callState)
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null)
-  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null)
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(() => useCallStore.getState().activeCall)
   const [joinedCallUserIds, setJoinedCallUserIds] = useState<number[]>([])
-  const [callSeconds, setCallSeconds] = useState(0)
+  const [callSeconds, setCallSeconds] = useState(() => useCallStore.getState().callSeconds)
+  const [callMinimized, setCallMinimized] = useState(() => useCallStore.getState().callMinimized)
+  const [callSettingsOpen, setCallSettingsOpen] = useState(false)
+  const [cameraAvailable, setCameraAvailable] = useState(() => useCallStore.getState().cameraAvailable)
+  const [localStreamState, setLocalStreamState] = useState<MediaStream | null>(() => useCallStore.getState().localStream)
+  const [callSettings, setCallSettings] = useState<CallSettings>(() => {
+    if (typeof window === 'undefined') return DEFAULT_CALL_SETTINGS
+    try {
+      const raw = window.localStorage.getItem('zchat:call-settings')
+      return raw ? { ...DEFAULT_CALL_SETTINGS, ...JSON.parse(raw) } : DEFAULT_CALL_SETTINGS
+    } catch {
+      return DEFAULT_CALL_SETTINGS
+    }
+  })
   const [busyUploading, setBusyUploading] = useState(false)
   const [busyActionId, setBusyActionId] = useState<string | null>(null)
   const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null)
-  const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>([])
+  const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>(() => useCallStore.getState().remoteStreams)
   const [actionMenu, setActionMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
@@ -178,6 +265,18 @@ export default function MessagesPage() {
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false)
+  const [pendingLockedConversationId, setPendingLockedConversationId] = useState<string | null>(null)
+  const [pendingUnlockPassword, setPendingUnlockPassword] = useState('')
+  const [pendingUnlockError, setPendingUnlockError] = useState<string | null>(null)
+  const [isDirectPeerBlocked, setIsDirectPeerBlocked] = useState(false)
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
+  const [nicknameDialog, setNicknameDialog] = useState<NicknameDialogState | null>(null)
+  const [groupNameDialogOpen, setGroupNameDialogOpen] = useState(false)
+  const [groupAvatarDialogOpen, setGroupAvatarDialogOpen] = useState(false)
+  const [reportDialog, setReportDialog] = useState<ReportDialogState | null>(null)
+  const [muteDialogOpen, setMuteDialogOpen] = useState(false)
+  const [autoDeleteDialogOpen, setAutoDeleteDialogOpen] = useState(false)
+  const [lockDialogOpen, setLockDialogOpen] = useState(false)
   const [rightPanelSection, setRightPanelSection] = useState<'overview' | 'members' | 'manage'>('overview')
   const [groupName, setGroupName] = useState('')
   const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
@@ -194,9 +293,9 @@ export default function MessagesPage() {
   >({})
   const [friendMap, setFriendMap] = useState<Record<number, FriendConnection>>({})
   const [pendingFriendRequestTo, setPendingFriendRequestTo] = useState<Record<number, boolean>>({})
-  const [mutedMic, setMutedMic] = useState(false)
-  const [mutedCam, setMutedCam] = useState(false)
-  const [callAnswered, setCallAnswered] = useState(false)
+  const [mutedMic, setMutedMic] = useState(() => useCallStore.getState().mutedMic)
+  const [mutedCam, setMutedCam] = useState(() => useCallStore.getState().mutedCam)
+  const [callAnswered, setCallAnswered] = useState(() => useCallStore.getState().callAnswered)
   const [ringingStartedAt, setRingingStartedAt] = useState<number | null>(null)
   const [isSendingMessage, setIsSendingMessage] = useState(false)
   const [attachmentDraft, setAttachmentDraft] = useState<AttachmentDraft | null>(null)
@@ -205,22 +304,53 @@ export default function MessagesPage() {
   const [messageSearchKeyword, setMessageSearchKeyword] = useState('')
   const [showMessageFilters, setShowMessageFilters] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [isLoadingConversations, setIsLoadingConversations] = useState(true)
   const [sharedContent, setSharedContent] = useState<{ photosVideos: ChatMessage[]; files: ChatMessage[]; links: ChatMessage[] }>({
     photosVideos: [],
     files: [],
     links: [],
   })
   const [loadingSharedContent, setLoadingSharedContent] = useState(false)
+  const [conversationUiPrefs, setConversationUiPrefs] = useState<Record<string, Partial<ConversationUiPrefs>>>(() => {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = window.localStorage.getItem('zchat:conversation-ui-prefs')
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  })
   const typingTimeoutRef = useRef<number | null>(null)
   const sendingMessageRef = useRef(false)
+
+  // AI States
+  const [isSummarizing, setIsSummarizing] = useState(false)
+  const [chatSummary, setChatSummary] = useState<string | null>(null)
+
+  const [isSuggesting, setIsSuggesting] = useState(false)
+  const [replySuggestions, setReplySuggestions] = useState<string[]>([])
+
+  const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false)
+  const [sentimentResult, setSentimentResult] = useState<{ sentiment: 'positive' | 'neutral' | 'negative'; score: number; detail: string; emotions: string[] } | null>(null)
+
+  const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({})
+  const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({})
+  const [chatSummaryCollapsed, setChatSummaryCollapsed] = useState(false)
+  const [sentimentCollapsed, setSentimentCollapsed] = useState(false)
+  const [showDetailsPanelDesktop, setShowDetailsPanelDesktop] = useState(true)
+
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const videoInputRef = useRef<HTMLInputElement | null>(null)
   const longPressTimer = useRef<number | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
-  const localStreamRef = useRef<MediaStream | null>(null)
-  const peersRef = useRef<Map<number, RTCPeerConnection>>(new Map())
+  const localStreamRef = useRef<MediaStream | null>(useCallStore.getState().localStream)
+  // Share Map reference with callSession so WebRTC state survives navigation
+  const peersRef = useRef<Map<number, RTCPeerConnection>>(callSession.peers)
+  const pendingCandidatesRef = useRef<Map<number, RTCIceCandidateInit[]>>(callSession.pendingCandidates)
   const messagesWrapRef = useRef<HTMLDivElement | null>(null)
+  const ringtoneRef = useRef<{ context: AudioContext; intervalId: number } | null>(null)
 
   const scrollConversationToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     window.setTimeout(() => {
@@ -229,6 +359,126 @@ export default function MessagesPage() {
       node.scrollTo({ top: node.scrollHeight, behavior })
     }, 0)
   }, [])
+
+  const getSenderName = (senderId: number, msg?: ChatMessage) => {
+    if (senderId === user?.id) return user?.fullName || 'Tôi'
+    if (msg?.senderName) return msg.senderName
+    if ((msg as any)?.sender?.fullName) return (msg as any).sender.fullName
+    if ((msg as any)?.sender?.name) return (msg as any).sender.name
+
+    if (selectedConversation) {
+      const member = selectedConversation.members?.find(m => m.userId === senderId)
+      if (member) return member.fullName
+    }
+    return `Người dùng ${senderId}`
+  }
+
+  const handleSummarizeChat = async () => {
+    if (!token || !selectedConversationId) return
+    setIsSummarizing(true)
+    setChatSummary(null)
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-50).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || '',
+        timestamp: m.createdAt
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        setChatNotice('Chưa có tin nhắn văn bản nào để tóm tắt.')
+        return
+      }
+
+      const res = await api.summarizeChat(token, recentMsgs)
+      setChatSummary(res.summary)
+      setChatSummaryCollapsed(false)
+    } catch (error) {
+      setChatNotice('Không thể tóm tắt đoạn chat.')
+    } finally {
+      setIsSummarizing(false)
+    }
+  }
+
+  const handleSuggestReplies = async () => {
+    if (!token || !selectedConversationId) return
+    setIsSuggesting(true)
+    setReplySuggestions([])
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-10).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || ''
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        return
+      }
+
+      const res = await api.suggestReplies(token, recentMsgs, user?.fullName || 'Tôi')
+      setReplySuggestions(res.suggestions || [])
+    } catch (error) {
+      setChatNotice('Không thể lấy gợi ý trả lời.')
+    } finally {
+      setIsSuggesting(false)
+    }
+  }
+
+  const handleAnalyzeSentiment = async () => {
+    if (!token || !selectedConversationId) return
+    setIsAnalyzingSentiment(true)
+    setSentimentResult(null)
+    try {
+      const msgs = messagesByConversation[selectedConversationId] || []
+      const recentMsgs = msgs.slice(-50).map(m => ({
+        sender: getSenderName(m.senderId, m),
+        content: m.text || '',
+        timestamp: m.createdAt
+      })).filter(m => m.content)
+
+      if (recentMsgs.length === 0) {
+        setChatNotice('Chưa có tin nhắn văn bản nào để phân tích.')
+        return
+      }
+
+      const res = await api.analyzeSentiment(token, recentMsgs)
+      setSentimentResult(res)
+      setSentimentCollapsed(false)
+    } catch (error) {
+      setChatNotice('Không thể phân tích cảm xúc.')
+    } finally {
+      setIsAnalyzingSentiment(false)
+    }
+  }
+
+  const handleTranslateMessage = async (msgId: string, text: string) => {
+    if (!token || !text) return
+    setTranslatingIds(prev => ({ ...prev, [msgId]: true }))
+    try {
+      const res = await api.translateMessage(token, text, 'vi')
+      setTranslatedMessages(prev => ({ ...prev, [msgId]: res.translatedText }))
+    } catch (error) {
+      setChatNotice('Không thể dịch tin nhắn.')
+    } finally {
+      setTranslatingIds(prev => ({ ...prev, [msgId]: false }))
+    }
+  }
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('zchat:conversation-ui-prefs', JSON.stringify(conversationUiPrefs))
+    } catch {
+      // Local display preferences are optional.
+    }
+  }, [conversationUiPrefs])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('zchat:call-settings', JSON.stringify(callSettings))
+    } catch {
+      // Local call settings are optional.
+    }
+  }, [callSettings])
 
   const VIRTUAL_CHUNK = 50
   const virtualSlice = useMemo(() => {
@@ -245,24 +495,119 @@ export default function MessagesPage() {
   }, [messagesByConversation, selectedConversationId])
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
+  const selectedConversationUiPrefs = useMemo<ConversationUiPrefs>(
+    () => ({
+      largeText: false,
+      roundBubbles: true,
+      ...(selectedConversation?.id ? conversationUiPrefs[selectedConversation.id] : {}),
+    }),
+    [conversationUiPrefs, selectedConversation?.id]
+  )
   const queryConversationId = searchParams.get('conversation') || ''
   const globalIncomingCall = useCallStore((state) => state.incomingCall)
   const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
-  const { openConversation } = useConversationRouting({
+  const acceptPending = useCallStore((state) => state.acceptPending)
+  const setAcceptPending = useCallStore((state) => state.setAcceptPending)
+
+  // Stable Zustand setters (don't change between renders)
+  const {
+    setActiveCall: setGlobalActiveCall,
+    setCallAnswered: setGlobalCallAnswered,
+    setCallState: setGlobalCallState,
+    setCallMinimized: setGlobalCallMinimized,
+    setMutedMic: setGlobalMutedMic,
+    setMutedCam: setGlobalMutedCam,
+    setCallSeconds: setGlobalCallSeconds,
+    setCameraAvailable: setGlobalCameraAvailable,
+    setLocalStream: setGlobalLocalStream,
+    setRemoteStreams: setGlobalRemoteStreams,
+    setCallParticipants: setGlobalCallParticipants,
+  } = useCallStore.getState()
+  const { openConversation: routeOpenConversation } = useConversationRouting({
     token,
     queryConversationId,
     selectedConversationId,
     setConversations,
     selectConversation,
+    onLockedConversation: setPendingLockedConversationId,
   })
+
+  const [mobileShowList, setMobileShowList] = useState(true)
+
+  const refreshConversations = useCallback(async () => {
+    if (!token) return
+    setConversations(await loadChatConversations(token))
+  }, [token, setConversations])
+
+  const requestConversationAccess = useCallback(
+    async (conversationId: string) => {
+      if (!token) return false
+      const targetConversation = conversations.find((item) => item.id === conversationId) || null
+      if (!targetConversation) return false
+
+      if (targetConversation.isHidden || targetConversation.isLocked) {
+        setPendingLockedConversationId(conversationId)
+        setPendingUnlockError(null)
+        setPendingUnlockPassword('')
+        return false
+      }
+
+      return true
+    },
+    [conversations, token]
+  )
 
   const handleOpenConversation = useCallback(
     (conversationId: string) => {
-      openConversation(conversationId)
-      markConversationRead(conversationId)
+      void (async () => {
+        const allowed = await requestConversationAccess(conversationId)
+        if (!allowed) return
+        routeOpenConversation(conversationId)
+        markConversationRead(conversationId)
+        setMobileShowList(false)
+      })()
     },
-    [markConversationRead, openConversation]
+    [markConversationRead, requestConversationAccess, routeOpenConversation]
   )
+
+  const handleUnlockPendingConversation = async () => {
+    if (!pendingLockedConversationId) return
+    try {
+      const allowed = await requestConversationAccess(pendingLockedConversationId)
+      if (!allowed) return
+      routeOpenConversation(pendingLockedConversationId)
+      markConversationRead(pendingLockedConversationId)
+      setPendingLockedConversationId(null)
+    } catch (error) {
+      setChatNotice(error instanceof Error ? error.message : 'Không thể mở khóa hội thoại.')
+    }
+  }
+
+  const handleSubmitPendingUnlock = async () => {
+    if (!token || !pendingLockedConversationId) return
+    const password = pendingUnlockPassword.trim()
+    if (!password) {
+      setPendingUnlockError('Nhập mật khẩu để mở khóa hội thoại.')
+      return
+    }
+
+    try {
+      setPendingUnlockError(null)
+      await api.updateConversationPreferences(token, pendingLockedConversationId, {
+        hidden: false,
+        locked: false,
+        hiddenPassword: password,
+        lockedPassword: password,
+      })
+      await refreshConversations()
+      routeOpenConversation(pendingLockedConversationId)
+      markConversationRead(pendingLockedConversationId)
+      setPendingLockedConversationId(null)
+      setPendingUnlockPassword('')
+    } catch (error) {
+      setPendingUnlockError(error instanceof Error ? error.message : 'Không thể mở khóa hội thoại.')
+    }
+  }
 
   const reloadNotifications = useCallback(async () => {
     if (!token) return
@@ -282,10 +627,65 @@ export default function MessagesPage() {
     }
   }, [token, user?.id])
 
-  const refreshConversations = useCallback(async () => {
-    if (!token) return
-    setConversations(await loadChatConversations(token))
-  }, [token, setConversations])
+  function stopRingtone() {
+    const ringtone = ringtoneRef.current
+    if (!ringtone) return
+    window.clearInterval(ringtone.intervalId)
+    ringtone.context.close().catch(() => undefined)
+    ringtoneRef.current = null
+  }
+
+  function startRingtone(tone: 'incoming' | 'outgoing') {
+    if (!callSettings.sound || ringtoneRef.current) return
+    const AudioContextClass = window.AudioContext
+    if (!AudioContextClass) return
+    const context = new AudioContextClass()
+    const playPulse = () => {
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.type = tone === 'incoming' ? 'sine' : 'triangle'
+      oscillator.frequency.value = tone === 'incoming' ? 880 : 520
+      gain.gain.setValueAtTime(0.0001, context.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.09, context.currentTime + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34)
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      oscillator.start()
+      oscillator.stop(context.currentTime + 0.36)
+    }
+    playPulse()
+    const intervalId = window.setInterval(playPulse, tone === 'incoming' ? 1450 : 1900)
+    ringtoneRef.current = { context, intervalId }
+  }
+
+  function addLocalCallHistory(text: string, conversationId = selectedConversationId || '') {
+    if (!conversationId || !user?.id) return
+    const systemMessage: ChatMessage = {
+      id: `local-call-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      conversationId,
+      senderId: user.id,
+      senderName: user.fullName || 'Bạn',
+      senderAvatar: user.avatarUrl || null,
+      type: 'call-history',
+      text,
+      mediaUrl: null,
+      meta: { system: true, callHistory: true },
+      reactionCount: 0,
+      viewerReaction: null,
+      createdAt: new Date().toISOString(),
+    }
+    appendMessage(conversationId, systemMessage)
+    scrollConversationToBottom('smooth')
+  }
+
+  useEffect(() => {
+    if (conversations.length > 0) setIsLoadingConversations(false)
+  }, [conversations.length])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsLoadingConversations(false), 4000)
+    return () => clearTimeout(timer)
+  }, [token])
 
   useEffect(() => {
     if (!token || !selectedConversationId) return
@@ -380,6 +780,14 @@ export default function MessagesPage() {
       refreshConversations().catch(() => undefined)
     })
 
+    socket.on('message:deleted', (payload: { conversationId: string; messageId?: string }) => {
+      if (!payload?.messageId) return
+      const convId = String(payload.conversationId)
+      const msgId = String(payload.messageId)
+      setMessages(convId, (messagesByConversation[convId] || []).filter((m) => m.id !== msgId))
+      refreshConversations().catch(() => undefined)
+    })
+
     socket.on('conversation:updated', () => {
       refreshConversations().catch(() => undefined)
     })
@@ -433,29 +841,45 @@ export default function MessagesPage() {
     socket.on('call:offer', (payload) => {
       if (!payload.offer) return
       const incomingConversationId = payload.conversationId ? String(payload.conversationId) : null
+      const incomingConv = incomingConversationId
+        ? conversations.find((c) => c.id === incomingConversationId) || null
+        : null
+      const callerMember = incomingConv?.members.find((m) => m.userId === Number(payload.fromUserId))
       const incomingPayload: IncomingCallState = {
         fromUserId: Number(payload.fromUserId),
         callType: payload.callType || 'voice',
         conversationId: incomingConversationId,
         offer: payload.offer,
+        fromUserName: callerMember?.fullName || payload.fromUserName || undefined,
+        conversationName: incomingConv ? getConversationDisplayName(incomingConv, user?.id) : payload.conversationName || undefined,
+        fromUserAvatar: callerMember?.avatarUrl || null,
       }
       setIncomingCall(incomingPayload)
       setGlobalIncomingCall(incomingPayload)
       setCallStatus(`Cuộc gọi ${payload.callType === 'video' ? 'video' : 'thoại'} đến`)
+      setCallState('incoming')
+      startRingtone('incoming')
+      if (callSettings.vibration && navigator.vibrate) navigator.vibrate([180, 90, 180])
     })
 
     socket.on('call:answer', async (payload) => {
       const fromUserId = Number(payload.fromUserId || 0)
       const peer = peersRef.current.get(fromUserId)
       if (peer && payload.answer) {
-        await peer.setRemoteDescription(new RTCSessionDescription(payload.answer))
+        await peer.setRemoteDescription(new RTCSessionDescription({
+          type: (payload.answer.type as RTCSdpType) || 'answer',
+          sdp: payload.answer.sdp,
+        }))
+        await flushPendingCandidates(fromUserId)
       }
       const answeredAt = Number(payload?.answeredAt || 0) || Date.now()
       setCallAnswered(true)
       setRingingStartedAt(null)
       setCallSeconds(0)
       setActiveCall((prev) => (prev ? { ...prev, startedAt: answeredAt } : prev))
-      setCallStatus('Người nhận đã tham gia cuộc gọi')
+      setCallState('connected')
+      stopRingtone()
+      setCallStatus('Đã kết nối')
     })
 
     socket.on('call:join', (payload) => {
@@ -476,10 +900,16 @@ export default function MessagesPage() {
       const fromUserId = Number(payload.fromUserId || 0)
       const peer = peersRef.current.get(fromUserId)
       if (!peer || !payload.candidate) return
+      if (!peer.remoteDescription) {
+        const pending = pendingCandidatesRef.current.get(fromUserId) || []
+        pending.push(payload.candidate as RTCIceCandidateInit)
+        pendingCandidatesRef.current.set(fromUserId, pending)
+        return
+      }
       try {
         await peer.addIceCandidate(new RTCIceCandidate(payload.candidate))
-      } catch (error) {
-        console.error('Failed to add ICE candidate', error)
+      } catch {
+        // ignore
       }
     })
 
@@ -510,6 +940,9 @@ export default function MessagesPage() {
           setCallSeconds(0)
           setCallAnswered(false)
           setRingingStartedAt(null)
+          setLocalStreamState(null)
+          setCallState('ended')
+          stopRingtone()
           setCallStatus('Mọi người đã rời cuộc gọi')
         } else {
           setCallStatus('Một người đã rời cuộc gọi')
@@ -517,6 +950,8 @@ export default function MessagesPage() {
         return
       }
 
+      setCallState('ended')
+      stopRingtone()
       setCallStatus('Cuộc gọi đã kết thúc')
       setIncomingCall(null)
       setGlobalIncomingCall(null)
@@ -524,6 +959,7 @@ export default function MessagesPage() {
       peersRef.current.clear()
       localStreamRef.current?.getTracks().forEach((track) => track.stop())
       localStreamRef.current = null
+      setLocalStreamState(null)
       setRemoteStreams([])
       setJoinedCallUserIds([])
       setActiveCall(null)
@@ -540,10 +976,43 @@ export default function MessagesPage() {
       }
     })
 
+    socket.on('group_call_joined', (payload) => {
+      const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
+      if (fromUserId > 0) {
+        setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
+        setCallStatus('Cuộc gọi nhóm đang diễn ra')
+      }
+    })
+
+    socket.on('group_call_left', (payload) => {
+      const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
+      if (fromUserId > 0) {
+        setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
+      }
+    })
+
+    socket.on('group_call_ended', () => {
+      setCallState('ended')
+      setCallStatus('Cuộc gọi nhóm đã kết thúc')
+      closeCallResources()
+      setActiveCall(null)
+      setCallAnswered(false)
+      setCallSeconds(0)
+    })
+
+    socket.on('participant_updated', (payload) => {
+      if (payload?.participantIds) setJoinedCallUserIds(payload.participantIds)
+    })
+
+    socket.on('participant_speaking', () => {
+      setCallStatus('Có người đang nói')
+    })
+
     return () => {
       socket.off('message:new')
       socket.off('message:reaction')
       socket.off('message:updated')
+      socket.off('message:deleted')
       socket.off('message:typing')
       socket.off('message:seen')
       socket.off('conversation:updated')
@@ -559,6 +1028,11 @@ export default function MessagesPage() {
       socket.off('call:ice-candidate')
       socket.off('call:end')
       socket.off('call:participants')
+      socket.off('group_call_joined')
+      socket.off('group_call_left')
+      socket.off('group_call_ended')
+      socket.off('participant_updated')
+      socket.off('participant_speaking')
     }
   }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
@@ -566,7 +1040,17 @@ export default function MessagesPage() {
     if (!globalIncomingCall || incomingCall) return
     setIncomingCall(globalIncomingCall)
     setCallStatus(`Cuộc gọi ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
-  }, [globalIncomingCall, incomingCall])
+    setCallState('incoming')
+    startRingtone('incoming')
+  }, [globalIncomingCall, incomingCall, startRingtone])
+
+  // Auto-accept when user navigated from AppLayout's accept button
+  useEffect(() => {
+    if (!acceptPending || !globalIncomingCall) return
+    setAcceptPending(false)
+    void handleAcceptIncomingCall(globalIncomingCall)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acceptPending, globalIncomingCall])
 
   useEffect(() => {
     if (!selectedConversationId) return
@@ -603,17 +1087,19 @@ export default function MessagesPage() {
     return () => window.clearTimeout(timer)
   }, [callStatus, incomingCall, activeCall])
 
-  useEffect(() => {
-    if (!activeCall || !callAnswered) return
-    setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
-    const timer = window.setInterval(() => {
-      setCallSeconds(Math.floor((Date.now() - activeCall.startedAt) / 1000))
-    }, 1000)
+  // Call timer has been moved to AppLayout so it persists across navigation
 
-    return () => {
-      window.clearInterval(timer)
-    }
-  }, [activeCall, callAnswered])
+  // Sync local call state → Zustand so AppLayout can render call windows across navigation
+  useEffect(() => { setGlobalActiveCall(activeCall) }, [activeCall]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallAnswered(callAnswered) }, [callAnswered]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallState(callState) }, [callState]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallMinimized(callMinimized) }, [callMinimized]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalMutedMic(mutedMic) }, [mutedMic]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalMutedCam(mutedCam) }, [mutedCam]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCallSeconds(callSeconds) }, [callSeconds]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalCameraAvailable(cameraAvailable) }, [cameraAvailable]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalLocalStream(localStreamState); callSession.localStream = localStreamState }, [localStreamState]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setGlobalRemoteStreams(remoteStreams) }, [remoteStreams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const messages = useMemo(
     () => (selectedConversationId ? messagesByConversation[selectedConversationId] || [] : []),
@@ -678,12 +1164,12 @@ export default function MessagesPage() {
         const names = otherMembers
           .filter((member) => readByIds.has(Number(member.userId)))
           .map((member) => member.fullName)
-        if (selectedConversation.type === 'direct') return names.length ? 'Đã xem' : message.status === 'delivered' ? 'Đã nhận' : 'Đã gửi'
-        if (names.length > 0) return `Đã xem bởi ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
+        if (selectedConversation.type === 'direct') return names.length ? '✓✓ Seen' : message.status === 'delivered' ? '✓✓ Delivered' : '✓ Sent'
+        if (names.length > 0) return `✓✓ Seen by ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
       }
 
       const sentAt = new Date(message.createdAt).getTime()
-      if (Number.isNaN(sentAt)) return 'Đã gửi'
+      if (Number.isNaN(sentAt)) return '✓ Sent'
 
       const otherMembers = selectedConversation.members.filter((member) => member.userId !== user.id)
       const seenCount = otherMembers.filter((member) => {
@@ -692,9 +1178,9 @@ export default function MessagesPage() {
         return !Number.isNaN(readAt) && readAt >= sentAt
       }).length
 
-      if (seenCount === 0) return message.status === 'delivered' ? 'Đã nhận' : 'Đã gửi'
-      if (selectedConversation.type === 'direct' || seenCount >= otherMembers.length) return 'Đã xem'
-      return `Đã xem bởi ${seenCount}`
+      if (seenCount === 0) return message.status === 'delivered' ? '✓✓ Delivered' : '✓ Sent'
+      if (selectedConversation.type === 'direct' || seenCount >= otherMembers.length) return '✓✓ Seen'
+      return `✓✓ Seen by ${seenCount}`
     },
     [selectedConversation, user?.id]
   )
@@ -731,7 +1217,8 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!activeCall || callAnswered || !ringingStartedAt) return
 
-    const timeoutMs = 60_000 - (Date.now() - ringingStartedAt)
+    const timeoutLimit = activeCall.mode === 'group' ? GROUP_CALL_RING_TIMEOUT_MS : CALL_RING_TIMEOUT_MS
+    const timeoutMs = timeoutLimit - (Date.now() - ringingStartedAt)
     const conversationId = selectedConversationId
     const targets = [...callTargets]
 
@@ -746,7 +1233,9 @@ export default function MessagesPage() {
         })
       }
       closeCallResources()
-      setCallStatus('Không có phản hồi sau 1 phút. Cuộc gọi đã tự kết thúc.')
+      setCallState('no_answer')
+      addLocalCallHistory(activeCall.mode === 'group' ? 'Cuộc gọi nhóm đã bị hủy' : 'Không có phản hồi')
+      setCallStatus('Không có phản hồi')
       setIncomingCall(null)
       setActiveCall(null)
       setCallSeconds(0)
@@ -761,7 +1250,7 @@ export default function MessagesPage() {
 
     const timer = window.setTimeout(autoEnd, timeoutMs)
     return () => window.clearTimeout(timer)
-  }, [activeCall, callAnswered, callTargets, ringingStartedAt, selectedConversationId])
+  }, [activeCall, addLocalCallHistory, callAnswered, callTargets, ringingStartedAt, selectedConversationId])
 
   const directPeer = useMemo(() => {
     if (!selectedConversation || !user?.id) return null
@@ -846,6 +1335,33 @@ export default function MessagesPage() {
   }, [createGroupInviteCandidates, groupSearchKeyword])
 
   const pinnedMessageIds = useMemo(() => new Set((selectedConversation?.pinnedMessageIds || []).map((item) => String(item))), [selectedConversation])
+  const pinnedMessages = useMemo(() => {
+    if (!selectedConversationId || pinnedMessageIds.size === 0) return []
+    return (messagesByConversation[selectedConversationId] || []).filter((item) => pinnedMessageIds.has(item.id))
+  }, [messagesByConversation, pinnedMessageIds, selectedConversationId])
+
+  const chatPanelThemeClass = useMemo(() => {
+    const themeColor = selectedConversationUiPrefs.themeColor ?? selectedConversation?.themeColor
+    const backgroundUrl = selectedConversationUiPrefs.backgroundUrl ?? selectedConversation?.backgroundUrl
+    if (!themeColor && !backgroundUrl) return ''
+    const safeKey = [themeColor || 'default', backgroundUrl || ''].join('|').replace(/[^a-z0-9_-]/gi, '_').slice(0, 120)
+    return `chat-panel-theme-${safeKey}`
+  }, [selectedConversation?.backgroundUrl, selectedConversation?.themeColor, selectedConversationUiPrefs.backgroundUrl, selectedConversationUiPrefs.themeColor])
+
+  const chatPanelThemeStyle = useMemo(() => {
+    const themeColor = selectedConversationUiPrefs.themeColor ?? selectedConversation?.themeColor
+    const backgroundUrl = selectedConversationUiPrefs.backgroundUrl ?? selectedConversation?.backgroundUrl
+    if (!themeColor && !backgroundUrl) return ''
+    const rules: string[] = []
+    if (themeColor) {
+      rules.push(`--chat-primary: ${themeColor};`)
+      rules.push(`--chat-mine: linear-gradient(135deg, color-mix(in srgb, ${themeColor} 88%, #ffffff) 0%, ${themeColor} 100%);`)
+    }
+    if (backgroundUrl) {
+      rules.push(`--conversation-bg-image: url("${backgroundUrl.replace(/"/g, '\\"')}");`)
+    }
+    return `.${chatPanelThemeClass} { ${rules.join(' ')} }`
+  }, [chatPanelThemeClass, selectedConversation?.backgroundUrl, selectedConversation?.themeColor, selectedConversationUiPrefs.backgroundUrl, selectedConversationUiPrefs.themeColor])
 
   const directPeerFriendship = directPeer ? friendMap[directPeer.id] : null
   const isDirectPeerFriend = Boolean(directPeerFriendship && directPeerFriendship.status === 'accepted')
@@ -855,6 +1371,8 @@ export default function MessagesPage() {
   useEffect(() => {
     setRightPanelSection('overview')
     setMessageSearchKeyword('')
+    setPendingUnlockError(null)
+    setPendingUnlockPassword('')
   }, [selectedConversationId])
 
   const handleToggleConversationPin = async () => {
@@ -862,79 +1380,403 @@ export default function MessagesPage() {
     try {
       await api.pinConversation(token, selectedConversation.id, !selectedConversation.isPinned)
       await refreshConversations()
-      setChatNotice(selectedConversation.isPinned ? 'Đã bỏ ghim hội thoại.' : 'Đã ghim hội thoại.')
+      const title = selectedConversation.isPinned ? 'Đã bỏ ghim hội thoại' : 'Đã ghim hội thoại'
+      setChatNotice(title)
+      toast({ title })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật ghim hội thoại.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật ghim hội thoại.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật ghim hội thoại', description: message, variant: 'destructive' })
     }
   }
 
   const handleToggleConversationMute = async () => {
     if (!token || !selectedConversation) return
+    if (!selectedConversation.isMuted) {
+      setMuteDialogOpen(true)
+      return
+    }
+
     try {
-      await api.muteConversation(token, selectedConversation.id, !selectedConversation.isMuted)
+      await api.muteConversation(token, selectedConversation.id, false)
       await refreshConversations()
-      setChatNotice(selectedConversation.isMuted ? 'Đã bật thông báo.' : 'Đã tắt thông báo.')
+      setChatNotice('Đã bật thông báo.')
+      toast({ title: 'Đã bật thông báo' })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật thông báo.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật thông báo.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật thông báo', description: message, variant: 'destructive' })
+    }
+  }
+
+  const handleApplyConversationMute = async (durationSeconds: MuteOptionValue) => {
+    if (!token || !selectedConversation) return
+    const mutedUntil = durationSeconds ? new Date(Date.now() + durationSeconds * 1000).toISOString() : null
+    await api.muteConversation(token, selectedConversation.id, true, mutedUntil)
+    await refreshConversations()
+    setChatNotice('Đã tắt thông báo hội thoại.')
+    toast({ title: 'Đã tắt thông báo hội thoại' })
+  }
+
+  const updateLocalConversationUiPrefs = useCallback((conversationId: string, prefs: Partial<ConversationUiPrefs>) => {
+    setConversationUiPrefs((current) => ({
+      ...current,
+      [conversationId]: {
+        ...current[conversationId],
+        ...prefs,
+      },
+    }))
+  }, [])
+
+  const handleSetLargeText = useCallback(
+    (largeText: boolean) => {
+      if (!selectedConversation) return
+      updateLocalConversationUiPrefs(selectedConversation.id, { largeText })
+    },
+    [selectedConversation, updateLocalConversationUiPrefs]
+  )
+
+  const handleSetRoundBubbles = useCallback(
+    (roundBubbles: boolean) => {
+      if (!selectedConversation) return
+      updateLocalConversationUiPrefs(selectedConversation.id, { roundBubbles })
+    },
+    [selectedConversation, updateLocalConversationUiPrefs]
+  )
+
+  const handleUpdateConversationPreferences = async (payload: {
+    backgroundUrl?: string | null
+    themeColor?: string | null
+    autoDeleteAfterSeconds?: number | null
+    hidden?: boolean
+    locked?: boolean
+    hiddenPassword?: string | null
+    lockedPassword?: string | null
+  }) => {
+    if (!token || !selectedConversation) return
+    try {
+      await api.updateConversationPreferences(token, selectedConversation.id, payload)
+      if (payload.backgroundUrl !== undefined || payload.themeColor !== undefined) {
+        updateLocalConversationUiPrefs(selectedConversation.id, {
+          ...(payload.backgroundUrl !== undefined ? { backgroundUrl: payload.backgroundUrl } : {}),
+          ...(payload.themeColor !== undefined ? { themeColor: payload.themeColor } : {}),
+        })
+      }
+      await refreshConversations()
+      let successMessage = 'Đã cập nhật thiết lập hội thoại.'
+      if (payload.hidden) {
+        successMessage = 'Đã ẩn hội thoại.'
+      } else if (payload.locked === false) {
+        setPendingLockedConversationId((current) => (current === selectedConversation.id ? null : current))
+        successMessage = 'Đã mở khóa hội thoại.'
+      } else if (payload.locked) {
+        successMessage = 'Đã khóa hội thoại.'
+      } else if (payload.autoDeleteAfterSeconds !== undefined) {
+        successMessage = 'Đã cập nhật thời hạn tự động xóa tin nhắn.'
+      } else if (payload.backgroundUrl !== undefined || payload.themeColor !== undefined) {
+        successMessage = 'Đã cập nhật tùy biến hội thoại.'
+      }
+      setChatNotice(successMessage)
+      toast({ title: successMessage })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật thiết lập hội thoại.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật thiết lập hội thoại', description: message, variant: 'destructive' })
     }
   }
 
   const handleUpdateNickname = async (memberId: number) => {
-    if (!token || !selectedConversation) return
+    if (!selectedConversation) return
     const member = selectedConversation.members.find((item) => item.userId === memberId)
-    const nextNickname = window.prompt('Nhập biệt danh. Để trống để xóa biệt danh.', member?.nickname || '')
-    if (nextNickname === null) return
+    if (!member) return
+    setNicknameDialog({
+      memberId,
+      name: member.fullName,
+      avatarUrl: member.avatarUrl,
+      currentValue: member.nickname || '',
+    })
+  }
+
+  const handleSubmitNickname = async (nextNickname: string) => {
+    if (!token || !selectedConversation || !nicknameDialog) return
     try {
-      await api.updateConversationNickname(token, selectedConversation.id, memberId, nextNickname.trim() || null)
+      await api.updateConversationNickname(token, selectedConversation.id, nicknameDialog.memberId, nextNickname.trim() || null)
       await refreshConversations()
-      setChatNotice(nextNickname.trim() ? 'Đã cập nhật biệt danh.' : 'Đã xóa biệt danh.')
+      const message = nextNickname.trim() ? 'Đã cập nhật biệt danh.' : 'Đã xóa biệt danh.'
+      setChatNotice(message)
+      toast({ title: message })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật biệt danh.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật biệt danh.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật biệt danh', description: message, variant: 'destructive' })
+      throw error
     }
   }
 
-  const handleUpdateGroupProfile = async () => {
+  const handleUpdateGroupProfile = async (payload: { name: string; avatarUrl?: string | null }) => {
     if (!token || !selectedGroup || !canAddMembers) return
-    const nextName = window.prompt('Tên nhóm mới', selectedGroup.name || '')
-    if (nextName === null || !nextName.trim()) return
-    const nextAvatar = window.prompt('URL ảnh đại diện nhóm (có thể để trống)', selectedGroup.avatarUrl || '')
-    if (nextAvatar === null) return
     try {
-      await api.updateGroupProfile(token, selectedGroup.id, { name: nextName.trim(), avatarUrl: nextAvatar.trim() || null })
+      await api.updateGroupProfile(token, selectedGroup.id, { name: payload.name, avatarUrl: payload.avatarUrl ?? selectedGroup.avatarUrl ?? null })
       await refreshConversations()
-      setChatNotice('Đã cập nhật thông tin nhóm.')
+      setChatNotice('Đã cập nhật tên nhóm.')
+      toast({ title: 'Đã cập nhật tên nhóm' })
     } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể cập nhật nhóm.')
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật tên nhóm.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật tên nhóm', description: message, variant: 'destructive' })
+      throw error
     }
+  }
+
+  const handleUpdateGroupAvatar = () => {
+    if (!selectedGroup || !canAddMembers) return
+    setGroupAvatarDialogOpen(true)
+  }
+
+  const handleSubmitGroupAvatar = async ({ dataUrl }: { dataUrl: string }) => {
+    if (!token || !selectedGroup || !canAddMembers) return
+    try {
+      await api.updateGroupProfile(token, selectedGroup.id, {
+        name: selectedGroup.name || 'Nhóm chat',
+        avatarUrl: dataUrl,
+      })
+      await refreshConversations()
+      setChatNotice('Đã cập nhật ảnh nhóm.')
+      toast({ title: 'Đã cập nhật ảnh nhóm' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Không thể cập nhật ảnh nhóm.'
+      setChatNotice(message)
+      toast({ title: 'Không thể cập nhật ảnh nhóm', description: message, variant: 'destructive' })
+      throw error
+    }
+  }
+
+  const handleOpenHideConversation = () => {
+    if (!selectedConversation) return
+    setConfirmModal({
+      title: 'Ẩn hội thoại?',
+      description: 'Hội thoại sẽ bị ẩn khỏi danh sách trò chuyện của bạn.',
+      confirmLabel: 'Ẩn',
+      destructive: false,
+      onConfirm: async () => {
+        await handleUpdateConversationPreferences({ hidden: true })
+      },
+    })
+  }
+
+  const handleOpenLockConversation = () => {
+    if (!selectedConversation) return
+    setLockDialogOpen(true)
+  }
+
+  const handleSubmitLockConversation = async (pin: string) => {
+    if (!pin.trim()) {
+      throw new Error('Vui lòng nhập mã PIN để khóa hội thoại.')
+    }
+    await handleUpdateConversationPreferences({
+      locked: true,
+      lockedPassword: pin.trim(),
+    })
+  }
+
+  const handleSubmitAutoDelete = async (seconds: number | null) => {
+    await handleUpdateConversationPreferences({ autoDeleteAfterSeconds: seconds })
+  }
+
+  const handleOpenReportConversation = () => {
+    if (!selectedConversation) return
+    const targetType = selectedConversation.type === 'group' ? 'group' : 'user'
+    const targetId = selectedConversation.type === 'group' ? selectedConversation.id : directPeer?.id
+    if (!targetId) return
+    setReportDialog({
+      targetType,
+      targetId,
+      title: selectedConversation.type === 'group' ? 'Báo cáo nhóm' : 'Báo cáo người dùng',
+    })
+  }
+
+  const handleReportMessage = (message: ChatMessage) => {
+    setReportDialog({
+      targetType: 'message',
+      targetId: message.id,
+      title: 'Báo cáo tin nhắn',
+    })
+  }
+
+  const handleSubmitReport = async (payload: { reason: string; details?: string }) => {
+    if (!token || !reportDialog) return
+    await api.submitReport(token, {
+      targetType: reportDialog.targetType === 'group' ? 'message' : reportDialog.targetType,
+      targetId: reportDialog.targetId,
+      reason: payload.reason,
+      details: payload.details,
+    })
+    toast({ title: 'Đã gửi báo cáo', description: 'Báo cáo sẽ được gửi đến quản trị viên để xem xét.' })
   }
 
   const handleBlockPeer = async () => {
     if (!token || !directPeer) return
-    if (!window.confirm(`Chặn ${directPeer.name}? Hai bên sẽ không thể gửi tin nhắn trực tiếp trong hội thoại này.`)) return
-    try {
-      await api.blockUser(token, directPeer.id)
-      setChatNotice(`Đã chặn ${directPeer.name}.`)
-    } catch (error) {
-      setChatNotice(error instanceof Error ? error.message : 'Không thể chặn người dùng.')
-    }
+    setConfirmModal({
+      title: `Chặn ${directPeer.name}?`,
+      description: 'Hai bên sẽ không thể gửi tin nhắn trực tiếp trong hội thoại này.',
+      confirmLabel: 'Chặn',
+      onConfirm: async () => {
+        try {
+          await api.blockUser(token, directPeer.id)
+          setIsDirectPeerBlocked(true)
+          setChatNotice(`Đã chặn ${directPeer.name}.`)
+          toast({ title: `Đã chặn ${directPeer.name}` })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể chặn người dùng.'
+          setChatNotice(message)
+          toast({ title: 'Không thể chặn người dùng', description: message, variant: 'destructive' })
+          throw error
+        }
+      },
+    })
   }
+
+  const handleUnblockPeer = async () => {
+    if (!token || !directPeer) return
+    setConfirmModal({
+      title: `Bỏ chặn ${directPeer.name}?`,
+      description: 'Hai bên sẽ có thể nhắn tin lại trong hội thoại trực tiếp.',
+      confirmLabel: 'Bỏ chặn',
+      destructive: false,
+      onConfirm: async () => {
+        try {
+          await api.unblockUser(token, directPeer.id)
+          setIsDirectPeerBlocked(false)
+          setChatNotice(`Đã bỏ chặn ${directPeer.name}.`)
+          toast({ title: `Đã bỏ chặn ${directPeer.name}` })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể bỏ chặn người dùng.'
+          setChatNotice(message)
+          toast({ title: 'Không thể bỏ chặn người dùng', description: message, variant: 'destructive' })
+          throw error
+        }
+      },
+    })
+  }
+
+  useEffect(() => {
+    if (!token || !directPeer) {
+      setIsDirectPeerBlocked(false)
+      return
+    }
+
+    api.isUserBlocked(token, directPeer.id)
+      .then((result) => setIsDirectPeerBlocked(Boolean(result.blocked)))
+      .catch(() => setIsDirectPeerBlocked(false))
+  }, [directPeer, token])
+
+  const stopRingtoneLegacy = useCallback(() => {
+    const ringtone = ringtoneRef.current
+    if (!ringtone) return
+    window.clearInterval(ringtone.intervalId)
+    ringtone.context.close().catch(() => undefined)
+    ringtoneRef.current = null
+  }, [])
+
+  const startRingtoneLegacy = useCallback(
+    (tone: 'incoming' | 'outgoing') => {
+      if (!callSettings.sound || ringtoneRef.current) return
+      const AudioContextClass = window.AudioContext
+      if (!AudioContextClass) return
+      const context = new AudioContextClass()
+      const playPulse = () => {
+        const oscillator = context.createOscillator()
+        const gain = context.createGain()
+        oscillator.type = tone === 'incoming' ? 'sine' : 'triangle'
+        oscillator.frequency.value = tone === 'incoming' ? 880 : 520
+        gain.gain.setValueAtTime(0.0001, context.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.09, context.currentTime + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34)
+        oscillator.connect(gain)
+        gain.connect(context.destination)
+        oscillator.start()
+        oscillator.stop(context.currentTime + 0.36)
+      }
+      playPulse()
+      const intervalId = window.setInterval(playPulse, tone === 'incoming' ? 1450 : 1900)
+      ringtoneRef.current = { context, intervalId }
+    },
+    [callSettings.sound]
+  )
+
+  const addLocalCallHistoryLegacy = useCallback(
+    (text: string, conversationId = selectedConversationId || '') => {
+      if (!conversationId || !user?.id) return
+      const systemMessage: ChatMessage = {
+        id: `local-call-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        conversationId,
+        senderId: user.id,
+        senderName: user.fullName || 'Bạn',
+        senderAvatar: user.avatarUrl || null,
+        type: 'call-history',
+        text,
+        mediaUrl: null,
+        meta: { system: true, callHistory: true },
+        reactionCount: 0,
+        viewerReaction: null,
+        createdAt: new Date().toISOString(),
+      }
+      appendMessage(conversationId, systemMessage)
+      scrollConversationToBottom('smooth')
+    },
+    [appendMessage, scrollConversationToBottom, selectedConversationId, user?.avatarUrl, user?.fullName, user?.id]
+  )
 
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
     if (localStreamRef.current) return localStreamRef.current
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: callType === 'video',
-    })
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48000,
+        },
+        video: callType === 'video',
+      })
+      setCameraAvailable(callType === 'video' ? stream.getVideoTracks().length > 0 : true)
+    } catch (error) {
+      if (callType !== 'video') throw error
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 48000 },
+        video: false,
+      })
+      setCameraAvailable(false)
+      setChatNotice('Không tìm thấy camera trên thiết bị này. Bạn vẫn có thể tham gia bằng âm thanh.')
+      toast({ title: 'Không tìm thấy camera trên thiết bị này', description: 'Bạn vẫn có thể tham gia bằng âm thanh.' })
+    }
+    if (callSettings.autoMuteOnJoin) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = false
+      })
+      setMutedMic(true)
+    }
+    if (callSettings.autoCameraOffOnJoin || callType === 'voice') {
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = false
+      })
+      setMutedCam(callType === 'video' && callSettings.autoCameraOffOnJoin)
+    }
     localStreamRef.current = stream
+    callSession.localStream = stream
+    setLocalStreamState(stream)
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream
     }
     return stream
   }
 
-  const buildPeerConnection = async (targetUserId: number, callType: 'voice' | 'video') => {
+  const buildPeerConnection = async (targetUserId: number, callType: 'voice' | 'video', conversationIdOverride?: string | null) => {
     const socket = getSocket()
-    if (!socket || !selectedConversationId) return null
+    const convId = conversationIdOverride || selectedConversationId
+    if (!socket || !convId) return null
 
     const pc = new RTCPeerConnection(RTC_CONFIG)
     const localStream = await ensureLocalStream(callType)
@@ -960,24 +1802,48 @@ export default function MessagesPage() {
       if (!event.candidate) return
       socket.emit('call:ice-candidate', {
         targetUserId,
-        conversationId: selectedConversationId,
-        candidate: event.candidate,
+        conversationId: convId,
+        candidate: event.candidate.toJSON(),
       })
+    }
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        pc.restartIce()
+      }
     }
 
     peersRef.current.set(targetUserId, pc)
     return pc
   }
 
+  const flushPendingCandidates = async (targetUserId: number) => {
+    const peer = peersRef.current.get(targetUserId)
+    if (!peer) return
+    const pending = pendingCandidatesRef.current.get(targetUserId) || []
+    pendingCandidatesRef.current.delete(targetUserId)
+    for (const candidate of pending) {
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate))
+      } catch {
+        // ignore stale candidates
+      }
+    }
+  }
+
   const closeCallResources = () => {
     peersRef.current.forEach((peer) => peer.close())
     peersRef.current.clear()
+    pendingCandidatesRef.current.clear()
     localStreamRef.current?.getTracks().forEach((track) => track.stop())
     localStreamRef.current = null
+    callSession.localStream = null
+    setLocalStreamState(null)
     setRemoteStreams([])
     setJoinedCallUserIds([])
     setMutedCam(false)
     setMutedMic(false)
+    stopRingtone()
   }
 
   const handleRequestFriend = async () => {
@@ -1058,7 +1924,7 @@ export default function MessagesPage() {
     try {
       const created = await api.createDirectConversation(token, targetUserId)
       await refreshConversations()
-      openConversation(created.conversation.id)
+      handleOpenConversation(created.conversation.id)
       setShowNewMessageModal(false)
       setNewMessageKeyword('')
       setSearchUsersResult([])
@@ -1071,7 +1937,7 @@ export default function MessagesPage() {
 
   const handleOpenNotificationConversation = (conversationId: string | null | undefined) => {
     if (!conversationId) return
-    openConversation(String(conversationId))
+    handleOpenConversation(String(conversationId))
     setShowNotificationsDrawer(false)
   }
 
@@ -1121,7 +1987,7 @@ export default function MessagesPage() {
         memberIds: groupMemberIds,
       })
       await refreshConversations()
-      openConversation(created.conversation.id)
+      handleOpenConversation(created.conversation.id)
       setShowCreateGroupModal(false)
       setGroupName('')
       setGroupSearchKeyword('')
@@ -1212,26 +2078,31 @@ export default function MessagesPage() {
 
   const handleDissolveGroup = async () => {
     if (!token || !selectedGroup || !canDissolveSelectedGroup) return
-    const confirmed = window.confirm('Bạn chắc chắn muốn giải tán nhóm này? Hành động này không thể hoàn tác.')
-    if (!confirmed) return
-    setGroupActionBusyId('dissolve-group')
-    try {
-      await api.dissolveGroupConversation(token, selectedGroup.id)
-      await refreshConversations()
-      setChatNotice('Đã giải tán nhóm chat.')
-      const fallback = conversations.find((item) => item.id !== selectedGroup.id)
-      if (fallback) {
-        openConversation(fallback.id)
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể giải tán nhóm.')
-      }
-    } finally {
-      setGroupActionBusyId(null)
-    }
+    setConfirmModal({
+      title: 'Giải tán nhóm?',
+      description: 'Hành động này sẽ xóa nhóm chat và không thể hoàn tác.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        setGroupActionBusyId('dissolve-group')
+        try {
+          await api.dissolveGroupConversation(token, selectedGroup.id)
+          await refreshConversations()
+          setChatNotice('Đã giải tán nhóm chat.')
+          toast({ title: 'Đã giải tán nhóm chat' })
+          const fallback = conversations.find((item) => item.id !== selectedGroup.id)
+          if (fallback) {
+            handleOpenConversation(fallback.id)
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể giải tán nhóm.'
+          setChatNotice(message)
+          toast({ title: 'Không thể giải tán nhóm', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setGroupActionBusyId(null)
+        }
+      },
+    })
   }
 
   const handleLeaveGroup = async () => {
@@ -1242,38 +2113,42 @@ export default function MessagesPage() {
       return
     }
 
-    const confirmed = window.confirm('Bạn có chắc muốn rời nhóm này không?')
-    if (!confirmed) return
+    setConfirmModal({
+      title: 'Rời nhóm?',
+      description: 'Bạn sẽ không còn nhận tin nhắn mới từ nhóm này sau khi rời đi.',
+      confirmLabel: 'Rời nhóm',
+      onConfirm: async () => {
+        setGroupActionBusyId('leave-group')
+        try {
+          await api.leaveGroupConversation(token, selectedGroup.id)
+          await refreshConversations()
+          const message =
+            myGroupRole === 'leader'
+              ? 'Bạn đã rời nhóm. Quyền trưởng nhóm đã tự động chuyển cho phó nhóm.'
+              : 'Bạn đã rời nhóm chat.'
+          setChatNotice(message)
+          toast({ title: message })
 
-    setGroupActionBusyId('leave-group')
-    try {
-      await api.leaveGroupConversation(token, selectedGroup.id)
-      await refreshConversations()
-      setChatNotice(
-        myGroupRole === 'leader'
-          ? 'Bạn đã rời nhóm. Quyền trưởng nhóm đã tự động chuyển cho phó nhóm.'
-          : 'Bạn đã rời nhóm chat.'
-      )
-
-      const fallback = conversations.find((item) => item.id !== selectedGroup.id)
-      if (fallback) {
-        openConversation(fallback.id)
-      } else {
-        await refreshConversations()
-        const refreshed = useChatStore.getState().conversations
-        if (refreshed.length > 0) {
-          openConversation(refreshed[0].id)
+          const fallback = conversations.find((item) => item.id !== selectedGroup.id)
+          if (fallback) {
+            handleOpenConversation(fallback.id)
+          } else {
+            await refreshConversations()
+            const refreshed = useChatStore.getState().conversations
+            if (refreshed.length > 0) {
+              handleOpenConversation(refreshed[0].id)
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể rời nhóm lúc này.'
+          setChatNotice(message)
+          toast({ title: 'Không thể rời nhóm', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setGroupActionBusyId(null)
         }
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể rời nhóm lúc này.')
-      }
-    } finally {
-      setGroupActionBusyId(null)
-    }
+      },
+    })
   }
 
   const loadOlderMessages = async () => {
@@ -1577,24 +2452,29 @@ export default function MessagesPage() {
 
   const handleClearChatForMe = async () => {
     if (!token || !selectedConversationId) return
-    const confirmed = window.confirm('Xóa toàn bộ đoạn chat ở phía bạn? Hành động này không ảnh hưởng người khác.')
-    if (!confirmed) return
-    setBusyActionId(`clear-${selectedConversationId}`)
-    try {
-      await api.clearConversationMessages(token, selectedConversationId)
-      const refreshed = await loadChatMessages(token, selectedConversationId, 25)
-      setMessages(selectedConversationId, refreshed.messages)
-      setChatNotice('Đã xóa đoạn chat ở phía bạn.')
-    } catch (error) {
-      console.error('Không thể xóa đoạn chat:', error)
-      if (error instanceof Error) {
-        setChatNotice(error.message)
-      } else {
-        setChatNotice('Không thể xóa đoạn chat.')
-      }
-    } finally {
-      setBusyActionId(null)
-    }
+    setConfirmModal({
+      title: 'Xóa đoạn chat?',
+      description: 'Toàn bộ tin nhắn sẽ bị xóa ở phía bạn. Hành động này không ảnh hưởng người khác.',
+      confirmLabel: 'Xóa',
+      onConfirm: async () => {
+        setBusyActionId(`clear-${selectedConversationId}`)
+        try {
+          await api.clearConversationMessages(token, selectedConversationId)
+          const refreshed = await loadChatMessages(token, selectedConversationId, 25)
+          setMessages(selectedConversationId, refreshed.messages)
+          setChatNotice('Đã xóa đoạn chat ở phía bạn.')
+          toast({ title: 'Đã xóa đoạn chat ở phía bạn' })
+        } catch (error) {
+          console.error('Không thể xóa đoạn chat:', error)
+          const message = error instanceof Error ? error.message : 'Không thể xóa đoạn chat.'
+          setChatNotice(message)
+          toast({ title: 'Không thể xóa đoạn chat', description: message, variant: 'destructive' })
+          throw error
+        } finally {
+          setBusyActionId(null)
+        }
+      },
+    })
   }
 
   const openMessageActions = (event: React.MouseEvent<HTMLElement>, messageId: string) => {
@@ -1614,6 +2494,18 @@ export default function MessagesPage() {
   const handleStartCall = async (callType: 'voice' | 'video') => {
     const socket = getSocket()
     if (!socket || !selectedConversationId || callTargets.length === 0) return
+    if (callType === 'voice' && !callSettings.allowVoice) {
+      toast({ title: 'Cuộc gọi thoại đang bị tắt trong cài đặt.', variant: 'destructive' })
+      return
+    }
+    if (callType === 'video' && !callSettings.allowVideo) {
+      toast({ title: 'Cuộc gọi video đang bị tắt trong cài đặt.', variant: 'destructive' })
+      return
+    }
+    if (selectedConversation?.type === 'group' && !callSettings.allowGroup) {
+      toast({ title: 'Cuộc gọi nhóm đang bị tắt trong cài đặt.', variant: 'destructive' })
+      return
+    }
 
     try {
       await ensureLocalStream(callType)
@@ -1627,15 +2519,24 @@ export default function MessagesPage() {
           targetUserId,
           conversationId: selectedConversationId,
           callType,
-          offer,
+          offer: { type: offer.type, sdp: offer.sdp },
+        })
+        socket.emit(selectedConversation?.type === 'group' ? 'group_call_started' : 'call_started', {
+          targetUserId,
+          conversationId: selectedConversationId,
+          callType,
         })
       }
     } catch (error) {
       console.error('Không thể bắt đầu cuộc gọi:', error)
+      setCallState('failed')
+      setCallStatus('Cuộc gọi thất bại')
       return
     }
 
-    setCallStatus(`Đang gọi ${callType === 'video' ? 'video' : 'thoại'} tới ${selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : 'người nhận'}`)
+    setCallState(selectedConversation?.type === 'group' ? 'ringing' : 'calling')
+    startRingtone('outgoing')
+    setCallStatus(selectedConversation?.type === 'group' ? 'Đang gọi nhóm...' : 'Đang gọi...')
     setCallAnswered(false)
     setRingingStartedAt(Date.now())
     setCallSeconds(0)
@@ -1646,72 +2547,99 @@ export default function MessagesPage() {
         ? getConversationDisplayName(selectedConversation, user?.id)
         : `Người dùng #${callTargetId}`,
       startedAt: Date.now(),
+      mode: selectedConversation?.type === 'group' ? 'group' : 'private',
+      avatarUrl: selectedConversation?.avatarUrl || selectedConversation?.members.find((member) => member.userId === directPeer?.id)?.avatarUrl || null,
+      conversationId: selectedConversationId,
+      targetUserIds: [...callTargets],
     })
+    setCallMinimized(false)
     setJoinedCallUserIds(initialParticipants)
     socket.emit('call:join', {
       conversationId: selectedConversationId,
     })
     
-    // Broadcast initial participant count for group calls
     if (callTargets.length > 1) {
       socket.emit('call:participants', {
         conversationId: selectedConversationId,
-        participantCount: 1 + callTargets.length, // Me + all targets (even if not answered yet)
+        participantCount: 1 + callTargets.length,
         participantIds: [...initialParticipants, ...callTargets],
       })
     }
   }
 
-  const handleAcceptIncomingCall = async () => {
+  const handleAcceptIncomingCall = async (callData?: IncomingCallState) => {
     const socket = getSocket()
-    if (!socket || !incomingCall) return
+    const call = callData || incomingCall
+    if (!socket || !call) return
 
-    const activeConversationId = incomingCall.conversationId || selectedConversationId
+    const activeConversationId = call.conversationId || selectedConversationId
     if (!activeConversationId) return
     const answeredAt = Date.now()
 
+    // Ensure local state is in sync
+    if (!incomingCall) setIncomingCall(call)
+
+    // Open the right conversation if not already
+    if (call.conversationId && selectedConversationId !== call.conversationId) {
+      routeOpenConversation(call.conversationId)
+    }
+
     try {
-      const pc = (await buildPeerConnection(incomingCall.fromUserId, incomingCall.callType)) || undefined
+      const pc = (await buildPeerConnection(call.fromUserId, call.callType, activeConversationId)) || undefined
       if (!pc) return
-      await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer))
+      await pc.setRemoteDescription(new RTCSessionDescription({
+        type: (call.offer.type as RTCSdpType) || 'offer',
+        sdp: call.offer.sdp,
+      }))
+      await flushPendingCandidates(call.fromUserId)
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
 
       socket.emit('call:answer', {
-        targetUserId: incomingCall.fromUserId,
+        targetUserId: call.fromUserId,
         conversationId: activeConversationId,
-        answer,
+        answer: { type: answer.type, sdp: answer.sdp },
         answeredAt,
       })
     } catch (error) {
       console.error('Không thể chấp nhận cuộc gọi:', error)
+      setCallState('failed')
+      setCallStatus('Cuộc gọi thất bại')
       return
     }
 
-    setCallStatus('Đã chấp nhận cuộc gọi')
+    const conv = conversations.find((c) => c.id === activeConversationId) || selectedConversation
+    stopRingtone()
+    setCallState('connected')
+    setCallStatus('Đã kết nối')
     setCallAnswered(true)
     setRingingStartedAt(null)
     setCallSeconds(0)
     setActiveCall({
-      type: incomingCall.callType,
-      withName: selectedConversation
-        ? getConversationDisplayName(selectedConversation, user?.id)
-        : `Người dùng #${incomingCall.fromUserId}`,
+      type: call.callType,
+      withName: call.conversationName || call.fromUserName ||
+        (conv ? getConversationDisplayName(conv, user?.id) : `Người dùng #${call.fromUserId}`),
       startedAt: answeredAt,
+      mode: conv?.type === 'group' ? 'group' : 'private',
+      avatarUrl: call.fromUserAvatar || conv?.avatarUrl || null,
+      conversationId: activeConversationId,
+      targetUserIds: [call.fromUserId],
     })
-    const newJoinedIds = user?.id ? [user.id, incomingCall.fromUserId] : [incomingCall.fromUserId]
+    setCallMinimized(false)
+    const newJoinedIds = user?.id ? [user.id, call.fromUserId] : [call.fromUserId]
     setJoinedCallUserIds(newJoinedIds)
     socket.emit('call:join', {
       conversationId: activeConversationId,
     })
-    
-    // Broadcast updated participant count
+    socket.emit(conv?.type === 'group' ? 'group_call_joined' : 'call_joined', {
+      conversationId: activeConversationId,
+      callType: call.callType,
+    })
     socket.emit('call:participants', {
       conversationId: activeConversationId,
       participantCount: newJoinedIds.length,
       participantIds: newJoinedIds,
     })
-    
     setIncomingCall(null)
     setGlobalIncomingCall(null)
   }
@@ -1737,28 +2665,33 @@ export default function MessagesPage() {
 
     setIncomingCall(null)
     setGlobalIncomingCall(null)
-    setCallStatus('Đã từ chối cuộc gọi')
+    stopRingtone()
+    setCallState('rejected')
+    addLocalCallHistory(selectedConversation?.type === 'group' ? 'Bạn đã bỏ lỡ cuộc gọi nhóm' : 'Cuộc gọi đã bị từ chối', activeConversationId || undefined)
+    setCallStatus('Đã từ chối')
   }
 
   const handleEndCall = () => {
     const socket = getSocket()
     if (!socket || !selectedConversationId) return
     
-    // Get current participant count before leaving
-    const remainingCount = Math.max(0, joinedCallUserIds.length - 1) // -1 because we're leaving
+    const endingCall = activeCall
+    const remainingCount = Math.max(0, joinedCallUserIds.length - 1)
     
     socket.emit('call:leave', {
       conversationId: selectedConversationId,
     })
     
-    // Notify other participants about the count update
     socket.emit('call:participants', {
       conversationId: selectedConversationId,
       participantCount: remainingCount,
       participantIds: joinedCallUserIds.filter(id => id !== user?.id),
     })
+    socket.emit(endingCall?.mode === 'group' ? 'group_call_left' : 'call_ended', {
+      conversationId: selectedConversationId,
+      callType: endingCall?.type,
+    })
     
-    // End call for each peer
     callTargets.forEach((targetUserId) => {
       socket.emit('call:end', {
         targetUserId,
@@ -1767,13 +2700,53 @@ export default function MessagesPage() {
     })
     
     closeCallResources()
-    setCallStatus('Bạn đã kết thúc cuộc gọi')
+    const historyText = endingCall?.mode === 'group'
+      ? `Cuộc gọi nhóm đã kết thúc • ${formattedCallTime}`
+      : callAnswered
+        ? `Cuộc gọi đã kết thúc • ${formattedCallTime}`
+        : 'Bạn đã hủy cuộc gọi'
+    addLocalCallHistory(historyText)
+    setCallState(callAnswered ? 'ended' : 'cancelled')
+    setCallStatus(callAnswered ? 'Cuộc gọi đã kết thúc' : 'Đã hủy cuộc gọi')
     setIncomingCall(null)
     setGlobalIncomingCall(null)
     setActiveCall(null)
     setCallSeconds(0)
     setCallAnswered(false)
     setRingingStartedAt(null)
+  }
+
+  const handleToggleMic = () => {
+    const nextMuted = !mutedMic
+    localStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = !nextMuted
+    })
+    setMutedMic(nextMuted)
+    const socket = getSocket()
+    if (socket && selectedConversationId) {
+      socket.emit(nextMuted ? 'participant_muted' : 'participant_updated', {
+        conversationId: selectedConversationId,
+        micMuted: nextMuted,
+      })
+    }
+  }
+
+  const handleToggleCamera = () => {
+    if (!cameraAvailable || activeCall?.type === 'voice') {
+      toast({ title: 'Không tìm thấy camera trên thiết bị này.', variant: 'destructive' })
+      return
+    }
+    const nextMuted = !mutedCam
+    localStreamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = !nextMuted
+    })
+    setMutedCam(nextMuted)
+    const socket = getSocket()
+    if (socket && selectedConversationId) {
+      socket.emit(nextMuted ? 'participant_camera_off' : 'participant_camera_on', {
+        conversationId: selectedConversationId,
+      })
+    }
   }
 
   useEffect(() => {
@@ -1793,9 +2766,19 @@ export default function MessagesPage() {
     : 'Chọn cuộc trò chuyện'
   const initials = (user?.fullName?.[0] || 'U').toUpperCase()
   const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
+  const incomingConversation = incomingCall?.conversationId
+    ? conversations.find((conversation) => conversation.id === incomingCall.conversationId) || selectedConversation
+    : selectedConversation
+  const incomingCaller = incomingConversation?.members.find((member) => member.userId === incomingCall?.fromUserId)
+  const incomingCallName = incomingConversation?.type === 'group'
+    ? getConversationDisplayName(incomingConversation, user?.id)
+    : incomingCaller?.fullName || `Người dùng #${incomingCall?.fromUserId || ''}`
+  const incomingCallAvatar = incomingConversation?.type === 'group'
+    ? incomingConversation.avatarUrl
+    : incomingCaller?.avatarUrl || null
 
   const callParticipantProfiles = useMemo(() => {
-    if (!activeCall) return [] as Array<{ userId: number; name: string; avatarUrl: string | null }>
+    if (!activeCall) return [] as CallParticipant[]
 
     const ids = new Set<number>()
     if (user?.id) ids.add(user.id)
@@ -1806,11 +2789,18 @@ export default function MessagesPage() {
       .filter((id) => id > 0)
       .map((id) => {
         const member = selectedConversation?.members.find((item) => item.userId === id)
+        const stream = remoteStreams.find((item) => item.userId === id)?.stream || (id === user?.id ? localStreamState : null)
         if (member) {
           return {
             userId: id,
             name: member.fullName,
             avatarUrl: member.avatarUrl,
+            role: member.role,
+            status: joinedCallUserIds.includes(id) ? 'joined' as const : 'ringing' as const,
+            micMuted: id === user?.id ? mutedMic : false,
+            cameraOff: activeCall.type === 'voice' || (id === user?.id ? mutedCam : false),
+            stream,
+            isLocal: id === user?.id,
           }
         }
         if (id === user?.id) {
@@ -1818,15 +2808,28 @@ export default function MessagesPage() {
             userId: id,
             name: user.fullName || 'Bạn',
             avatarUrl: user.avatarUrl || null,
+            role: 'Bạn',
+            status: 'joined' as const,
+            micMuted: mutedMic,
+            cameraOff: activeCall.type === 'voice' || mutedCam,
+            stream: localStreamState,
+            isLocal: true,
           }
         }
         return {
           userId: id,
           name: `Người dùng #${id}`,
           avatarUrl: null,
+          status: joinedCallUserIds.includes(id) ? 'joined' as const : 'ringing' as const,
+          micMuted: false,
+          cameraOff: activeCall.type === 'voice',
+          stream,
+          isLocal: false,
         }
       })
-  }, [activeCall, joinedCallUserIds, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
+  }, [activeCall, joinedCallUserIds, localStreamState, mutedCam, mutedMic, remoteStreams, selectedConversation, user?.avatarUrl, user?.fullName, user?.id])
+
+  useEffect(() => { setGlobalCallParticipants(callParticipantProfiles) }, [callParticipantProfiles]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderMessagePreview = (msg: ChatMessage) => {
     const renderRichMessageText = (text: string) => {
@@ -1870,6 +2873,37 @@ export default function MessagesPage() {
 
     if (recalled) {
       return <p className={styles.recalledText}>Tin nhắn đã được thu hồi</p>
+    }
+
+    const sharedPost = msg.meta?.sharedPost as
+      | {
+          id?: number | string
+          authorName?: string
+          authorAvatar?: string | null
+          content?: string
+          mediaUrl?: string | null
+          reactionCount?: number
+          commentCount?: number
+        }
+      | undefined
+
+    if (sharedPost) {
+      return (
+        <div className={styles.sharedPostMessage}>
+          {msg.text ? <p className={styles.messageText}>{msg.text}</p> : null}
+          <Link to={sharedPost.id ? `/posts/${sharedPost.id}` : '/feed'} className={styles.sharedPostCard}>
+            <div className={styles.sharedPostAuthor}>
+              {sharedPost.authorAvatar ? <img src={sharedPost.authorAvatar} alt={sharedPost.authorName || 'Tác giả'} /> : <span>{(sharedPost.authorName?.[0] || 'U').toUpperCase()}</span>}
+              <b>{sharedPost.authorName || 'Người dùng ZChat'}</b>
+            </div>
+            {sharedPost.content ? <p>{sharedPost.content}</p> : <p>Bài viết gốc không còn khả dụng</p>}
+            {sharedPost.mediaUrl ? <img src={sharedPost.mediaUrl} alt="Shared post" className={styles.sharedPostImage} loading="lazy" /> : null}
+            <small>
+              {Number(sharedPost.reactionCount || 0)} cảm xúc • {Number(sharedPost.commentCount || 0)} bình luận
+            </small>
+          </Link>
+        </div>
+      )
     }
 
     if (msg.type === 'image' && msg.mediaUrl) {
@@ -1950,15 +2984,27 @@ export default function MessagesPage() {
     }
 
     return (
-      <p className={styles.messageText}>
+      <div className={styles.messageText}>
         {forwarded ? <small className={styles.forwardTagInline}>[Đã chuyển tiếp] </small> : null}
         {msg.text ? renderRichMessageText(msg.text) : ''}
-      </p>
+        {translatedMessages[msg.id] && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+            <strong style={{ fontSize: '0.8em', color: 'var(--color-primary-dark)', display: 'block', marginBottom: 4 }}>
+              <Languages size={12} style={{ display: 'inline', marginBottom: -2 }} /> Bản dịch AI:
+            </strong>
+            <p>{translatedMessages[msg.id]}</p>
+          </div>
+        )}
+      </div>
     )
   }
+  const activeRailTab = showNotificationsDrawer ? 'notifications' as const
+    : showNewMessageModal ? 'newMessage' as const
+    : showCreateGroupModal ? 'createGroup' as const
+    : 'messages' as const
   return (
     <div className={styles.page}>
-      <div className={styles.layout}>
+      <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''} ${!showDetailsPanelDesktop ? styles.layoutNarrow : ''}`}>
         <MessagesSidebar
           initials={initials}
           userId={user?.id}
@@ -1967,6 +3013,8 @@ export default function MessagesPage() {
           notifications={notifications}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
+          isLoadingConversations={isLoadingConversations}
+          activeRailTab={activeRailTab}
           onOpenConversation={handleOpenConversation}
           onShowNotifications={() => setShowNotificationsDrawer(true)}
           onShowNewMessage={() => setShowNewMessageModal(true)}
@@ -1978,11 +3026,35 @@ export default function MessagesPage() {
           }}
         />
 
-        <section className={styles.chatPanel}>
+        {chatPanelThemeStyle ? <style>{chatPanelThemeStyle}</style> : null}
+        <section
+          className={[
+            styles.chatPanel,
+            chatPanelThemeClass,
+            selectedConversationUiPrefs.largeText ? styles.chatPanelLargeText : '',
+            selectedConversationUiPrefs.roundBubbles ? '' : styles.chatPanelSquareBubbles,
+          ].filter(Boolean).join(' ')}
+        >
           <header className={styles.chatHeader}>
+            <button type="button" className={styles.backToListBtn} onClick={() => setMobileShowList(true)} aria-label="Quay lại danh sách">
+              <ArrowLeft size={18} />
+            </button>
             <div className={styles.chatIdentity}>
-              <div className={styles.chatHeaderAvatar}>{(selectedName[0] || 'C').toUpperCase()}</div>
-              <div>
+              <div className={styles.chatHeaderAvatar}>
+                {selectedConversation?.avatarUrl || directPeer?.avatarUrl ? (
+                  <img
+                    src={selectedConversation?.avatarUrl || directPeer?.avatarUrl || ''}
+                    alt={selectedName}
+                    loading="lazy"
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none'
+                    }}
+                  />
+                ) : null}
+                <span>{(selectedName[0] || 'C').toUpperCase()}</span>
+                {directPeer ? <i className={directPeer.online ? styles.presenceDotOnline : styles.presenceDotOffline} /> : null}
+              </div>
+              <div className={styles.chatIdentityText}>
                 <h2>
                   {directPeer ? <Link to={`/profile/${directPeer.id}`}>{selectedName}</Link> : selectedName}
                 </h2>
@@ -1996,19 +3068,47 @@ export default function MessagesPage() {
               </div>
             </div>
             <div className={styles.chatActions}>
+              <button
+                type="button"
+                className={chatSummary ? styles.chatActionActive : undefined}
+                onClick={handleSummarizeChat}
+                disabled={isSummarizing || !selectedConversationId}
+                data-tooltip="Summarize chat"
+                data-tooltip-description="Create an AI summary"
+                title="Tóm tắt đoạn chat (AI)"
+                aria-label="Tóm tắt"
+              >
+                <Wand2 size={18} />
+              </button>
+              <button
+                type="button"
+                className={sentimentResult ? styles.chatActionActive : undefined}
+                onClick={handleAnalyzeSentiment}
+                disabled={isAnalyzingSentiment || !selectedConversationId}
+                data-tooltip="Analyze sentiment"
+                data-tooltip-description="Review conversation tone"
+                title="Phân tích cảm xúc (AI)"
+                aria-label="Phân tích cảm xúc"
+              >
+                <BrainCircuit size={18} />
+              </button>
               <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
-                <Video size={16} />
+                <Video size={18} />
               </button>
               <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gọi thoại" aria-label="Gọi thoại">
-                <Phone size={16} />
+                <Phone size={18} />
+              </button>
+              <button type="button" onClick={() => setCallSettingsOpen(true)} title="Cài đặt cuộc gọi" aria-label="Cài đặt cuộc gọi">
+                <Info size={16} />
               </button>
               <button
                 type="button"
                 className={showMessageFilters || messageSearchKeyword ? styles.chatActionActive : undefined}
                 title="Tìm tin nhắn"
                 aria-label="Tìm tin nhắn"
-                aria-expanded={showMessageFilters}
                 disabled={!selectedConversation}
+                data-tooltip="Search"
+                data-tooltip-description="Find messages in this conversation"
                 onClick={() => setShowMessageFilters((value) => !value)}
               >
                 <Search size={16} />
@@ -2018,6 +3118,8 @@ export default function MessagesPage() {
                 title="Thêm người vào cuộc trò chuyện"
                 aria-label="Thêm người vào cuộc trò chuyện"
                 disabled={!selectedGroup || !canAddMembers}
+                data-tooltip="Add Friend"
+                data-tooltip-description="Add people to this conversation"
                 onClick={() => {
                   setRightPanelSection('manage')
                   setShowSettingsDrawer(true)
@@ -2029,10 +3131,17 @@ export default function MessagesPage() {
                 type="button"
                 title="Xem chi tiết cuộc trò chuyện"
                 aria-label="Xem chi tiết cuộc trò chuyện"
+                className={showDetailsPanelDesktop ? styles.chatActionActive : undefined}
                 disabled={!selectedConversation}
+                data-tooltip="Conversation Info"
+                data-tooltip-description="Open custom chat features"
                 onClick={() => {
-                  setRightPanelSection('overview')
-                  setShowSettingsDrawer(true)
+                  if (window.innerWidth > 1180) {
+                    setShowDetailsPanelDesktop(v => !v)
+                  } else {
+                    setRightPanelSection('overview')
+                    setShowSettingsDrawer(true)
+                  }
                 }}
               >
                 <Info size={16} />
@@ -2074,6 +3183,81 @@ export default function MessagesPage() {
               Còn {messageLimitByConversation[selectedConversationId]?.remaining ?? 0}/{messageLimitByConversation[selectedConversationId]?.total ?? 3} tin nhắn miễn phí trước khi cần kết bạn.
             </div>
           ) : null}
+
+          {chatSummary && (
+            <div className={`${styles.aiCard} ${chatSummaryCollapsed ? styles.aiCardCollapsed : ''}`}>
+              <div className={styles.aiCardHead}>
+                <span className={styles.aiCardTitle}>
+                  <Sparkles size={12} /> Tóm tắt AI
+                </span>
+                <div className={styles.aiCardControls}>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title={chatSummaryCollapsed ? 'Mở rộng' : 'Thu gọn'}
+                    onClick={() => setChatSummaryCollapsed(c => !c)}
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title="Đóng"
+                    onClick={() => { setChatSummary(null); setChatSummaryCollapsed(false) }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+              <div className={styles.aiCardBody}>{chatSummary}</div>
+            </div>
+          )}
+
+          {sentimentResult && (
+            <div
+              className={`${styles.aiCard} ${sentimentCollapsed ? styles.aiCardCollapsed : ''}`}
+              data-sentiment={sentimentResult.sentiment}
+            >
+              <div className={styles.aiCardHead}>
+                <span className={styles.aiCardTitle}>
+                  <BrainCircuit size={12} />
+                  {sentimentResult.sentiment === 'positive' ? '✨ Tích cực' : sentimentResult.sentiment === 'negative' ? '🌧️ Tiêu cực' : '⚖️ Trung lập'}
+                  <span className={styles.aiCardScore}>{Math.round(sentimentResult.score * 100)}%</span>
+                </span>
+                <div className={styles.aiCardControls}>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title={sentimentCollapsed ? 'Mở rộng' : 'Thu gọn'}
+                    onClick={() => setSentimentCollapsed(c => !c)}
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.aiCardBtn}
+                    title="Đóng"
+                    onClick={() => { setSentimentResult(null); setSentimentCollapsed(false) }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+              <div className={styles.aiCardBody}>
+                <div className={styles.aiScoreBar}>
+                  <div className={styles.aiScoreBarFill} style={{ width: `${sentimentResult.score * 100}%` }} />
+                </div>
+                {sentimentResult.emotions && sentimentResult.emotions.length > 0 && (
+                  <div className={styles.aiEmotionTags}>
+                    {sentimentResult.emotions.map((emo, idx) => (
+                      <span key={idx} className={styles.aiEmotionTag}>{emo}</span>
+                    ))}
+                  </div>
+                )}
+                <p className={styles.aiDetail}>"{sentimentResult.detail}"</p>
+              </div>
+            </div>
+          )}
 
           {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
             <div className={styles.pinnedBanner}>
@@ -2123,7 +3307,7 @@ export default function MessagesPage() {
               {callStatus ? <p>{callStatus}</p> : null}
               {incomingCall ? (
                 <div className={styles.callBannerActions}>
-                  <button type="button" onClick={handleAcceptIncomingCall} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
+                  <button type="button" onClick={() => void handleAcceptIncomingCall()} title="Chấp nhận cuộc gọi" aria-label="Chấp nhận cuộc gọi">
                     Chấp nhận
                   </button>
                   <button type="button" onClick={handleDeclineIncomingCall} title="Từ chối cuộc gọi" aria-label="Từ chối cuộc gọi">
@@ -2138,51 +3322,87 @@ export default function MessagesPage() {
             </div>
           )}
 
-          <MessageThread
-            userId={user?.id}
-            selectedConversation={selectedConversation}
-            virtualSlice={virtualSlice}
-            messagesWrapRef={messagesWrapRef}
-            loadingOlderMessages={loadingOlderMessages || loadingMessages}
-            typingUserIds={typingUserIds}
-            busyActionId={busyActionId}
-            pinnedMessageIds={pinnedMessageIds}
-            reactionPickerMessageId={reactionPickerMessageId}
-            setReactionPickerMessageId={setReactionPickerMessageId}
-            openMessageActions={openMessageActions}
-            handleReaction={handleReaction}
-            renderMessagePreview={renderMessagePreview}
-            getMessageReadLabel={getMessageReadLabel}
-            onLoadOlderMessages={loadOlderMessages}
-            onScroll={(event) => {
-              const element = event.currentTarget
-              const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
-              setShowJumpToLatest(fromBottom > 260)
-            }}
-          />
+          {!selectedConversationId ? (
+            <div className={styles.noConversationPlaceholder}>
+              <Send size={36} />
+              <p>Chọn một cuộc trò chuyện để bắt đầu nhắn tin</p>
+            </div>
+          ) : (
+            <MessageThread
+              userId={user?.id}
+              selectedConversation={selectedConversation}
+              virtualSlice={virtualSlice}
+              messagesWrapRef={messagesWrapRef}
+              loadingOlderMessages={loadingOlderMessages || loadingMessages}
+              typingUserIds={typingUserIds}
+              busyActionId={busyActionId}
+              pinnedMessageIds={pinnedMessageIds}
+              reactionPickerMessageId={reactionPickerMessageId}
+              setReactionPickerMessageId={setReactionPickerMessageId}
+              openMessageActions={openMessageActions}
+              handleReaction={handleReaction}
+              renderMessagePreview={renderMessagePreview}
+              getMessageReadLabel={getMessageReadLabel}
+              onLoadOlderMessages={loadOlderMessages}
+              onScroll={(event) => {
+                const element = event.currentTarget
+                const fromBottom = element.scrollHeight - (element.scrollTop + element.clientHeight)
+                setShowJumpToLatest(fromBottom > 260)
+              }}
+            />
+          )}
 
-          <MessageComposer
-            message={message}
-            setMessage={setMessage}
-            handleSend={handleSend}
-            handleFileSelected={handleFileSelected}
-            handlePickAttachment={handlePickAttachment}
-            handlePickAttachmentType={handlePickAttachmentType}
-            busyUploading={busyUploading}
-            isSendingMessage={isSendingMessage}
-            composerMenuOpen={composerMenuOpen}
-            setComposerMenuOpen={setComposerMenuOpen}
-            showEmojiPanel={showEmojiPanel}
-            setShowEmojiPanel={setShowEmojiPanel}
-            showStickerPanel={showStickerPanel}
-            setShowStickerPanel={setShowStickerPanel}
-            onSendSticker={handleSendSticker}
-            attachmentDraft={attachmentDraft}
-            onRemoveAttachment={clearAttachmentDraft}
-            fileInputRef={fileInputRef as any}
-            imageInputRef={imageInputRef as any}
-            videoInputRef={videoInputRef as any}
-          />
+          {replySuggestions.length > 0 && (
+            <div className={styles.aiSuggestBar}>
+              <span className={styles.aiSuggestLabel}><Sparkles size={12} /> Gợi ý:</span>
+              <div className={styles.aiSuggestList}>
+                {replySuggestions.map((suggestion, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={styles.aiSuggestBtn}
+                    onClick={() => { setMessage(suggestion); setReplySuggestions([]) }}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={styles.aiCardBtn}
+                title="Đóng gợi ý"
+                onClick={() => setReplySuggestions([])}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
+          {selectedConversationId ? (
+            <MessageComposer
+              message={message}
+              setMessage={setMessage}
+              handleSend={handleSend}
+              handleFileSelected={handleFileSelected}
+              handlePickAttachment={handlePickAttachment}
+              handlePickAttachmentType={handlePickAttachmentType}
+              busyUploading={busyUploading}
+              isSendingMessage={isSendingMessage}
+              composerMenuOpen={composerMenuOpen}
+              setComposerMenuOpen={setComposerMenuOpen}
+              showEmojiPanel={showEmojiPanel}
+              setShowEmojiPanel={setShowEmojiPanel}
+              showStickerPanel={showStickerPanel}
+              setShowStickerPanel={setShowStickerPanel}
+              onSendSticker={handleSendSticker}
+              attachmentDraft={attachmentDraft}
+              onRemoveAttachment={clearAttachmentDraft}
+              fileInputRef={fileInputRef}
+              imageInputRef={imageInputRef}
+              videoInputRef={videoInputRef}
+              onSuggestReplies={handleSuggestReplies}
+              isSuggesting={isSuggesting}
+            />
+          ) : null}
 
           {showJumpToLatest ? (
             <button
@@ -2198,49 +3418,315 @@ export default function MessagesPage() {
             </button>
           ) : null}
 
-          <MessagesOverlays
-            userId={user?.id}
-            conversations={conversations}
-            selectedConversationId={selectedConversationId}
-            actionMenu={actionMenu}
-            activeActionMessage={activeActionMessage}
-            pinnedMessageIds={pinnedMessageIds}
-            forwardingMessageId={forwardingMessageId}
-            showNewMessageModal={showNewMessageModal}
-            newMessageKeyword={newMessageKeyword}
-            searchUsersResult={searchUsersResult}
-            showNotificationsDrawer={showNotificationsDrawer}
-            notifications={notifications}
-            showCreateGroupModal={showCreateGroupModal}
-            groupName={groupName}
-            groupSearchKeyword={groupSearchKeyword}
-            filteredCreateGroupInviteCandidates={filteredCreateGroupInviteCandidates}
-            groupMemberIds={groupMemberIds}
-            busyActionId={busyActionId}
-            creatingGroup={creatingGroup}
-            acceptedFriendsCount={acceptedFriends.length}
-            setForwardingMessageId={setForwardingMessageId}
-            setActionMenu={setActionMenu}
-            setShowNewMessageModal={setShowNewMessageModal}
-            setNewMessageKeyword={setNewMessageKeyword}
-            handleCreateConversationWithUser={handleCreateConversationWithUser}
-            setShowNotificationsDrawer={setShowNotificationsDrawer}
-            handleOpenNotificationConversation={handleOpenNotificationConversation}
-            handleAcceptFromNotification={handleAcceptFromNotification}
-            setShowCreateGroupModal={setShowCreateGroupModal}
-            handleCreateGroupConversation={handleCreateGroupConversation}
-            setGroupName={setGroupName}
-            setGroupSearchKeyword={setGroupSearchKeyword}
-            toggleGroupMember={toggleGroupMember}
-            handleTogglePinMessage={handleTogglePinMessage}
-            handleRecall={handleRecall}
-            handleDeleteMessage={handleDeleteMessage}
-            handleForward={handleForward}
-          />
+          {showNewMessageModal ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Tin nhắn mới</h3>
+                <input
+                  value={newMessageKeyword}
+                  onChange={(event) => setNewMessageKeyword(event.target.value)}
+                  placeholder="Nhập tên bạn bè hoặc email đăng ký"
+                />
+                <div className={styles.overlayList}>
+                  {searchUsersResult.map((item) => (
+                    <button key={item.id} type="button" onClick={() => handleCreateConversationWithUser(item.id)} title={`Tạo hội thoại với ${item.name}`} aria-label={`Tạo hội thoại với ${item.name}`}>
+                      <span className={styles.listEntryIdentity}>
+                        <span className={styles.listEntryAvatar}>{getAvatarInitial(item.name)}</span>
+                        <span className={styles.listEntryMeta}>
+                          <strong className={styles.listEntryTitle}>{item.name}</strong>
+                          <small className={styles.listEntrySubtitle}>ID {item.id}</small>
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                  {searchUsersResult.length === 0 ? <p>Không có kết quả phù hợp.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNewMessageModal(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showNotificationsDrawer ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Thông báo nâng cao</h3>
+                <div className={styles.overlayList}>
+                  {notifications.map((item) => {
+                    const meta = parseNotificationMeta(item)
+                    const conversationId = meta?.conversationId
+                    const canAccept = item.type === 'friend-request' && !item.is_read && Boolean(meta?.requesterId || meta?.friendshipId)
+                    return (
+                      <div key={item.id} className={styles.notifyCard}>
+                        <button
+                          type="button"
+                          className={styles.notifyMainBtn}
+                          onClick={() => handleOpenNotificationConversation(conversationId)}
+                        >
+                          <span className={styles.listEntryIdentity}>
+                            <span className={styles.listEntryAvatar}>{getAvatarInitial(item.title)}</span>
+                            <span className={styles.listEntryMeta}>
+                              <strong className={styles.listEntryTitle}>{item.title}</strong>
+                              <span className={styles.listEntrySubtitle}>{item.body || 'Thông báo hệ thống'}</span>
+                              <small className={styles.listEntrySubtitle}>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                            </span>
+                          </span>
+                        </button>
+                        <div className={styles.notifyActions}>
+                          {conversationId ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenNotificationConversation(conversationId)}
+                            >
+                              Mở đoạn chat
+                            </button>
+                          ) : null}
+                          {canAccept ? (
+                            <button
+                              type="button"
+                              className={styles.notifyAcceptBtn}
+                              disabled={busyActionId === `notif-${item.id}`}
+                              onClick={() => {
+                                void handleAcceptFromNotification(item)
+                              }}
+                            >
+                              {busyActionId === `notif-${item.id}` ? 'Đang đồng ý...' : 'Đồng ý'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {forwardingMessageId ? (
+            <div className={styles.forwardDialogBackdrop}>
+              <div className={styles.forwardDialog}>
+                <h3>Chuyển tiếp tin nhắn</h3>
+                <p>Chọn cuộc trò chuyện để chuyển tiếp:</p>
+                <div className={styles.forwardList}>
+                  {conversations
+                    .filter((conv) => conv.id !== selectedConversationId)
+                    .map((conv) => (
+                      <button key={conv.id} type="button" onClick={() => handleForward(conv.id)} title={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`} aria-label={`Chuyển tiếp đến ${getConversationDisplayName(conv, user?.id)}`}>
+                        <span className={styles.listEntryIdentity}>
+                          <span className={styles.listEntryAvatar}>{getAvatarInitial(getConversationDisplayName(conv, user?.id))}</span>
+                          <span className={styles.listEntryMeta}>
+                            <strong className={styles.listEntryTitle}>{getConversationDisplayName(conv, user?.id)}</strong>
+                            <small className={styles.listEntrySubtitle}>ID {conv.id}</small>
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                </div>
+                <button type="button" className={styles.forwardCancel} onClick={() => setForwardingMessageId(null)} title="Hủy chuyển tiếp" aria-label="Hủy chuyển tiếp">
+                  Hủy
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showCreateGroupModal ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Tạo nhóm chat</h3>
+                <input
+                  value={groupName}
+                  onChange={(event) => setGroupName(event.target.value)}
+                  placeholder="Nhập tên nhóm"
+                />
+                <input
+                  value={groupSearchKeyword}
+                  onChange={(event) => setGroupSearchKeyword(event.target.value)}
+                  placeholder="Tìm bạn bè để thêm vào nhóm"
+                />
+                <div className={styles.overlayList}>
+                  {filteredCreateGroupInviteCandidates.map((friend) => {
+                    const checked = groupMemberIds.includes(friend.id)
+                    return (
+                      <button key={friend.id} type="button" onClick={() => toggleGroupMember(friend.id)} title={`Chọn ${friend.fullName}`} aria-label={`Chọn ${friend.fullName}`}>
+                        <span className={styles.listEntryIdentity}>
+                          <span className={styles.listEntryAvatar}>{getAvatarInitial(friend.fullName)}</span>
+                          <span className={styles.listEntryMeta}>
+                            <strong className={styles.listEntryTitle}>{checked ? '✓ ' : ''}{friend.fullName}</strong>
+                            <span className={styles.listEntrySubtitle}>{friend.email || friend.phone || `ID ${friend.id}`}</span>
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                  {acceptedFriends.length === 0 ? <p>Bạn chưa có bạn bè để tạo nhóm.</p> : null}
+                  {acceptedFriends.length > 0 && filteredCreateGroupInviteCandidates.length === 0 ? <p>Không tìm thấy bạn bè phù hợp.</p> : null}
+                </div>
+                <button
+                  type="button"
+                  className={styles.overlayCloseBtn}
+                  disabled={!groupName.trim() || groupMemberIds.length === 0 || creatingGroup}
+                  onClick={handleCreateGroupConversation}
+                >
+                  {creatingGroup ? 'Đang tạo nhóm...' : 'Tạo nhóm'}
+                </button>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCreateGroupModal(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeCall ? (
+            <div className={styles.callOverlay}>
+              <div className={styles.callBackdropGlow} />
+              <div className={styles.callTopBar}>
+                <div>
+                  <small>Call in progress</small>
+                  <h3>{activeCall.withName}</h3>
+                  <p className={styles.callParticipantCount}>
+                    {callParticipantProfiles.length} người đang tham gia
+                  </p>
+                </div>
+                <div className={styles.callBadge}>{callAnswered ? formattedCallTime : 'Đổ chuông...'}</div>
+              </div>
+              {callParticipantProfiles.length > 0 ? (
+                <div className={styles.callParticipantList}>
+                  {callParticipantProfiles.map((member) => (
+                    <div key={member.userId} className={styles.callParticipantItem}>
+                      {member.avatarUrl ? (
+                        <img src={member.avatarUrl} alt={member.name} />
+                      ) : (
+                        <span>{(member.name[0] || 'U').toUpperCase()}</span>
+                      )}
+                      <strong>{member.name}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className={styles.callMainVideo}>
+                {remoteStreams.length > 0 ? (
+                  <div className={styles.remoteGrid}>
+                    {remoteStreams.map((item) => (
+                      <div key={item.userId} className={styles.remoteVideoCard}>
+                        <video
+                          autoPlay
+                          playsInline
+                          ref={(node) => {
+                            if (!node) return
+                            node.srcObject = item.stream
+                          }}
+                        />
+                        <span className={styles.remoteVideoLabel}>
+                          {callParticipantProfiles.find((member) => member.userId === item.userId)?.name || `Người dùng #${item.userId}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.callAvatarBig}>{(activeCall.withName[0] || 'U').toUpperCase()}</div>
+                )}
+              </div>
+              <div className={styles.callMiniVideo}>
+                <video ref={localVideoRef} autoPlay muted playsInline className={styles.localVideo} />
+                <span>Bạn</span>
+              </div>
+              <div className={styles.callControls}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const stream = localStreamRef.current
+                    if (!stream) return
+                    const next = !mutedMic
+                    stream.getAudioTracks().forEach((track) => {
+                      track.enabled = !next
+                    })
+                    setMutedMic(next)
+                  }}
+                  title="Bật tắt micro"
+                  aria-label="Bật tắt micro"
+                >
+                  <Phone size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const stream = localStreamRef.current
+                    if (!stream) return
+                    const next = !mutedCam
+                    stream.getVideoTracks().forEach((track) => {
+                      track.enabled = !next
+                    })
+                    setMutedCam(next)
+                  }}
+                  title="Bật tắt camera"
+                  aria-label="Bật tắt camera"
+                >
+                  <Video size={16} />
+                </button>
+                <button type="button" title="Mời người khác" aria-label="Mời người khác">
+                  <UserPlus size={16} />
+                </button>
+                <button type="button" className={styles.endCallOverlayBtn} onClick={handleEndCall} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+                  <PhoneOff size={16} />
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {actionMenu && activeActionMessage ? (
+            <div ref={actionMenuRef} className={styles.actionMenu}>
+              <div className={styles.actionMenuHeader}>
+                <span className={styles.listEntryAvatar}>{getAvatarInitial(getSenderName(activeActionMessage.senderId, activeActionMessage))}</span>
+                <div className={styles.actionMenuMeta}>
+                  <strong>{getSenderName(activeActionMessage.senderId, activeActionMessage)}</strong>
+                  <small>{formatVietnamTime(activeActionMessage.createdAt)}</small>
+                </div>
+              </div>
+              {(() => {
+                const isActionMsgRecalled = !!(activeActionMessage.isDeleted || (activeActionMessage.meta as Record<string, unknown>)?.recalled)
+                return (
+                  <>
+                    {!isActionMsgRecalled ? (
+                      <>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'like'); setActionMenu(null) }} title="Thích" aria-label="Thích">Thích</button>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'love'); setActionMenu(null) }} title="Yêu thích" aria-label="Yêu thích">Yêu thích</button>
+                        <button type="button" onClick={() => { handleReaction(activeActionMessage, 'care'); setActionMenu(null) }} title="Quan tâm" aria-label="Quan tâm">Quan tâm</button>
+                        <button type="button" onClick={() => { setForwardingMessageId(activeActionMessage.id); setActionMenu(null) }}>Chuyển tiếp</button>
+                        <button type="button" onClick={() => { void handleTogglePinMessage(activeActionMessage); setActionMenu(null) }}>
+                          {pinnedMessageIds.has(activeActionMessage.id) ? 'Bỏ ghim' : 'Ghim'}
+                        </button>
+                      </>
+                    ) : null}
+                    {activeActionMessage.text && !translatedMessages[activeActionMessage.id] && !isActionMsgRecalled ? (
+                      <button
+                        type="button"
+                        onClick={() => { handleTranslateMessage(activeActionMessage.id, activeActionMessage.text!); setActionMenu(null) }}
+                        disabled={translatingIds[activeActionMessage.id]}
+                      >
+                        <Languages size={14} style={{ display: 'inline', marginRight: 4, marginBottom: -2 }} />
+                        {translatingIds[activeActionMessage.id] ? 'Đang dịch...' : 'Dịch (AI)'}
+                      </button>
+                    ) : null}
+                    {activeActionMessage.senderId === user?.id ? (
+                      <button type="button" onClick={() => { handleRecall(activeActionMessage); setActionMenu(null) }}>Thu hồi</button>
+                    ) : null}
+                    {activeActionMessage.senderId === user?.id ? (
+                      <button type="button" onClick={() => { handleDeleteMessage(activeActionMessage); setActionMenu(null) }}>Xóa</button>
+                    ) : null}
+                  </>
+                )
+              })()}
+            </div>
+          ) : null}
         </section>
 
         {showSettingsDrawer ? <button type="button" className={styles.settingsBackdrop} aria-label="Đóng cài đặt hội thoại" onClick={() => setShowSettingsDrawer(false)} /> : null}
-        <aside className={`${styles.detailsPanel} ${showSettingsDrawer ? styles.detailsPanelOpen : ''}`}>
+        <aside className={`${styles.detailsPanel}${showSettingsDrawer ? ` ${styles.detailsPanelOpen}` : ''}${!showDetailsPanelDesktop ? ` ${styles.detailsPanelHidden}` : ''}`}>
           <div className={styles.detailsBody}>
           <ConversationDetailsPanel
             selectedConversation={selectedConversation}
@@ -2269,15 +3755,190 @@ export default function MessagesPage() {
             handleDissolveGroup={handleDissolveGroup}
             handleToggleConversationPin={handleToggleConversationPin}
             handleToggleConversationMute={handleToggleConversationMute}
+            handleUpdateConversationPreferences={handleUpdateConversationPreferences}
+            largeText={selectedConversationUiPrefs.largeText}
+            roundBubbles={selectedConversationUiPrefs.roundBubbles}
+            onLargeTextChange={handleSetLargeText}
+            onRoundBubblesChange={handleSetRoundBubbles}
             handleUpdateNickname={handleUpdateNickname}
             handleUpdateGroupProfile={handleUpdateGroupProfile}
             handleBlockPeer={handleBlockPeer}
+            handleUnblockPeer={handleUnblockPeer}
+            handleOpenHideConversation={handleOpenHideConversation}
+            handleOpenLockConversation={handleOpenLockConversation}
+            handleOpenAutoDeleteSettings={() => setAutoDeleteDialogOpen(true)}
+            handleOpenReportConversation={handleOpenReportConversation}
+            isDirectPeerBlocked={isDirectPeerBlocked}
+            pinnedMessages={pinnedMessages}
             sharedContent={sharedContent}
             loadingSharedContent={loadingSharedContent}
-            onClose={() => setShowSettingsDrawer(false)}
+            onClose={() => {
+              setShowSettingsDrawer(false)
+              setShowDetailsPanelDesktop(false)
+            }}
           />
           </div>
         </aside>
+        {incomingCall ? (
+          <IncomingCallModal
+            name={incomingCallName}
+            avatarUrl={incomingCallAvatar}
+            callType={incomingCall.callType}
+            mode={incomingConversation?.type === 'group' ? 'group' : 'private'}
+            callerName={incomingConversation?.type === 'group' ? incomingCaller?.fullName : undefined}
+            onAccept={handleAcceptIncomingCall}
+            onDecline={handleDeclineIncomingCall}
+          />
+        ) : null}
+        {/* OutgoingCallModal and ActiveCallWindow are rendered in AppLayout to persist across navigation */}
+        {activeCall && callMinimized ? (
+          <MinimizedCallPill
+            name={activeCall.withName}
+            avatarUrl={activeCall.avatarUrl}
+            duration={formattedCallTime}
+            participantCount={activeCall.mode === 'group' ? callParticipantProfiles.filter((item) => item.status === 'joined').length : undefined}
+            onOpen={() => setCallMinimized(false)}
+            onEnd={handleEndCall}
+          />
+        ) : null}
+        <AppDialog
+          open={callSettingsOpen}
+          onOpenChange={setCallSettingsOpen}
+          title="Cài đặt cuộc gọi"
+          description="Tùy chỉnh âm thanh, thông báo và quyền tham gia cuộc gọi trên thiết bị này."
+        >
+          <CallSettingsPanel settings={callSettings} onChange={setCallSettings} />
+        </AppDialog>
+        {pendingLockedConversationId ? (
+          <div className={styles.lockGateOverlay} role="dialog" aria-modal="true" aria-labelledby="unlock-conversation-title">
+            <form
+              className={styles.lockGateCard}
+              onSubmit={(event) => {
+                event.preventDefault()
+                void handleSubmitPendingUnlock()
+              }}
+            >
+              <h3 id="unlock-conversation-title">Mở khóa hội thoại</h3>
+              <p>
+                Hội thoại này đang bị khóa trên thiết bị của bạn. Mở khóa để tiếp tục xem nội dung và nhận tin nhắn.
+              </p>
+              <label className={styles.lockGateField}>
+                <span>Mật khẩu khóa</span>
+                <input
+                  type="password"
+                  value={pendingUnlockPassword}
+                  onChange={(event) => {
+                    setPendingUnlockPassword(event.target.value)
+                    setPendingUnlockError(null)
+                  }}
+                  autoFocus
+                  placeholder="Nhập mật khẩu"
+                />
+              </label>
+              {pendingUnlockError ? <small className={styles.lockGateError}>{pendingUnlockError}</small> : null}
+              <div className={styles.lockGateActions}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingLockedConversationId(null)
+                    setPendingUnlockPassword('')
+                    setPendingUnlockError(null)
+                  }}
+                >
+                  Đóng
+                </button>
+                <button type="submit">
+                  Mở khóa
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
+        <ConfirmDialog
+          open={Boolean(confirmModal)}
+          onOpenChange={(open) => {
+            if (!open) setConfirmModal(null)
+          }}
+          title={confirmModal?.title || ''}
+          description={confirmModal?.description || ''}
+          confirmLabel={confirmModal?.confirmLabel || 'Xác nhận'}
+          destructive={confirmModal?.destructive ?? true}
+          icon={confirmModal?.icon || 'warning'}
+          onConfirm={async () => {
+            await confirmModal?.onConfirm()
+          }}
+        />
+        <InputDialog
+          open={Boolean(nicknameDialog)}
+          onOpenChange={(open) => {
+            if (!open) setNicknameDialog(null)
+          }}
+          title="Đổi biệt danh"
+          description="Biệt danh chỉ hiển thị trong hội thoại này."
+          label="Biệt danh"
+          placeholder="Nhập biệt danh..."
+          hint="Để trống để xóa biệt danh"
+          initialValue={nicknameDialog?.currentValue || ''}
+          maxLength={30}
+          identity={nicknameDialog ? { name: nicknameDialog.name, avatarUrl: nicknameDialog.avatarUrl } : undefined}
+          submitLabel="Lưu"
+          onSubmit={handleSubmitNickname}
+        />
+        <InputDialog
+          open={groupNameDialogOpen}
+          onOpenChange={setGroupNameDialogOpen}
+          title="Đổi tên nhóm"
+          description="Tên nhóm giúp mọi người nhận ra cuộc trò chuyện nhanh hơn."
+          label="Tên nhóm"
+          placeholder="Nhập tên nhóm..."
+          initialValue={selectedGroup?.name || ''}
+          maxLength={50}
+          required
+          identity={selectedGroup ? { name: selectedGroup.name || 'Nhóm chat', avatarUrl: selectedGroup.avatarUrl } : undefined}
+          submitLabel="Lưu"
+          validate={(value) => (!value.trim() ? 'Tên nhóm không được để trống.' : null)}
+          onSubmit={(nextName) => handleUpdateGroupProfile({ name: nextName })}
+        />
+        <InputDialog
+          open={lockDialogOpen}
+          onOpenChange={setLockDialogOpen}
+          title="Khóa hội thoại"
+          description="Bạn cần xác thực để mở lại hội thoại này."
+          label="Mã PIN"
+          placeholder="Nhập mã PIN..."
+          hint="Mã PIN tạm thời sẽ được dùng làm mật khẩu khóa hội thoại."
+          maxLength={12}
+          required
+          submitLabel="Khóa"
+          validate={(value) => (!value.trim() ? 'Vui lòng nhập mã PIN.' : null)}
+          onSubmit={handleSubmitLockConversation}
+        />
+        <UploadImageDialog
+          open={groupAvatarDialogOpen}
+          onOpenChange={setGroupAvatarDialogOpen}
+          title="Cập nhật ảnh nhóm"
+          description="Chọn ảnh đại diện mới cho nhóm. Ảnh cần nhỏ hơn 5MB."
+          onSubmit={handleSubmitGroupAvatar}
+        />
+        <ReportDialog
+          open={Boolean(reportDialog)}
+          onOpenChange={(open) => {
+            if (!open) setReportDialog(null)
+          }}
+          title={reportDialog?.title || 'Báo cáo'}
+          onSubmit={handleSubmitReport}
+        />
+        <NotificationMuteDialog
+          open={muteDialogOpen}
+          onOpenChange={setMuteDialogOpen}
+          onSubmit={handleApplyConversationMute}
+        />
+        <AutoDeleteMessageDialog
+          open={autoDeleteDialogOpen}
+          onOpenChange={setAutoDeleteDialogOpen}
+          value={selectedConversation?.autoDeleteAfterSeconds ?? null}
+          onSubmit={handleSubmitAutoDelete}
+        />
       </div>
     </div>
   )

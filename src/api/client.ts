@@ -29,7 +29,8 @@ const resolveApiAssetUrl = (value: string | null | undefined) => {
 
     try {
       const origin =
-        typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost'
+        typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''
+      if (!origin) return value
       const base = new URL(API_BASE, origin)
       return new URL(value, `${base.origin}/`).toString()
     } catch {
@@ -45,6 +46,7 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
   id: String(conversation.id),
   pinnedMessageIds: (conversation.pinnedMessageIds || []).map((item) => String(item)),
   avatarUrl: resolveApiAssetUrl(conversation.avatarUrl),
+  backgroundUrl: resolveApiAssetUrl(conversation.backgroundUrl),
   lastMessage: conversation.lastMessage
     ? {
         ...conversation.lastMessage,
@@ -52,6 +54,7 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
         senderId: Number(conversation.lastMessage.senderId || 0),
         senderAvatar: resolveApiAssetUrl(conversation.lastMessage.senderAvatar),
         mediaUrl: resolveApiAssetUrl(conversation.lastMessage.mediaUrl),
+        expiresAt: conversation.lastMessage.expiresAt || null,
       }
     : conversation.lastMessage,
   members: (conversation.members || []).map((member) => ({
@@ -67,10 +70,17 @@ const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({
   mediaUrl: resolveApiAssetUrl(message.mediaUrl),
 })
 
-const normalizeFeedPost = (post: FeedPost): FeedPost => ({
+export const normalizeFeedPost = (post: FeedPost): FeedPost => ({
   ...post,
   mediaUrl: resolveApiAssetUrl(post.mediaUrl),
   authorAvatar: resolveApiAssetUrl(post.authorAvatar),
+  sharedPost: post.sharedPost
+    ? {
+        ...post.sharedPost,
+        mediaUrl: resolveApiAssetUrl(post.sharedPost.mediaUrl),
+        authorAvatar: resolveApiAssetUrl(post.sharedPost.authorAvatar),
+      }
+    : post.sharedPost,
 })
 
 const normalizeNotification = (item: NotificationItem & Record<string, unknown>): NotificationItem => ({
@@ -123,7 +133,7 @@ const buildHeaders = (token?: string) => {
   return headers
 }
 
-const request = async <T>(
+export const request = async <T>(
   path: string,
   options: RequestInit = {},
   token?: string,
@@ -377,7 +387,7 @@ export const api = {
     }))
   },
 
-  createPost: (token: string, payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private' }) =>
+  createPost: (token: string, payload: { content?: string; mediaUrl?: string; visibility?: 'public' | 'private'; sharedPostId?: number | string }) =>
     request<{ post: FeedPost }>(
       '/social/posts',
       {
@@ -425,6 +435,17 @@ export const api = {
     ).then((data) => ({
       message: data.message || 'Uploaded',
       mediaUrl: resolveApiAssetUrl(data.mediaUrl || data.fileUrl || '') || '',
+    })),
+
+  savePost: (token: string, postId: number | string) =>
+    request<{ saved: boolean }>(`/social/posts/${postId}/save`, { method: 'POST' }, token),
+
+  unsavePost: (token: string, postId: number | string) =>
+    request<{ saved: boolean }>(`/social/posts/${postId}/save`, { method: 'DELETE' }, token),
+
+  listSavedPosts: (token: string) =>
+    request<{ posts: FeedPost[] }>('/social/posts/saved', { method: 'GET' }, token).then((res) => ({
+      posts: (res.posts || []).map(normalizeFeedPost),
     })),
 
   reactPost: (token: string, postId: number | string, type = 'like') =>
@@ -576,6 +597,25 @@ export const api = {
       token
     ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
 
+  updateConversationPreferences: (
+    token: string,
+    conversationId: string,
+    payload: {
+      backgroundUrl?: string | null
+      themeColor?: string | null
+      autoDeleteAfterSeconds?: number | null
+      hidden?: boolean
+      locked?: boolean
+      hiddenPassword?: string | null
+      lockedPassword?: string | null
+    }
+  ) =>
+    request<{ message: string; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/preferences`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
   updateConversationNickname: (token: string, conversationId: string, userId: number, nickname: string | null) =>
     request<{ message: string; conversation: Conversation }>(
       `/chat/conversations/${conversationId}/members/${userId}/nickname`,
@@ -664,6 +704,7 @@ export const api = {
       mimeType?: string
       fileSize?: number
       sticker?: string
+      meta?: Record<string, unknown>
     }
   ) =>
     request<{ message: ChatMessage }>(
@@ -720,6 +761,12 @@ export const api = {
   blockUser: (token: string, userId: number) =>
     request<{ message: string }>(`/social/users/${userId}/block`, { method: 'POST' }, token),
 
+  unblockUser: (token: string, userId: number) =>
+    request<{ message: string }>(`/social/users/${userId}/block`, { method: 'DELETE' }, token),
+
+  isUserBlocked: (token: string, userId: number) =>
+    request<{ blocked: boolean }>(`/social/users/${userId}/block`, { method: 'GET' }, token),
+
   forwardMessage: (token: string, messageId: string, targetConversationId: string) =>
     request<{ message: string; chatMessage: ChatMessage }>(
       `/chat/messages/${messageId}/forward`,
@@ -736,6 +783,30 @@ export const api = {
   getAiHistory: (token: string) =>
     request<Array<{ role: 'user' | 'model'; text: string }>>('/social/ai/history', { method: 'GET' }, token),
 
+  summarizeChat: (token: string, messages: any[]) =>
+    request<{ summary: string }>('/social/ai/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, token),
+
+  suggestReplies: (token: string, messages: any[], currentUserName: string) =>
+    request<{ suggestions: string[] }>('/social/ai/suggest-replies', {
+      method: 'POST',
+      body: JSON.stringify({ messages, currentUserName }),
+    }, token),
+
+  analyzeSentiment: (token: string, messages: any[]) =>
+    request<{ sentiment: 'positive' | 'neutral' | 'negative'; score: number; detail: string; emotions: string[] }>('/social/ai/analyze-sentiment', {
+      method: 'POST',
+      body: JSON.stringify({ messages }),
+    }, token),
+
+  translateMessage: (token: string, text: string, targetLanguage: string = 'vi') =>
+    request<{ translatedText: string; detectedLanguage: string }>('/social/ai/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text, targetLanguage }),
+    }, token),
+
   notifications: (token: string) =>
     request<{ notifications: NotificationItem[] }>('/social/notifications', { method: 'GET' }, token).then((res) => ({
       notifications: (res.notifications || []).map((item) => normalizeNotification(item as NotificationItem & Record<string, unknown>)),
@@ -746,6 +817,25 @@ export const api = {
 
   readAllNotifications: (token: string) =>
     request<{ message: string }>('/social/notifications/read-all', { method: 'PATCH' }, token),
+
+  deleteNotification: (token: string, id: number | string) =>
+    request<{ message: string }>(`/social/notifications/${id}`, { method: 'DELETE' }, token),
+
+  getUserProfile: (token: string, userId: number | string) =>
+    request<{ user: User | null }>(`/social/users/${userId}`, { method: 'GET' }, token),
+
+  updateUserProfile: (
+    token: string,
+    payload: { displayName?: string; avatarUrl?: string; sex?: string; dateOfBirth?: string }
+  ) =>
+    request<{ message: string; user: User }>('/social/users/profile', { method: 'PUT', body: JSON.stringify(payload) }, token),
+
+  getUserPosts: (token: string, userId: number | string, limit?: number) => {
+    const suffix = limit ? `?limit=${limit}` : ''
+    return request<{ posts: FeedPost[] }>(`/social/users/${userId}/posts${suffix}`, { method: 'GET' }, token).then((res) => ({
+      posts: (res.posts || []).map(normalizeFeedPost),
+    }))
+  },
 
   submitReport: (
     token: string,
@@ -764,20 +854,89 @@ export const api = {
 
   adminStats: (token: string) => request<{ stats: Record<string, number> }>('/social/admin/stats', { method: 'GET' }, token),
 
-  moderationReports: (token: string) =>
-    request<{ reports: Array<Record<string, unknown>> }>('/social/moderation/reports', { method: 'GET' }, token),
+  adminDashboard: (token: string) =>
+    request<{ stats: Record<string, number>; recentUsers?: User[]; recentReports?: Array<Record<string, unknown>> }>('/admin/dashboard', { method: 'GET' }, token),
+
+  adminStatistics: (token: string) =>
+    request<{ stats: Record<string, number> }>('/admin/statistics', { method: 'GET' }, token),
+
+  adminAuditLogs: (token: string) =>
+    request<{ logs: Array<Record<string, unknown>> }>('/admin/audit-logs', { method: 'GET' }, token),
+
+  adminSystemSettings: (token: string) =>
+    request<{ settings: Record<string, boolean>; updatedAt?: string | null }>('/admin/settings', { method: 'GET' }, token),
+
+  updateAdminSystemSettings: (token: string, settings: Record<string, boolean>) =>
+    request<{ message: string; settings: Record<string, boolean> }>(
+      '/admin/settings',
+      { method: 'PATCH', body: JSON.stringify({ settings }) },
+      token
+    ),
+
+  adminReports: (token: string, status?: string) => {
+    const suffix = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : ''
+    return request<{ reports: Array<Record<string, unknown>> }>(`/admin/reports${suffix}`, { method: 'GET' }, token)
+  },
+
+  assignAdminReport: (token: string, reportId: number, assignedTo: number | null) =>
+    request<{ message: string; report: Record<string, unknown> }>(
+      `/admin/reports/${reportId}/assign`,
+      { method: 'PATCH', body: JSON.stringify({ assignedTo }) },
+      token
+    ),
+
+  adminModerators: (token: string) =>
+    request<{ moderators: User[] }>('/admin/moderators', { method: 'GET' }, token),
+
+  createModerator: (token: string, payload: { username: string; password: string; displayName?: string; email?: string | null; phone?: string | null }) =>
+    request<{ message: string; moderator: User }>('/admin/moderators', { method: 'POST', body: JSON.stringify(payload) }, token),
+
+  deleteModerator: (token: string, userId: number) =>
+    request<{ message: string; user: User }>(`/admin/moderators/${userId}`, { method: 'DELETE' }, token),
+
+  updateModeratorPermissions: (
+    token: string,
+    userId: number,
+    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: User['accountStatus']; reason?: string; permissions?: string[] }
+  ) =>
+    request<{ message: string; moderator: User }>(
+      `/admin/moderators/${userId}/permissions`,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ),
+
+  deleteAdminUser: (token: string, userId: number) =>
+    request<{ message: string; user: User }>(`/admin/users/${userId}`, { method: 'DELETE' }, token),
+
+  moderationDashboard: (token: string) =>
+    request<{ stats: Record<string, number>; reports: Array<Record<string, unknown>>; reportedUsers: User[] }>('/moderator/dashboard', { method: 'GET' }, token),
+
+  moderationReports: (token: string, status?: string) => {
+    const suffix = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : ''
+    return request<{ reports: Array<Record<string, unknown>> }>(`/moderator/reports${suffix}`, { method: 'GET' }, token)
+  },
+
+  getModerationReport: (token: string, reportId: number) =>
+    request<{ report: Record<string, unknown> }>(`/moderator/reports/${reportId}`, { method: 'GET' }, token),
 
   moderationUsers: (token: string) =>
-    request<{ users: User[] }>('/social/admin/users', { method: 'GET' }, token),
+    request<{ users: User[] }>('/moderator/users', { method: 'GET' }, token),
 
   reviewModerationReport: (
     token: string,
     reportId: number,
-    payload: { status: 'pending' | 'reviewed' | 'resolved'; resolutionNote?: string }
+    payload: { status: 'PENDING' | 'IN_REVIEW' | 'RESOLVED' | 'REJECTED' | 'pending' | 'reviewed' | 'resolved'; resolutionNote?: string }
   ) =>
     request<{ message: string; report: Record<string, unknown> }>(
-      `/social/moderation/reports/${reportId}`,
+      `/moderator/reports/${reportId}/status`,
       { method: 'PATCH', body: JSON.stringify(payload) },
+      token
+    ),
+
+  assignModerationReport: (token: string, reportId: number, assignedTo: number | null) =>
+    request<{ message: string; report: Record<string, unknown> }>(
+      `/moderator/reports/${reportId}/assign`,
+      { method: 'PATCH', body: JSON.stringify({ assignedTo }) },
       token
     ),
 
@@ -791,6 +950,18 @@ export const api = {
       { method: 'PATCH', body: JSON.stringify(payload) },
       token
     ),
+
+  warnModerationUser: (token: string, userId: number, reason?: string) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/warn`, { method: 'PATCH', body: JSON.stringify({ reason }) }, token),
+
+  restrictModerationUser: (token: string, userId: number, reason?: string) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/restrict`, { method: 'PATCH', body: JSON.stringify({ reason }) }, token),
+
+  tempLockModerationUser: (token: string, userId: number, reason?: string) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/temp-lock`, { method: 'PATCH', body: JSON.stringify({ reason }) }, token),
+
+  restoreModerationUser: (token: string, userId: number) =>
+    request<{ message: string; user: User }>(`/moderator/users/${userId}/restore`, { method: 'PATCH' }, token),
 
   adminPosts: (
     token: string,
@@ -816,8 +987,6 @@ export const api = {
     token: string,
     postId: number,
     payload: {
-      content?: string
-      mediaUrl?: string | null
       visibility?: 'public' | 'private'
       status?: 'published' | 'hidden' | 'deleted'
     }
@@ -837,7 +1006,7 @@ export const api = {
   updateModerationUser: (
     token: string,
     userId: number,
-    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: 'active' | 'restricted' | 'hidden' | 'deleted' }
+    payload: { role?: 'user' | 'moderator' | 'admin'; accountStatus?: User['accountStatus']; reason?: string; restrictionReason?: string; lockedUntil?: string | null }
   ) =>
     request<{ message: string; user: User }>(
       `/social/admin/users/${userId}`,
