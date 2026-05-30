@@ -35,7 +35,7 @@ export default function UserMenu() {
   const handleLogout = () => {
     clearAuth()
     setOpen(false)
-    navigate('/auth/login')
+    window.location.href = '/auth/login'
   }
 
   if (!user) {

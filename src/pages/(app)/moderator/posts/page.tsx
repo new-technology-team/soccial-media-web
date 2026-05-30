@@ -6,7 +6,7 @@ import { AppDialog, DialogButton } from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
 import { toast } from '@/hooks/use-toast'
 import type { FeedPost } from '@/types'
-import styles from '../../admin/admin-console.module.css'
+import styles from '../users/page.module.css'
 
 const POST_STATUS_LABEL: Record<string, string> = {
   published: 'Đang hiển thị',

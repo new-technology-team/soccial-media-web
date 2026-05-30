@@ -6,7 +6,7 @@ const providerLabels: Record<SocialProvider, string> = {
 
 export const startSocialAuth = (provider: SocialProvider) => {
   const errorRedirect = encodeURIComponent(`/auth/login?socialProvider=${provider}`)
-  const targetUrl = `/backend/api/auth/${provider}?redirectOnError=${errorRedirect}`
+  const targetUrl = `/api/auth/${provider}?redirectOnError=${errorRedirect}`
 
   sessionStorage.setItem('zchat-social-provider', provider)
   sessionStorage.removeItem('zchat-social-retry')

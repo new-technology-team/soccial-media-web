@@ -1,8 +1,8 @@
 ﻿'use client'
 
-import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react'
+import { ChangeEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Camera, ImagePlus, UploadCloud } from 'lucide-react'
+import { Camera, CheckCircle2, Eye, Lock, ShieldCheck, UserRound, X } from 'lucide-react'
 
 import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
@@ -64,9 +64,10 @@ export default function EditProfilePage() {
   const [avatarZoom, setAvatarZoom] = useState(1)
   const [avatarCropX, setAvatarCropX] = useState(0)
   const [avatarCropY, setAvatarCropY] = useState(0)
-  const [dragActive, setDragActive] = useState(false)
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false)
   const [busySave, setBusySave] = useState(false)
   const [busyUpload, setBusyUpload] = useState(false)
+  const [savingPrivacyKey, setSavingPrivacyKey] = useState<'profile' | 'activity' | null>(null)
   const [message, setMessage] = useState('')
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -94,7 +95,8 @@ export default function EditProfilePage() {
     setAvatarZoom(1)
     setAvatarCropX(0)
     setAvatarCropY(0)
-    setMessage('Ảnh đã sẵn sàng. Căn crop rồi bấm Lưu ảnh đại diện.')
+    setAvatarModalOpen(true)
+    setMessage('')
   }
 
   const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -102,18 +104,12 @@ export default function EditProfilePage() {
     event.target.value = ''
   }
 
-  const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setDragActive(false)
-    await prepareAvatar(event.dataTransfer.files?.[0])
-  }
-
   const uploadAvatarDraft = async () => {
     if (!avatarDraft || !token) return
     setBusyUpload(true)
     try {
       const base64Data = await cropAvatarToBase64(avatarDraft, avatarZoom, avatarCropX, avatarCropY)
-      const response = await fetch('/backend/api/auth/avatar-upload-base64', {
+      const response = await fetch('/api/auth/avatar-upload-base64', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,6 +133,7 @@ export default function EditProfilePage() {
         : nextAvatarUrl
       setAvatarUrl(resolvedAvatarUrl)
       setAvatarDraft('')
+      setAvatarModalOpen(false)
       if (uploaded.user && refreshToken) {
         setAuth({
           accessToken: token,
@@ -155,6 +152,31 @@ export default function EditProfilePage() {
       toast({ title: 'Không thể tải ảnh đại diện', description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive' })
     } finally {
       setBusyUpload(false)
+    }
+  }
+
+  const handlePrivacyChange = async (key: 'profile' | 'activity', value: boolean) => {
+    if (!token) return
+    const previousProfilePublic = profilePublic
+    const previousShowActivity = showActivity
+    const nextProfilePublic = key === 'profile' ? value : profilePublic
+    const nextShowActivity = key === 'activity' ? value : showActivity
+
+    setProfilePublic(nextProfilePublic)
+    setShowActivity(nextShowActivity)
+    setSavingPrivacyKey(key)
+    try {
+      await api.saveSettings(token, {
+        privacyProfilePhoto: nextProfilePublic,
+        privacyLastSeen: nextShowActivity,
+      })
+      toast({ title: 'Đã lưu quyền riêng tư', description: 'Thay đổi đã được áp dụng ngay.' })
+    } catch (error) {
+      setProfilePublic(previousProfilePublic)
+      setShowActivity(previousShowActivity)
+      toast({ title: 'Không thể lưu quyền riêng tư', description: 'Đã khôi phục thiết lập trước đó.', variant: 'destructive' })
+    } finally {
+      setSavingPrivacyKey(null)
     }
   }
 
@@ -199,8 +221,9 @@ export default function EditProfilePage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Profile studio</p>
+          <p className={styles.eyebrow}>Profile settings</p>
           <h1>Chỉnh sửa hồ sơ</h1>
+          <p className={styles.headerSub}>Cập nhật cách bạn xuất hiện trên ZChat.</p>
         </div>
         <div className={styles.actions}>
           <Link to={me ? `/profile/${me.id}` : '/feed'} className={styles.cancelBtn}>
@@ -212,65 +235,31 @@ export default function EditProfilePage() {
         </div>
       </header>
 
-      <section className={styles.cover}>
-        <div className={styles.coverText}>
-          <span>Cover photo</span>
-          <strong>{fullName || me?.fullName || 'ZChat user'}</strong>
-        </div>
-        <input ref={avatarInputRef} type="file" accept="image/*" className={styles.hiddenInput} onChange={handleAvatarChange} />
-        <button type="button" className={styles.avatarButton} onClick={handleSelectAvatar}>
-          {previewAvatar ? (
-            <img
-              src={previewAvatar}
-              alt="avatar"
-              className={styles.avatarImage}
-              style={avatarDraft ? { transform: `scale(${avatarZoom})`, objectPosition: `${50 + avatarCropX / 2}% ${50 + avatarCropY / 2}%` } : undefined}
-            />
-          ) : (
-            <div className={styles.avatar}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
-          )}
-          <span><Camera size={14} /> Đổi ảnh</span>
-        </button>
-      </section>
-
-      <section
-        className={`${styles.uploadPanel} ${dragActive ? styles.uploadPanelActive : ''}`}
-        onDragOver={(event) => {
-          event.preventDefault()
-          setDragActive(true)
-        }}
-        onDragLeave={() => setDragActive(false)}
-        onDrop={handleDrop}
-      >
-        <div>
-          <UploadCloud size={20} />
-          <b>Kéo thả ảnh đại diện vào đây</b>
-          <small>Chọn ảnh, xem preview, căn crop rồi lưu. Ảnh chỉ upload khi bạn xác nhận.</small>
-        </div>
-        <button type="button" className={styles.secondaryBtn} onClick={handleSelectAvatar}><ImagePlus size={16} /> Chọn ảnh</button>
-      </section>
-
-      {avatarDraft ? (
-        <section className={styles.cropPanel}>
-          <div className={styles.cropPreview}>
-            <img src={avatarDraft} alt="Avatar preview" style={{ transform: `scale(${avatarZoom})`, objectPosition: `${50 + avatarCropX / 2}% ${50 + avatarCropY / 2}%` }} />
-          </div>
-          <div className={styles.cropControls}>
-            <label>Zoom<input type="range" min="1" max="2.4" step="0.05" value={avatarZoom} onChange={(event) => setAvatarZoom(Number(event.target.value))} /></label>
-            <label>Ngang<input type="range" min="-100" max="100" value={avatarCropX} onChange={(event) => setAvatarCropX(Number(event.target.value))} /></label>
-            <label>Dọc<input type="range" min="-100" max="100" value={avatarCropY} onChange={(event) => setAvatarCropY(Number(event.target.value))} /></label>
-            <div className={styles.cropActions}>
-              <button type="button" className={styles.cancelBtn} onClick={() => setAvatarDraft('')}>Bỏ ảnh</button>
-              <button type="button" className={styles.saveBtn} disabled={busyUpload} onClick={() => void uploadAvatarDraft()}>{busyUpload ? 'Đang upload...' : 'Lưu ảnh đại diện'}</button>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
       {message ? <p className={styles.notice}>{message}</p> : null}
 
       <div className={styles.layout}>
         <section className={styles.mainCol}>
+          <article className={`${styles.card} ${styles.identityCard}`}>
+            <div className={styles.avatarShell}>
+              <button type="button" className={styles.avatarButton} onClick={handleSelectAvatar} aria-label="Đổi ảnh đại diện">
+                {previewAvatar ? (
+                  <img src={previewAvatar} alt="avatar" className={styles.avatarImage} />
+                ) : (
+                  <span className={styles.avatar}>{(me?.fullName?.[0] || 'U').toUpperCase()}</span>
+                )}
+                <span className={styles.cameraOverlay}><Camera size={18} /></span>
+              </button>
+              <input ref={avatarInputRef} type="file" accept="image/*" className={styles.hiddenInput} onChange={handleAvatarChange} />
+            </div>
+            <div className={styles.identityCopy}>
+              <h2>{fullName || me?.fullName || 'ZChat user'}</h2>
+              <p>@{username || 'username'} · Ảnh đại diện hiển thị trên hồ sơ, feed, chat và bình luận.</p>
+            </div>
+            <button type="button" className={styles.secondaryBtn} onClick={handleSelectAvatar}>
+              <Camera size={16} /> Đổi ảnh
+            </button>
+          </article>
+
           <article className={styles.card}>
             <h2>Thông tin cơ bản</h2>
             <div className={styles.formGrid}>
@@ -318,26 +307,67 @@ export default function EditProfilePage() {
           <article className={styles.card}>
             <h3>Xem trước hồ sơ</h3>
             <div className={styles.previewCard}>
-              {previewAvatar ? <img src={previewAvatar} alt="preview avatar" /> : <div>{(fullName?.[0] || 'U').toUpperCase()}</div>}
-              <b>{fullName || 'Tên hiển thị'}</b>
-              <small>@{username || 'username'}</small>
-              <p>{bio}</p>
+              <div className={styles.previewCover} />
+              <div className={styles.previewBody}>
+                {previewAvatar ? <img src={previewAvatar} alt="preview avatar" /> : <div>{(fullName?.[0] || 'U').toUpperCase()}</div>}
+                <b>{fullName || 'Tên hiển thị'}</b>
+                <small>@{username || 'username'}</small>
+                <p>{bio}</p>
+                <span><UserRound size={14} /> 0 bạn chung · 0 bài viết công khai</span>
+              </div>
             </div>
           </article>
 
           <article className={styles.card}>
-            <h3>Quyền riêng tư hồ sơ</h3>
-            <div className={styles.switchRow}>
-              <span>Hồ sơ công khai</span>
-              <label className={styles.switch}><input type="checkbox" checked={profilePublic} onChange={(e) => setProfilePublic(e.target.checked)} /><span></span></label>
+            <div className={styles.cardTitleRow}>
+              <h3>Quyền riêng tư</h3>
+              <ShieldCheck size={18} />
             </div>
-            <div className={styles.switchRow}>
-              <span>Hiện hoạt động</span>
-              <label className={styles.switch}><input type="checkbox" checked={showActivity} onChange={(e) => setShowActivity(e.target.checked)} /><span></span></label>
+            <div className={styles.privacyStack}>
+              <div className={styles.switchRow}>
+                <Eye size={17} />
+                <span>
+                  <b>Ảnh hồ sơ công khai</b>
+                  <small>Cho phép người khác xem ảnh đại diện của bạn.</small>
+                </span>
+                <label className={styles.switch}><input type="checkbox" checked={profilePublic} onChange={(e) => void handlePrivacyChange('profile', e.target.checked)} /><span></span></label>
+              </div>
+              <div className={styles.switchRow}>
+                <Lock size={17} />
+                <span>
+                  <b>Hiện trạng thái hoạt động</b>
+                  <small>Hiển thị khi bạn online hoặc hoạt động gần đây.</small>
+                </span>
+                <label className={styles.switch}><input type="checkbox" checked={showActivity} onChange={(e) => void handlePrivacyChange('activity', e.target.checked)} /><span></span></label>
+              </div>
+              {savingPrivacyKey ? <p className={styles.privacySaving}><CheckCircle2 size={14} /> Đang lưu thay đổi...</p> : null}
             </div>
           </article>
         </aside>
       </div>
+
+      {avatarModalOpen ? (
+        <div className={styles.modalOverlay} role="presentation" onClick={() => setAvatarModalOpen(false)}>
+          <section className={styles.avatarModal} role="dialog" aria-modal="true" aria-label="Cập nhật ảnh đại diện" onClick={(event) => event.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>Cập nhật ảnh đại diện</h2>
+              <button type="button" onClick={() => setAvatarModalOpen(false)} aria-label="Đóng"><X size={17} /></button>
+            </header>
+            <div className={styles.cropPreview}>
+              {avatarDraft ? <img src={avatarDraft} alt="Avatar preview" style={{ transform: `scale(${avatarZoom})`, objectPosition: `${50 + avatarCropX / 2}% ${50 + avatarCropY / 2}%` }} /> : null}
+            </div>
+            <div className={styles.cropControls}>
+              <label>Zoom<input type="range" min="1" max="2.4" step="0.05" value={avatarZoom} onChange={(event) => setAvatarZoom(Number(event.target.value))} /></label>
+              <label>Ngang<input type="range" min="-100" max="100" value={avatarCropX} onChange={(event) => setAvatarCropX(Number(event.target.value))} /></label>
+              <label>Dọc<input type="range" min="-100" max="100" value={avatarCropY} onChange={(event) => setAvatarCropY(Number(event.target.value))} /></label>
+            </div>
+            <div className={styles.cropActions}>
+              <button type="button" className={styles.cancelBtn} onClick={() => { setAvatarDraft(''); setAvatarModalOpen(false) }}>Bỏ ảnh</button>
+              <button type="button" className={styles.saveBtn} disabled={!avatarDraft || busyUpload} onClick={() => void uploadAvatarDraft()}>{busyUpload ? 'Đang upload...' : 'Lưu ảnh đại diện'}</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

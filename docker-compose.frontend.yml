@@ -1,0 +1,13 @@
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL}
+        VITE_BACKEND_TARGET: ${VITE_BACKEND_TARGET}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID}
+    container_name: zzchat_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"

@@ -1032,3 +1032,80 @@
     text-align: left;
   }
 }
+
+/* Green Trust & Safety theme */
+.page {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.commandHeader {
+  border-color: #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.commandHeader h1 {
+  color: #0f172a;
+}
+
+.commandHeader p,
+.productivityMetric span {
+  color: #64748b;
+}
+
+.productivityGrid {
+  border-left-color: #e2e8f0;
+  background: linear-gradient(180deg, #f0fdf4, #ffffff);
+}
+
+.productivityMetric {
+  border-color: #dcfce7;
+}
+
+.productivityMetric strong {
+  color: #15803d;
+}
+
+.quickPanel:hover {
+  border-color: #22c55e;
+}
+
+.quickHead span {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.quickPanel > strong,
+.reportFooter button:last-child,
+.reportFooter a:last-child {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+  border-color: transparent;
+}
+
+.criticalHead p,
+.panelTitle p,
+.queueHeader p {
+  color: #15803d;
+}
+
+.filters input:focus,
+.filters select:focus,
+.reportFooter button:focus,
+.emergencyBtn:focus,
+.quickPanel:focus {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
+}
+
+.reportCard:hover {
+  border-color: #bbf7d0;
+  box-shadow: 0 14px 30px rgba(21, 128, 61, 0.08);
+}
+
+.activity_live {
+  background: #22c55e;
+  box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.12);
+}

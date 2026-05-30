@@ -58,8 +58,11 @@
 
 .panel {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 1rem;
   padding: 1.1rem;
+  max-height: inherit;
+  min-height: 0;
 }
 
 .header {
@@ -88,6 +91,12 @@
   color: #607086;
   font-size: 0.86rem;
   line-height: 1.5;
+}
+
+.body {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.15rem;
 }
 
 .close {
@@ -212,6 +221,11 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(255,255,255,0.76), #fff 32%);
+  padding-top: 0.55rem;
 }
 
 .button {
