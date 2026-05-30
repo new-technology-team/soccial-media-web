@@ -4286,6 +4286,110 @@
   50% { opacity: 0.85; }
 }
 
+/* Final reaction layout override */
+.bubble {
+  overflow: visible;
+}
+
+.bubble:has(.reactionsPill) {
+  margin-bottom: 12px;
+}
+
+.reactionsPill {
+  position: fixed;
+  z-index: 3;
+  align-items: center;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: min(240px, calc(100vw - 112px));
+  min-height: 20px;
+  margin-top: 0;
+  z-index: 70;
+  max-width: min(292px, calc(100vw - 24px));
+  overflow: visible;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.messageRowMine .reactionsPill {
+  left: auto;
+  right: 8px;
+}
+
+.reactionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 20px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: transparent;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.reactionEmoji {
+  padding: 0;
+  border-radius: 0;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 12px;
+  line-height: 1;
+  cursor: default;
+  transition: none;
+}
+
+.reactionEmoji:hover {
+  background: transparent;
+  transform: none;
+}
+
+.reactionCount {
+  font-size: 12px;
+  line-height: 1;
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.reactionAvatar,
+.reactionMore {
+  display: none;
+}
+
+.messageFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-top: 2px;
+  min-height: 22px;
+  color: #64748b;
+}
+
+.messageFooterMine {
+  justify-content: flex-end;
+}
+
+.messageTime,
+.readLabel {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.reactionTrigger {
+  width: 24px;
+  height: 24px;
+}
+
 .convSkeleton {
   height: 60px;
   border-radius: 12px;
@@ -4309,6 +4413,112 @@
   margin: 0;
   font-size: 0.92rem;
   text-align: center;
+}
+
+/* Modern compact reactions: Messenger/Zalo-style badges attached to the bubble. */
+.bubble {
+  overflow: visible;
+}
+
+.bubble:has(.reactionsPill) {
+  margin-bottom: 12px;
+}
+
+.reactionsPill {
+  position: absolute;
+  left: 8px;
+  right: auto;
+  bottom: -12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: min(240px, calc(100vw - 112px));
+  min-height: 20px;
+  margin: 0;
+  padding: 2px 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.messageRowMine .reactionsPill {
+  left: auto;
+  right: 8px;
+}
+
+.reactionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 20px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: transparent;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.reactionEmoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 0;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 12px;
+  line-height: 1;
+  cursor: default;
+  transition: none;
+}
+
+.reactionEmoji:hover {
+  background: transparent;
+  transform: none;
+}
+
+.reactionCount {
+  font-size: 12px;
+  line-height: 1;
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.reactionAvatar,
+.reactionMore {
+  display: none;
+}
+
+.messageFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-top: 2px;
+  min-height: 22px;
+  color: #64748b;
+}
+
+.messageFooterMine {
+  justify-content: flex-end;
+}
+
+.messageTime,
+.readLabel {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.reactionTrigger {
+  width: 24px;
+  height: 24px;
 }
 
 .sharedPostMessage {

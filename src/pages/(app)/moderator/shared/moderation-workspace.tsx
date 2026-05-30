@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, CheckCircle2, Search, ShieldAlert, UserRound } from 'lucide-react'
 
-import { api } from '@/api/client'
+import { ApiError, api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
 import { toast } from '@/hooks/use-toast'
@@ -407,8 +407,16 @@ export default function ModeratorReportWorkspace({
         await api.moderatePost(token, Number(report.targetId), { status: 'deleted', resolutionNote: statusNote })
         toast({ title: `Đã xóa bài viết #${report.targetId}`, description: 'Bài viết vi phạm đã được gỡ khỏi hệ thống.' })
       } else if (actionType === 'delete_comment') {
-        await api.deleteComment(token, report.targetId)
-        toast({ title: `Đã xóa bình luận #${report.targetId}`, description: 'Bình luận vi phạm đã được xử lý.' })
+        try {
+          await api.deleteComment(token, report.targetId)
+          toast({ title: `Đã xóa bình luận #${report.targetId}`, description: 'Bình luận vi phạm đã được xử lý.' })
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 404) {
+            toast({ title: `Bình luận #${report.targetId} đã được xử lý`, description: 'Bình luận có thể đã bị xóa trước đó, báo cáo vẫn được cập nhật.' })
+          } else {
+            throw error
+          }
+        }
       } else if (actionType === 'delete_message') {
         await api.deleteMessage(token, report.targetId)
         toast({ title: `Đã xóa tin nhắn #${report.targetId}`, description: 'Tin nhắn vi phạm đã được gỡ khỏi cuộc trò chuyện.' })
