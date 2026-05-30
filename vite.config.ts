@@ -4,10 +4,11 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const isFullUrl = (v?: string) => !!v && /^https?:\/\//.test(v)
   const backendTarget =
-    env.VITE_BACKEND_TARGET ||
-    env.VITE_SOCKET_URL ||
-    env.VITE_API_BASE_URL?.replace(/\/api\/?$/, '') ||
+    (isFullUrl(env.VITE_BACKEND_TARGET) ? env.VITE_BACKEND_TARGET : undefined) ||
+    (isFullUrl(env.VITE_SOCKET_URL) ? env.VITE_SOCKET_URL : undefined) ||
+    (isFullUrl(env.VITE_API_BASE_URL?.replace(/\/api\/?$/, '')) ? env.VITE_API_BASE_URL!.replace(/\/api\/?$/, '') : undefined) ||
     "http://127.0.0.1:5000";
 
   return {

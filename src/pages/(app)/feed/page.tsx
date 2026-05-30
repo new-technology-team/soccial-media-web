@@ -294,7 +294,10 @@ export default function FeedPage() {
   }, [handleAuthExpired, token, isSavedView])
 
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      setSavedPostIds(new Set())
+      return
+    }
     api.listSavedPosts(token)
       .then((res) => setSavedPostIds(new Set(res.posts.map((p) => p.id))))
       .catch(() => undefined)
