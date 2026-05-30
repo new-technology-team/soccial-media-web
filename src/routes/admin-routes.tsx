@@ -1,19 +1,23 @@
-﻿import { Navigate, Outlet, Route } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Navigate, Outlet, Route } from 'react-router-dom'
 
 import AdminLayout from '@/components/layouts/AdminLayout'
-import AdminDashboardPage from '@/pages/(app)/admin/dashboard/page'
-import AdminAuditLogsPage from '@/pages/(app)/admin/audit-logs/page'
-import AdminModeratorsPage from '@/pages/(app)/admin/moderators/page'
-import AdminPostsPage from '@/pages/(app)/admin/posts/page'
-import AdminReportsPage from '@/pages/(app)/admin/reports/page'
-import AdminSettingsPage from '@/pages/(app)/admin/settings/page'
-import AdminStatisticsPage from '@/pages/(app)/admin/statistics/page'
-import AdminUsersPage from '@/pages/(app)/admin/users/page'
+
+const AdminDashboardPage  = lazy(() => import('@/pages/(app)/admin/dashboard/page'))
+const AdminAuditLogsPage  = lazy(() => import('@/pages/(app)/admin/audit-logs/page'))
+const AdminModeratorsPage = lazy(() => import('@/pages/(app)/admin/moderators/page'))
+const AdminPostsPage      = lazy(() => import('@/pages/(app)/admin/posts/page'))
+const AdminReportsPage    = lazy(() => import('@/pages/(app)/admin/reports/page'))
+const AdminSettingsPage   = lazy(() => import('@/pages/(app)/admin/settings/page'))
+const AdminStatisticsPage = lazy(() => import('@/pages/(app)/admin/statistics/page'))
+const AdminUsersPage      = lazy(() => import('@/pages/(app)/admin/users/page'))
 
 function AdminLayoutRoute() {
   return (
     <AdminLayout>
-      <Outlet />
+      <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Đang tải...</div>}>
+        <Outlet />
+      </Suspense>
     </AdminLayout>
   )
 }
@@ -33,4 +37,3 @@ export function renderAdminRoutes() {
     </Route>
   )
 }
-

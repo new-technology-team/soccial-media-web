@@ -5,8 +5,9 @@ import react from "@vitejs/plugin-react";
 const backendTarget =
   process.env.VITE_BACKEND_TARGET || "http://127.0.0.1:5000";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
+  esbuild: mode === 'production' ? { drop: ['console', 'debugger'] } : {},
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
@@ -46,4 +47,4 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 8088,
   },
-});
+}));
