@@ -395,6 +395,54 @@
   display: block;
 }
 
+.sharedPostBox {
+  margin: 0.7rem 0.8rem 0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: #f8fafc;
+  color: inherit;
+  text-decoration: none;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sharedPostAuthor {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+}
+
+.sharedPostAuthor span {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #e2e8f0;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
+.sharedPostBox p {
+  margin: 0;
+  color: #334155;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sharedPostBox img {
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #eef2f6;
+}
+
+.sharedPostBox small {
+  color: #64748b;
+}
+
 .postFoot {
   border-top: 1px solid rgba(171, 173, 174, 0.18);
   padding: 0.6rem 0.8rem;

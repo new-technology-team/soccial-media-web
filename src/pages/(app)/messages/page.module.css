@@ -662,6 +662,32 @@
   font-weight: 700;
 }
 
+.pinnedQuickList {
+  margin: 0 1rem 0.45rem;
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.pinnedQuickList button,
+.pinnedQuickList span {
+  flex: 0 0 auto;
+  max-width: min(360px, 80vw);
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #7c4a03;
+  min-height: 30px;
+  padding: 0 0.7rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .chatIdentity {
   display: flex;
   align-items: center;
@@ -846,6 +872,11 @@
   animation: bubbleFadeIn 200ms ease-out;
 }
 
+.messageRowHighlighted .bubble {
+  outline: 3px solid rgba(245, 158, 11, 0.52);
+  box-shadow: 0 0 0 7px rgba(245, 158, 11, 0.12);
+}
+
 @keyframes bubbleFadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -1019,24 +1050,27 @@
 }
 
 .reactionsPill {
-  display: flex;
-  gap: 0.2rem;
+  display: inline-flex;
+  gap: 0.25rem;
   align-items: center;
   flex-wrap: wrap;
   margin-top: 0.3rem;
-  padding: 0.3rem 0.4rem;
-  background: rgba(255, 255, 255, 0.2);
+  padding: 0.18rem 0.28rem;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 999px;
-  max-width: 100%;
+  max-width: min(100%, 280px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 .reactionChip {
   display: inline-flex;
   align-items: center;
-  gap: 0.18rem;
-  padding: 0.08rem 0.22rem 0.08rem 0.08rem;
+  gap: 0.12rem;
+  padding: 0.06rem 0.18rem 0.06rem 0.06rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.28);
+  background: #f8fafc;
+  min-width: 0;
 }
 
 .reactionAvatar {
@@ -1072,9 +1106,9 @@
 .reactionMore {
   font-size: 0.65rem;
   font-weight: 700;
-  color: inherit;
-  opacity: 0.8;
-  padding: 0.05rem 0.15rem;
+  color: #475569;
+  padding: 0.05rem 0.26rem;
+  white-space: nowrap;
 }
 
 .messageFooter {
@@ -4252,6 +4286,110 @@
   50% { opacity: 0.85; }
 }
 
+/* Final reaction layout override */
+.bubble {
+  overflow: visible;
+}
+
+.bubble:has(.reactionsPill) {
+  margin-bottom: 12px;
+}
+
+.reactionsPill {
+  position: fixed;
+  z-index: 3;
+  align-items: center;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: min(240px, calc(100vw - 112px));
+  min-height: 20px;
+  margin-top: 0;
+  z-index: 70;
+  max-width: min(292px, calc(100vw - 24px));
+  overflow: visible;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.messageRowMine .reactionsPill {
+  left: auto;
+  right: 8px;
+}
+
+.reactionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 20px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: transparent;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.reactionEmoji {
+  padding: 0;
+  border-radius: 0;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 12px;
+  line-height: 1;
+  cursor: default;
+  transition: none;
+}
+
+.reactionEmoji:hover {
+  background: transparent;
+  transform: none;
+}
+
+.reactionCount {
+  font-size: 12px;
+  line-height: 1;
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.reactionAvatar,
+.reactionMore {
+  display: none;
+}
+
+.messageFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-top: 2px;
+  min-height: 22px;
+  color: #64748b;
+}
+
+.messageFooterMine {
+  justify-content: flex-end;
+}
+
+.messageTime,
+.readLabel {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.reactionTrigger {
+  width: 24px;
+  height: 24px;
+}
+
 .convSkeleton {
   height: 60px;
   border-radius: 12px;
@@ -4275,6 +4413,112 @@
   margin: 0;
   font-size: 0.92rem;
   text-align: center;
+}
+
+/* Modern compact reactions: Messenger/Zalo-style badges attached to the bubble. */
+.bubble {
+  overflow: visible;
+}
+
+.bubble:has(.reactionsPill) {
+  margin-bottom: 12px;
+}
+
+.reactionsPill {
+  position: absolute;
+  left: 8px;
+  right: auto;
+  bottom: -12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: min(240px, calc(100vw - 112px));
+  min-height: 20px;
+  margin: 0;
+  padding: 2px 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.messageRowMine .reactionsPill {
+  left: auto;
+  right: 8px;
+}
+
+.reactionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 20px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: transparent;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.reactionEmoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 0;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 12px;
+  line-height: 1;
+  cursor: default;
+  transition: none;
+}
+
+.reactionEmoji:hover {
+  background: transparent;
+  transform: none;
+}
+
+.reactionCount {
+  font-size: 12px;
+  line-height: 1;
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.reactionAvatar,
+.reactionMore {
+  display: none;
+}
+
+.messageFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-top: 2px;
+  min-height: 22px;
+  color: #64748b;
+}
+
+.messageFooterMine {
+  justify-content: flex-end;
+}
+
+.messageTime,
+.readLabel {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.reactionTrigger {
+  width: 24px;
+  height: 24px;
 }
 
 .sharedPostMessage {

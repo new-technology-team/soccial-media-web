@@ -52,10 +52,14 @@ export interface FeedPost {
 export interface FeedComment {
   id: number | string
   postId: number | string
+  parentCommentId?: number | string | null
   userId: number
   authorName: string
   authorAvatar: string | null
   content: string
+  imageUrl?: string | null
+  file?: string | null
+  replies?: FeedComment[]
   reactionCount: number
   viewerReaction: string | null
   createdAt: string

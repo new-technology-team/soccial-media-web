@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { normalizeFeedPost } from '@/api/client'
+import { normalizeFeedComment, normalizeFeedPost } from '@/api/client'
 import { connectSocket } from '@/services/socket'
 import type { FeedComment, FeedPost, User } from '@/types'
 
@@ -19,6 +19,25 @@ const sameId = (left: number | string | null | undefined, right: number | string
   String(left ?? '') === String(right ?? '')
 
 const keyOf = (value: number | string) => String(value)
+
+const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComment[] => {
+  const commentId = String(comment.id)
+  const parentId = comment.parentCommentId ? String(comment.parentCommentId) : null
+  if (!parentId) {
+    return items.some((item) => sameId(item.id, commentId)) ? items : [...items, comment]
+  }
+  return items.map((item) => {
+    if (sameId(item.id, parentId)) {
+      return { ...item, replies: appendCommentOnce(item.replies || [], comment) }
+    }
+    return { ...item, replies: item.replies ? appendCommentOnce(item.replies, comment) : [] }
+  })
+}
+
+const removeCommentById = (items: FeedComment[], commentId: number | string | undefined) =>
+  items
+    .filter((item) => !sameId(item.id, commentId))
+    .map((item) => ({ ...item, replies: item.replies ? removeCommentById(item.replies, commentId) : [] }))
 
 export function useSocialRealtime({ token, user, setPosts, setCommentLists, setComments, postId }: Options) {
   useEffect(() => {
@@ -78,17 +97,18 @@ export function useSocialRealtime({ token, user, setPosts, setCommentLists, setC
         )
       )
       if (!payload?.comment) return
+      const normalizedComment = normalizeFeedComment(payload.comment)
       if (setCommentLists) {
-        const postKey = keyOf(payload.comment.postId)
+        const postKey = keyOf(normalizedComment.postId)
         setCommentLists((prev) => {
           const current = prev[postKey] || []
-          if (current.some((item) => sameId(item.id, payload.comment?.id))) return prev
-          return { ...prev, [postKey]: [...current, payload.comment as FeedComment] }
+          if (current.some((item) => sameId(item.id, normalizedComment.id))) return prev
+          return { ...prev, [postKey]: appendCommentOnce(current, normalizedComment) }
         })
       }
       if (setComments && (!postId || sameId(postId, payload.postId))) {
         setComments((prev) =>
-          prev.some((item) => sameId(item.id, payload.comment?.id)) ? prev : [...prev, payload.comment as FeedComment]
+          appendCommentOnce(prev, normalizedComment)
         )
       }
     }
@@ -109,11 +129,11 @@ export function useSocialRealtime({ token, user, setPosts, setCommentLists, setC
         const postKey = keyOf(payload.postId)
         setCommentLists((prev) => ({
           ...prev,
-          [postKey]: (prev[postKey] || []).filter((item) => !sameId(item.id, payload.commentId)),
+          [postKey]: removeCommentById(prev[postKey] || [], payload.commentId),
         }))
       }
       if (setComments && (!postId || sameId(postId, payload.postId))) {
-        setComments((prev) => prev.filter((item) => !sameId(item.id, payload.commentId)))
+        setComments((prev) => removeCommentById(prev, payload.commentId))
       }
     }
 

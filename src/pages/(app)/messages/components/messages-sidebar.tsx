@@ -16,6 +16,7 @@ type MessagesSidebarProps = {
   isLoadingConversations?: boolean
   activeRailTab: 'messages' | 'newMessage' | 'createGroup' | 'notifications'
   onOpenConversation: (conversationId: string) => void
+  onShowMessages: () => void
   onShowNotifications: () => void
   onShowNewMessage: () => void
   onShowCreateGroup: () => void
@@ -32,6 +33,7 @@ export function MessagesSidebar({
   isLoadingConversations = false,
   activeRailTab,
   onOpenConversation,
+  onShowMessages,
   onShowNotifications,
   onShowNewMessage,
   onShowCreateGroup,
@@ -51,7 +53,7 @@ export function MessagesSidebar({
           <MessageCircle size={23} />
         </div>
         <nav className={styles.railNav}>
-          <button type="button" className={cn(styles.railBtn, activeRailTab === 'messages' && styles.railBtnActive)} title="Tin nhắn" aria-label="Tin nhắn">
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'messages' && styles.railBtnActive)} onClick={onShowMessages} title="Tin nhắn" aria-label="Tin nhắn">
             <Send size={16} />
           </button>
           <button type="button" className={cn(styles.railBtn, activeRailTab === 'newMessage' && styles.railBtnActive)} onClick={onShowNewMessage} title="Tạo hội thoại mới" aria-label="Tạo hội thoại mới">
@@ -74,13 +76,7 @@ export function MessagesSidebar({
         <div className={styles.listHeader}>
           <div className={styles.listHeaderTop}>
             <h1>Tất cả cuộc trò chuyện</h1>
-            <button
-              type="button"
-              className={styles.headerNotifyBtn}
-              onClick={onShowNotifications}
-              title="Thông báo"
-              aria-label="Thông báo"
-            >
+            <button type="button" className={styles.headerNotifyBtn} onClick={onShowNotifications} title="Thông báo" aria-label="Thông báo">
               <Bell size={14} />
               {notifications.some((item) => !item.is_read) ? <i /> : null}
             </button>
@@ -140,7 +136,7 @@ export function MessagesSidebar({
             const avatarUrl = conv.avatarUrl || (conv.type === 'direct' ? directPeer?.avatarUrl || sender?.avatarUrl || null : null)
             const isOnline = Boolean(directPeer?.online)
             const statusLabel = conv.type === 'group'
-              ? `${conv.members.length} thành viên${conv.onlineCount ? ` • ${conv.onlineCount} online` : ''}`
+              ? `${conv.members.length} thành viên${conv.onlineCount ? ` · ${conv.onlineCount} online` : ''}`
               : isOnline
                 ? 'Đang hoạt động'
                 : directPeer?.lastActiveAt
@@ -152,11 +148,7 @@ export function MessagesSidebar({
                 key={conv.id}
                 type="button"
                 onClick={() => onOpenConversation(conv.id)}
-                className={cn(
-                  styles.convItem,
-                  isActive && styles.convItemActive,
-                  conv.unreadCount > 0 && styles.convItemUnread
-                )}
+                className={cn(styles.convItem, isActive && styles.convItemActive, conv.unreadCount > 0 && styles.convItemUnread)}
               >
                 <div className={styles.convAvatar}>
                   {avatarUrl ? <img src={avatarUrl} alt={name} className={styles.convAvatarImage} loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : fallback}
@@ -168,17 +160,13 @@ export function MessagesSidebar({
                     <span>{lastMessage ? formatVietnamTime(lastMessage.createdAt) : 'Chat'}</span>
                   </div>
                   <div className={styles.convStatusLine}>
-                    {conv.type === 'group' ? (
-                      <Users size={12} />
-                    ) : (
-                      <span className={cn(styles.statusSpark, isOnline ? styles.statusSparkOnline : styles.statusSparkOffline)} />
-                    )}
+                    {conv.type === 'group' ? <Users size={12} /> : <span className={cn(styles.statusSpark, isOnline ? styles.statusSparkOnline : styles.statusSparkOffline)} />}
                     <small>{statusLabel}</small>
                   </div>
                   <p className={styles.convPreviewLine}>{previewIcon}{previewLine}</p>
                   {conv.unreadCount > 0 ? (
                     <div className={styles.convFooter}>
-                      <span className={styles.convUnreadBadge}>{conv.unreadCount} chua doc</span>
+                      <span className={styles.convUnreadBadge}>{conv.unreadCount} chưa đọc</span>
                     </div>
                   ) : null}
                 </div>

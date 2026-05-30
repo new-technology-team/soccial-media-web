@@ -109,7 +109,7 @@ export default function EditProfilePage() {
     setBusyUpload(true)
     try {
       const base64Data = await cropAvatarToBase64(avatarDraft, avatarZoom, avatarCropX, avatarCropY)
-      const response = await fetch('/backend/api/auth/avatar-upload-base64', {
+      const response = await fetch('/api/auth/avatar-upload-base64', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

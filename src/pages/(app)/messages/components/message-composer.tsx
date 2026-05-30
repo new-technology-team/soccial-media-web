@@ -63,6 +63,7 @@ type StickerPackName = keyof typeof EMOJI_STICKER_PACKS
 type MessageComposerProps = {
   message: string
   setMessage: (value: string) => void
+  onStopTyping?: () => void
   handleSend: () => void | Promise<void>
   handleFileSelected: (event: ChangeEvent<HTMLInputElement>) => void
   handlePickAttachment: () => void
@@ -90,6 +91,7 @@ const formatFileSize = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024
 export function MessageComposer({
   message,
   setMessage,
+  onStopTyping,
   handleSend,
   handleFileSelected,
   handlePickAttachment,
@@ -184,6 +186,7 @@ export function MessageComposer({
           className={styles.composerTextarea}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
+          onBlur={() => onStopTyping?.()}
           placeholder={attachmentDraft ? 'Nhập chú thích...' : 'Nhập tin nhắn...'}
           rows={1}
           onKeyDown={(event) => {

@@ -1,8 +1,8 @@
 import { MoreHorizontal, Smile } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { Dispatch, MouseEvent, MutableRefObject, ReactNode, SetStateAction, UIEvent } from 'react'
+import type { MouseEvent, MutableRefObject, ReactNode, UIEvent } from 'react'
 
-import { formatVietnamTime, getMessageReactionItems, getMessageReactionMeta } from '@/services/messages/formatters'
+import { formatVietnamTime, getMessageReactionItems } from '@/services/messages/formatters'
 import { CallHistoryMessage } from '@/components/call'
 import type { ChatMessage, Conversation } from '@/types'
 import { cn } from '@/utils'
@@ -20,12 +20,9 @@ type MessageThreadProps = {
   messagesWrapRef: MutableRefObject<HTMLDivElement | null>
   loadingOlderMessages: boolean
   typingUserIds: Set<number>
-  busyActionId: string | null
   pinnedMessageIds: Set<string>
-  reactionPickerMessageId: string | null
-  setReactionPickerMessageId: Dispatch<SetStateAction<string | null>>
+  openReactionPicker: (event: MouseEvent<HTMLElement>, messageId: string) => void
   openMessageActions: (event: MouseEvent<HTMLElement>, messageId: string) => void
-  handleReaction: (message: ChatMessage, reaction: string) => void | Promise<void>
   renderMessagePreview: (message: ChatMessage) => ReactNode
   getMessageReadLabel: (message: ChatMessage) => string | null
   onLoadOlderMessages: () => Promise<void>
@@ -58,12 +55,9 @@ export function MessageThread({
   messagesWrapRef,
   loadingOlderMessages,
   typingUserIds,
-  busyActionId,
   pinnedMessageIds,
-  reactionPickerMessageId,
-  setReactionPickerMessageId,
+  openReactionPicker,
   openMessageActions,
-  handleReaction,
   renderMessagePreview,
   getMessageReadLabel,
   onLoadOlderMessages,
@@ -111,15 +105,26 @@ export function MessageThread({
             return `${reactorName}: ${reaction.meta.label}`
           })
           .join(', ')
+        const reactionGroups = reactionItems.reduce<Array<{ reaction: string; emoji: string; label: string; count: number }>>((groups, reaction) => {
+          const existing = groups.find((item) => item.reaction === reaction.reaction)
+          const meta = MESSAGE_REACTION_ICONS.find((item) => item.type === reaction.reaction) || MESSAGE_REACTION_ICONS[2]
+          if (existing) {
+            existing.count += 1
+          } else {
+            groups.push({ reaction: reaction.reaction, emoji: meta.emoji, label: meta.label, count: 1 })
+          }
+          return groups
+        }, [])
 
         return (
           <div
             key={msg.id}
+            data-message-id={msg.id}
             className={cn(
               styles.messageRow,
               mine && styles.messageRowMine,
               groupedWithPrevious && styles.messageRowGrouped,
-              groupedWithNext && styles.messageRowHasNext
+              groupedWithNext && styles.messageRowHasNext,
             )}
           >
             {showAvatar ? (
@@ -140,10 +145,7 @@ export function MessageThread({
               ) : null}
 
               <div
-                className={cn(
-                  styles.bubble,
-                  mine && styles.bubbleMine
-                )}
+                className={cn(styles.bubble, mine && styles.bubbleMine)}
                 onContextMenu={(event) => {
                   event.preventDefault()
                   openMessageActions(event, msg.id)
@@ -165,26 +167,14 @@ export function MessageThread({
                 {renderMessagePreview(msg)}
                 {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
 
-                {!isRecalled && reactionItems.length > 0 ? (
+                {!isRecalled && reactionGroups.length > 0 ? (
                   <div className={styles.reactionsPill} title={reactionNames}>
-                    {reactionItems.slice(0, 4).map((reaction, index) => {
-                      const reactor = selectedConversation?.members.find((member) => member.userId === reaction.userId) || null
-                      const reactorName = reactor?.fullName || `Người dùng #${reaction.userId}`
-                      const meta = reaction.meta
-                      return (
-                        <span key={`${reaction.userId}-${index}`} className={styles.reactionChip} title={`${reactorName} đã thả ${meta.label}`}>
-                          {reactor?.avatarUrl ? (
-                            <img src={reactor.avatarUrl} alt={reactorName} className={styles.reactionAvatar} loading="lazy" />
-                          ) : (
-                            <span className={styles.reactionAvatar}>{(reactorName[0] || 'U').toUpperCase()}</span>
-                          )}
-                          <span className={styles.reactionEmoji}>
-                            <ReactionIcon type={reaction.reaction} size={13} />
-                          </span>
-                        </span>
-                      )
-                    })}
-                    <span className={styles.reactionMore}>{reactionItems.length}</span>
+                    {reactionGroups.map((reaction) => (
+                      <span key={reaction.reaction} className={styles.reactionChip} title={reaction.label}>
+                        <span className={styles.reactionEmoji}>{reaction.emoji}</span>
+                        {reaction.count > 1 ? <span className={styles.reactionCount}>{reaction.count}</span> : null}
+                      </span>
+                    ))}
                   </div>
                 ) : null}
               </div>
@@ -196,35 +186,14 @@ export function MessageThread({
                     className={cn(styles.reactionTrigger, msg.viewerReaction && styles.reactionTriggerActive)}
                     title="Thả cảm xúc"
                     aria-label="Thả cảm xúc"
-                    onClick={() => setReactionPickerMessageId((current) => (current === msg.id ? null : msg.id))}
+                    onClick={(event) => openReactionPicker(event, msg.id)}
                   >
                     {msg.viewerReaction ? <ReactionIcon type={msg.viewerReaction} size={14} /> : <Smile size={14} />}
                   </button>
                 ) : null}
                 <span className={styles.messageTime}>{formatVietnamTime(msg.createdAt)}</span>
-                {readLabel ? <span className={styles.readLabel}>{readLabel}</span> : null}
+                {readLabel ? <span className={styles.readLabel}>· {readLabel}</span> : null}
               </div>
-
-              {!isRecalled && reactionPickerMessageId === msg.id ? (
-                <div className={styles.reactionPicker}>
-                  {MESSAGE_REACTION_ICONS.map((reaction) => (
-                    <button
-                      key={reaction.type}
-                      type="button"
-                      className={cn(msg.viewerReaction === reaction.type && styles.reactionPickerActive)}
-                      title={reaction.label}
-                      aria-label={reaction.label}
-                      disabled={busyActionId === msg.id}
-                      onClick={() => {
-                        void handleReaction(msg, reaction.type)
-                        setReactionPickerMessageId(null)
-                      }}
-                    >
-                      <span className={styles.reactionPickerGlyph}>{reaction.emoji}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
             </div>
           </div>
         )

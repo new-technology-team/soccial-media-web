@@ -70,6 +70,17 @@ const normalizeChatMessage = (message: ChatMessage): ChatMessage => ({
   mediaUrl: resolveApiAssetUrl(message.mediaUrl),
 })
 
+export const normalizeFeedComment = (comment: FeedComment): FeedComment => ({
+  ...comment,
+  id: String(comment.id),
+  postId: String(comment.postId),
+  parentCommentId: comment.parentCommentId ? String(comment.parentCommentId) : null,
+  authorAvatar: resolveApiAssetUrl(comment.authorAvatar),
+  imageUrl: resolveApiAssetUrl(comment.imageUrl || comment.file || null),
+  file: resolveApiAssetUrl(comment.file || comment.imageUrl || null),
+  replies: (comment.replies || []).map(normalizeFeedComment),
+})
+
 export const normalizeFeedPost = (post: FeedPost): FeedPost => ({
   ...post,
   mediaUrl: resolveApiAssetUrl(post.mediaUrl),
@@ -492,15 +503,37 @@ export const api = {
       hasMore?: boolean
       limit?: number
       offset?: number
-    }>(`/social/posts/${postId}/comments${suffix}`, { method: 'GET' }, token)
+    }>(`/social/posts/${postId}/comments${suffix}`, { method: 'GET' }, token).then((res) => ({
+      ...res,
+      comments: (res.comments || []).map(normalizeFeedComment),
+    }))
   },
 
-  addComment: (token: string, postId: number | string, content: string) =>
+  addComment: (token: string, postId: number | string, content: string, imageUrl?: string | null, parentCommentId?: number | string | null) =>
     request<{ comment: FeedComment }>(
       `/social/posts/${postId}/comments`,
-      { method: 'POST', body: JSON.stringify({ content }) },
+      { method: 'POST', body: JSON.stringify({ content, imageUrl, parentCommentId }) },
       token
-    ),
+    ).then((res) => ({ comment: normalizeFeedComment(res.comment) })),
+
+  addCommentReply: (token: string, commentId: number | string, content: string, imageUrl?: string | null) =>
+    request<{ comment: FeedComment }>(
+      `/social/comments/${commentId}/replies`,
+      { method: 'POST', body: JSON.stringify({ content, imageUrl }) },
+      token
+    ).then((res) => ({ comment: normalizeFeedComment(res.comment) })),
+
+  uploadCommentImageBase64: (
+    token: string,
+    payload: { fileName: string; contentType: string; base64Data: string }
+  ) =>
+    request<{ mediaUrl?: string; fileUrl?: string }>(
+      '/social/comments/upload-base64',
+      { method: 'POST', body: JSON.stringify(payload) },
+      token
+    ).then((data) => ({
+      mediaUrl: resolveApiAssetUrl(data.mediaUrl || data.fileUrl || '') || '',
+    })),
 
   deleteComment: (token: string, commentId: number | string) =>
     request<{ message: string }>(`/social/comments/${commentId}`, { method: 'DELETE' }, token),

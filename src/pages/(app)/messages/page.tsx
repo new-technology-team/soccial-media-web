@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -68,7 +68,7 @@ import { callSession } from '@/services/call-session'
 import { toast } from '@/hooks/use-toast'
 import { connectSocket, getSocket } from '@/services/socket'
 import { useConversationRouting } from '@/hooks/use-conversation-routing'
-import { fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
+import { compressImageFile, fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
 import {
   loadChatConversations,
   loadChatMessages,
@@ -107,6 +107,12 @@ type ConfirmModalState = {
   onConfirm: () => void | Promise<void>
 }
 
+type ReactionPickerState = {
+  messageId: string
+  x: number
+  y: number
+}
+
 type NicknameDialogState = {
   memberId: number
   name: string
@@ -126,6 +132,16 @@ type ConversationUiPrefs = {
   themeColor?: string | null
   backgroundUrl?: string | null
 }
+
+const MESSAGE_REACTION_ICONS: Array<{ type: string; label: string; emoji: string }> = [
+  { type: 'smile', label: 'Cười', emoji: '😄' },
+  { type: 'sad', label: 'Buồn', emoji: '😔' },
+  { type: 'like', label: 'Thích', emoji: '👍' },
+  { type: 'love', label: 'Yêu thích', emoji: '❤️' },
+  { type: 'wow', label: 'Bất ngờ', emoji: '😮' },
+  { type: 'cry', label: 'Khóc', emoji: '😭' },
+  { type: 'angry', label: 'Tức giận', emoji: '😡' },
+]
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
@@ -255,7 +271,7 @@ export default function MessagesPage() {
   const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<Array<{ userId: number; stream: MediaStream }>>(() => useCallStore.getState().remoteStreams)
   const [actionMenu, setActionMenu] = useState<{ messageId: string; x: number; y: number } | null>(null)
-  const [reactionPickerMessageId, setReactionPickerMessageId] = useState<string | null>(null)
+  const [reactionPicker, setReactionPicker] = useState<ReactionPickerState | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [chatNotice, setChatNotice] = useState<string | null>(null)
   const [showEmojiPanel, setShowEmojiPanel] = useState(false)
@@ -321,6 +337,7 @@ export default function MessagesPage() {
     }
   })
   const typingTimeoutRef = useRef<number | null>(null)
+  const remoteTypingTimeoutsRef = useRef<Map<number, number>>(new Map())
   const sendingMessageRef = useRef(false)
 
   // AI States
@@ -344,6 +361,7 @@ export default function MessagesPage() {
   const videoInputRef = useRef<HTMLInputElement | null>(null)
   const longPressTimer = useRef<number | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
+  const reactionPickerRef = useRef<HTMLDivElement | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const localStreamRef = useRef<MediaStream | null>(useCallStore.getState().localStream)
   // Share Map reference with callSession so WebRTC state survives navigation
@@ -746,11 +764,55 @@ export default function MessagesPage() {
     setShowEmojiPanel(false)
     setShowStickerPanel(false)
     setShowJumpToLatest(false)
-    setReactionPickerMessageId(null)
+    setReactionPicker(null)
     setTypingUserIds(new Set())
+    remoteTypingTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
+    remoteTypingTimeoutsRef.current.clear()
+    setMessage('')
+    setAttachmentDraft((current) => {
+      if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
+      return null
+    })
     setMessageSearchDraft('')
     markConversationRead(selectedConversationId)
+    const socket = getSocket()
+    socket?.emit('stopTyping', { conversationId: selectedConversationId })
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+    }
   }, [markConversationRead, selectedConversationId])
+
+  const emitTypingState = useCallback((isTyping: boolean, conversationId = selectedConversationId) => {
+    const socket = getSocket()
+    if (!socket || !conversationId) return
+    socket.emit(isTyping ? 'typing' : 'stopTyping', { conversationId })
+    socket.emit('message:typing', { conversationId, isTyping })
+  }, [selectedConversationId])
+
+  const stopComposerTyping = useCallback((conversationId = selectedConversationId) => {
+    if (!conversationId) return
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+    }
+    emitTypingState(false, conversationId)
+  }, [emitTypingState, selectedConversationId])
+
+  const handleComposerMessageChange = useCallback((value: string) => {
+    setMessage(value)
+    if (!selectedConversationId) return
+    const socket = getSocket()
+    socket?.emit('join-conversation', selectedConversationId)
+    emitTypingState(Boolean(value.trim()), selectedConversationId)
+    if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current)
+    if (value.trim()) {
+      typingTimeoutRef.current = window.setTimeout(() => {
+        emitTypingState(false, selectedConversationId)
+        typingTimeoutRef.current = null
+      }, 1800)
+    }
+  }, [emitTypingState, selectedConversationId])
 
   useEffect(() => {
     if (!token) return
@@ -812,18 +874,36 @@ export default function MessagesPage() {
       refreshConversations().catch(() => undefined)
     })
 
-    socket.on('message:typing', (payload: { conversationId: string; fromUserId: number; isTyping: boolean }) => {
+    const handleTypingPayload = (payload: { conversationId: string; fromUserId: number; isTyping?: boolean }) => {
       if (!payload || String(payload.conversationId) !== String(selectedConversationId) || Number(payload.fromUserId) === Number(user?.id)) return
       setTypingUserIds((prev) => {
         const next = new Set(prev)
-        if (payload.isTyping) {
+        if (payload.isTyping !== false) {
           next.add(payload.fromUserId)
+          const existing = remoteTypingTimeoutsRef.current.get(payload.fromUserId)
+          if (existing) window.clearTimeout(existing)
+          const timeoutId = window.setTimeout(() => {
+            setTypingUserIds((current) => {
+              const updated = new Set(current)
+              updated.delete(payload.fromUserId)
+              return updated
+            })
+            remoteTypingTimeoutsRef.current.delete(payload.fromUserId)
+          }, 2500)
+          remoteTypingTimeoutsRef.current.set(payload.fromUserId, timeoutId)
         } else {
           next.delete(payload.fromUserId)
+          const existing = remoteTypingTimeoutsRef.current.get(payload.fromUserId)
+          if (existing) window.clearTimeout(existing)
+          remoteTypingTimeoutsRef.current.delete(payload.fromUserId)
         }
         return next
       })
-    })
+    }
+
+    socket.on('message:typing', handleTypingPayload)
+    socket.on('typing', (payload: { conversationId: string; fromUserId: number }) => handleTypingPayload({ ...payload, isTyping: true }))
+    socket.on('stopTyping', (payload: { conversationId: string; fromUserId: number }) => handleTypingPayload({ ...payload, isTyping: false }))
 
     const handleSocketNotification = (payload: { type?: string } | null) => {
       if (!payload) return
@@ -1013,7 +1093,9 @@ export default function MessagesPage() {
       socket.off('message:reaction')
       socket.off('message:updated')
       socket.off('message:deleted')
-      socket.off('message:typing')
+      socket.off('message:typing', handleTypingPayload)
+      socket.off('typing')
+      socket.off('stopTyping')
       socket.off('message:seen')
       socket.off('conversation:updated')
       socket.off('conversation:seen')
@@ -1033,6 +1115,8 @@ export default function MessagesPage() {
       socket.off('group_call_ended')
       socket.off('participant_updated')
       socket.off('participant_speaking')
+      remoteTypingTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
+      remoteTypingTimeoutsRef.current.clear()
     }
   }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
@@ -1059,6 +1143,7 @@ export default function MessagesPage() {
 
     socket.emit('join-conversation', selectedConversationId)
     return () => {
+      socket.emit('stopTyping', { conversationId: selectedConversationId })
       socket.emit('leave-conversation', selectedConversationId)
     }
   }, [selectedConversationId])
@@ -1115,6 +1200,17 @@ export default function MessagesPage() {
     () => (actionMenu ? messages.find((msg) => msg.id === actionMenu.messageId) || null : null),
     [actionMenu, messages]
   )
+
+  const activeReactionMessage = useMemo(
+    () => (reactionPicker ? messages.find((msg) => msg.id === reactionPicker.messageId) || null : null),
+    [messages, reactionPicker]
+  )
+
+  useLayoutEffect(() => {
+    if (!reactionPicker || !reactionPickerRef.current) return
+    reactionPickerRef.current.style.left = `${reactionPicker.x}px`
+    reactionPickerRef.current.style.top = `${reactionPicker.y}px`
+  }, [reactionPicker])
 
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -1339,6 +1435,27 @@ export default function MessagesPage() {
     if (!selectedConversationId || pinnedMessageIds.size === 0) return []
     return (messagesByConversation[selectedConversationId] || []).filter((item) => pinnedMessageIds.has(item.id))
   }, [messagesByConversation, pinnedMessageIds, selectedConversationId])
+  const pinnedMessageMap = useMemo(() => new Map(pinnedMessages.map((item) => [item.id, item])), [pinnedMessages])
+
+  const jumpToMessage = useCallback(async (messageId: string) => {
+    const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(messageId) : messageId.replace(/"/g, '\\"')
+    let target = messagesWrapRef.current?.querySelector<HTMLElement>(`[data-message-id="${escapedId}"]`)
+    if (!target && token && selectedConversationId) {
+      const result = await loadChatMessages(token, selectedConversationId, 100).catch(() => null)
+      if (result?.messages?.length) {
+        setMessages(selectedConversationId, result.messages)
+        await new Promise((resolve) => window.setTimeout(resolve, 0))
+        target = messagesWrapRef.current?.querySelector<HTMLElement>(`[data-message-id="${escapedId}"]`)
+      }
+    }
+    if (!target) {
+      setChatNotice('Tin nhắn đã ghim chưa có trong phần lịch sử đang tải hoặc đã bị xóa.')
+      return
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    target.classList.add(styles.messageRowHighlighted)
+    window.setTimeout(() => target.classList.remove(styles.messageRowHighlighted), 1400)
+  }, [selectedConversationId, setMessages, token])
 
   const chatPanelThemeClass = useMemo(() => {
     const themeColor = selectedConversationUiPrefs.themeColor ?? selectedConversation?.themeColor
@@ -2231,10 +2348,11 @@ export default function MessagesPage() {
       const trimmedMessage = message.trim()
       const response = attachmentDraft
         ? await (async () => {
-            const base64Data = await fileToBase64(attachmentDraft.file)
+            const uploadFile = await compressImageFile(attachmentDraft.file)
+            const base64Data = await fileToBase64(uploadFile)
             const upload = await api.uploadMessageBase64(token, selectedConversationId, {
-              fileName: attachmentDraft.file.name,
-              contentType: attachmentDraft.file.type || 'application/octet-stream',
+              fileName: uploadFile.name,
+              contentType: uploadFile.type || 'application/octet-stream',
               base64Data,
             })
 
@@ -2246,14 +2364,15 @@ export default function MessagesPage() {
               type: attachmentDraft.type,
               text: trimmedMessage || undefined,
               mediaUrl: upload.mediaUrl,
-              fileName: attachmentDraft.file.name,
-              mimeType: attachmentDraft.file.type || 'application/octet-stream',
-              fileSize: attachmentDraft.file.size,
+              fileName: uploadFile.name,
+              mimeType: uploadFile.type || 'application/octet-stream',
+              fileSize: uploadFile.size,
             })
           })()
         : await api.sendMessage(token, selectedConversationId, trimmedMessage)
       upsertMessage(selectedConversationId, response.message)
-      setMessage('')
+      handleComposerMessageChange('')
+      stopComposerTyping(selectedConversationId)
       clearAttachmentDraft()
       setChatNotice(null)
       setShowEmojiPanel(false)
@@ -2480,11 +2599,45 @@ export default function MessagesPage() {
   const openMessageActions = (event: React.MouseEvent<HTMLElement>, messageId: string) => {
     event.preventDefault()
     event.stopPropagation()
+    setReactionPicker(null)
     const rect = event.currentTarget.getBoundingClientRect()
-    const menuWidth = 180
-    const x = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, rect.right - menuWidth))
-    const y = Math.max(12, Math.min(window.innerHeight - 240, rect.bottom + 8))
+    const menuWidth = 220
+    const menuHeight = 320
+    const preferredX = rect.left + rect.width / 2
+    const x = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, preferredX - menuWidth / 2))
+    const y = rect.bottom + menuHeight + 12 > window.innerHeight
+      ? Math.max(12, rect.top - menuHeight - 8)
+      : Math.max(12, rect.bottom + 8)
     setActionMenu({
+      messageId,
+      x,
+      y,
+    })
+  }
+
+  const openReactionPicker = (event: React.MouseEvent<HTMLElement>, messageId: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (reactionPicker?.messageId === messageId) {
+      setReactionPicker(null)
+      return
+    }
+
+    setActionMenu(null)
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    const pickerWidth = 292
+    const pickerHeight = 54
+    const preferredX = rect.left + rect.width / 2 - pickerWidth / 2
+    const x = Math.min(window.innerWidth - pickerWidth - 12, Math.max(12, preferredX))
+    const aboveY = rect.top - pickerHeight - 10
+    const belowY = rect.bottom + 10
+    const y = aboveY >= 12
+      ? aboveY
+      : Math.min(window.innerHeight - pickerHeight - 12, Math.max(12, belowY))
+
+    setReactionPicker({
       messageId,
       x,
       y,
@@ -2756,7 +2909,10 @@ export default function MessagesPage() {
   }, [])
 
   useEffect(() => {
-    const closeMenu = () => setActionMenu(null)
+    const closeMenu = () => {
+      setActionMenu(null)
+      setReactionPicker(null)
+    }
     window.addEventListener('click', closeMenu)
     return () => window.removeEventListener('click', closeMenu)
   }, [])
@@ -3016,10 +3172,25 @@ export default function MessagesPage() {
           isLoadingConversations={isLoadingConversations}
           activeRailTab={activeRailTab}
           onOpenConversation={handleOpenConversation}
-          onShowNotifications={() => setShowNotificationsDrawer(true)}
-          onShowNewMessage={() => setShowNewMessageModal(true)}
+          onShowMessages={() => {
+            setShowNotificationsDrawer(false)
+            setShowNewMessageModal(false)
+            setShowCreateGroupModal(false)
+          }}
+          onShowNotifications={() => {
+            setShowNotificationsDrawer(true)
+            setShowNewMessageModal(false)
+            setShowCreateGroupModal(false)
+          }}
+          onShowNewMessage={() => {
+            setShowNewMessageModal(true)
+            setShowNotificationsDrawer(false)
+            setShowCreateGroupModal(false)
+          }}
           onShowCreateGroup={() => {
             setShowCreateGroupModal(true)
+            setShowNotificationsDrawer(false)
+            setShowNewMessageModal(false)
             setGroupName('')
             setGroupSearchKeyword('')
             setGroupMemberIds([])
@@ -3265,6 +3436,28 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
+          {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
+            <div className={styles.pinnedQuickList}>
+              {selectedConversation.pinnedMessageIds.map((messageId) => {
+                const item = pinnedMessageMap.get(String(messageId))
+                if (!item) {
+                  return (
+                    <button key={String(messageId)} type="button" onClick={() => void jumpToMessage(String(messageId))}>
+                      {`Tin nhắn đã ghim #${String(messageId).slice(-6)}`}
+                    </button>
+                  )
+                }
+                return (
+                  <button key={String(messageId)} type="button" onClick={() => void jumpToMessage(String(messageId))}>
+                  {item.text || item.fileName || (item.type === 'image' ? 'Ảnh' : 'Tin nhắn đã ghim')}
+                  </button>
+                )
+              })} {false && (
+                <span>Tin nhắn đã ghim chưa nằm trong phần lịch sử đang tải.</span>
+              )}
+            </div>
+          ) : null}
+
           {directPeer ? (
             <div className={styles.chatSocialBar}>
               {!isDirectPeerFriend && !isDirectPeerPending ? (
@@ -3335,12 +3528,9 @@ export default function MessagesPage() {
               messagesWrapRef={messagesWrapRef}
               loadingOlderMessages={loadingOlderMessages || loadingMessages}
               typingUserIds={typingUserIds}
-              busyActionId={busyActionId}
               pinnedMessageIds={pinnedMessageIds}
-              reactionPickerMessageId={reactionPickerMessageId}
-              setReactionPickerMessageId={setReactionPickerMessageId}
+              openReactionPicker={openReactionPicker}
               openMessageActions={openMessageActions}
-              handleReaction={handleReaction}
               renderMessagePreview={renderMessagePreview}
               getMessageReadLabel={getMessageReadLabel}
               onLoadOlderMessages={loadOlderMessages}
@@ -3361,7 +3551,7 @@ export default function MessagesPage() {
                     key={idx}
                     type="button"
                     className={styles.aiSuggestBtn}
-                    onClick={() => { setMessage(suggestion); setReplySuggestions([]) }}
+                  onClick={() => { handleComposerMessageChange(suggestion); setReplySuggestions([]) }}
                   >
                     {suggestion}
                   </button>
@@ -3380,7 +3570,8 @@ export default function MessagesPage() {
           {selectedConversationId ? (
             <MessageComposer
               message={message}
-              setMessage={setMessage}
+              setMessage={handleComposerMessageChange}
+              onStopTyping={stopComposerTyping}
               handleSend={handleSend}
               handleFileSelected={handleFileSelected}
               handlePickAttachment={handlePickAttachment}
@@ -3679,7 +3870,7 @@ export default function MessagesPage() {
           ) : null}
 
           {actionMenu && activeActionMessage ? (
-            <div ref={actionMenuRef} className={styles.actionMenu}>
+            <div ref={actionMenuRef} className={styles.actionMenu} style={{ left: actionMenu.x, top: actionMenu.y }}>
               <div className={styles.actionMenuHeader}>
                 <span className={styles.listEntryAvatar}>{getAvatarInitial(getSenderName(activeActionMessage.senderId, activeActionMessage))}</span>
                 <div className={styles.actionMenuMeta}>
@@ -3721,6 +3912,27 @@ export default function MessagesPage() {
                   </>
                 )
               })()}
+            </div>
+          ) : null}
+
+          {reactionPicker && activeReactionMessage ? (
+            <div ref={reactionPickerRef} className={styles.reactionPicker}>
+              {MESSAGE_REACTION_ICONS.map((reaction) => (
+                <button
+                  key={reaction.type}
+                  type="button"
+                  className={cn(activeReactionMessage.viewerReaction === reaction.type && styles.reactionPickerActive)}
+                  title={reaction.label}
+                  aria-label={reaction.label}
+                  disabled={busyActionId === activeReactionMessage.id}
+                  onClick={() => {
+                    void handleReaction(activeReactionMessage, reaction.type)
+                    setReactionPicker(null)
+                  }}
+                >
+                  <span className={styles.reactionPickerGlyph}>{reaction.emoji}</span>
+                </button>
+              ))}
             </div>
           ) : null}
         </section>
