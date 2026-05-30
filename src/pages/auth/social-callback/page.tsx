@@ -9,7 +9,7 @@ import { useAuthStore } from '@/contexts/auth-store'
 import type { User } from '@/types'
 import styles from '../auth.module.css'
 
-const backendCallbackBase = '/backend/api/auth'
+const backendCallbackBase = '/api/auth'
 
 const getParamSource = () => {
   const queryParams = new URLSearchParams(window.location.search)
