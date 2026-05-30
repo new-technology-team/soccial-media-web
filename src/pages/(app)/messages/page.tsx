@@ -111,6 +111,7 @@ type ReactionPickerState = {
   messageId: string
   x: number
   y: number
+  placement: 'above' | 'below'
 }
 
 type NicknameDialogState = {
@@ -1210,6 +1211,15 @@ export default function MessagesPage() {
     if (!reactionPicker || !reactionPickerRef.current) return
     reactionPickerRef.current.style.left = `${reactionPicker.x}px`
     reactionPickerRef.current.style.top = `${reactionPicker.y}px`
+  }, [reactionPicker])
+
+  useEffect(() => {
+    if (!reactionPicker || !reactionPickerRef.current) return
+    const buttons = Array.from(reactionPickerRef.current.querySelectorAll('button')) as HTMLButtonElement[]
+    if (buttons.length === 0) return
+    const activeIndex = buttons.findIndex((btn) => btn.classList.contains(styles.reactionPickerActive))
+    const focusIndex = activeIndex >= 0 ? activeIndex : 0
+    buttons[focusIndex]?.focus()
   }, [reactionPicker])
 
   const [searchTerm, setSearchTerm] = useState('')
@@ -2626,21 +2636,32 @@ export default function MessagesPage() {
 
     setActionMenu(null)
 
-    const rect = event.currentTarget.getBoundingClientRect()
-    const pickerWidth = 292
-    const pickerHeight = 54
-    const preferredX = rect.left + rect.width / 2 - pickerWidth / 2
-    const x = Math.min(window.innerWidth - pickerWidth - 12, Math.max(12, preferredX))
-    const aboveY = rect.top - pickerHeight - 10
-    const belowY = rect.bottom + 10
-    const y = aboveY >= 12
-      ? aboveY
-      : Math.min(window.innerHeight - pickerHeight - 12, Math.max(12, belowY))
+    const messageRow = event.currentTarget.closest(`[data-message-id="${messageId}"]`) as HTMLElement | null
+    const bubble = messageRow?.querySelector('[data-message-bubble="true"]') as HTMLElement | null
+    const anchorRect = bubble?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect()
+    const wrapRect = messagesWrapRef.current?.getBoundingClientRect() || { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight }
+    const pickerHeight = 40
+    const pickerWidth = Math.min(wrapRect.right - wrapRect.left - 16, MESSAGE_REACTION_ICONS.length * 32 + 16)
+    const preferredX = anchorRect.left + anchorRect.width / 2 - pickerWidth / 2
+    const minX = wrapRect.left + 8
+    const maxX = wrapRect.right - pickerWidth - 8
+    const x = Math.min(maxX, Math.max(minX, preferredX))
+
+    const spaceBelow = wrapRect.bottom - anchorRect.bottom
+    const spaceAbove = anchorRect.top - wrapRect.top
+    const placement = spaceBelow >= pickerHeight + 10 || spaceBelow >= spaceAbove ? 'below' : 'above'
+    const preferredY = placement === 'below'
+      ? anchorRect.bottom + 8
+      : anchorRect.top - pickerHeight - 8
+    const minY = wrapRect.top + 8
+    const maxY = wrapRect.bottom - pickerHeight - 8
+    const y = Math.min(maxY, Math.max(minY, preferredY))
 
     setReactionPicker({
       messageId,
       x,
       y,
+      placement,
     })
   }
 
@@ -3529,6 +3550,8 @@ export default function MessagesPage() {
               loadingOlderMessages={loadingOlderMessages || loadingMessages}
               typingUserIds={typingUserIds}
               pinnedMessageIds={pinnedMessageIds}
+              reactionPickerMessageId={reactionPicker?.messageId || null}
+              reactionPickerPlacement={reactionPicker?.placement || null}
               openReactionPicker={openReactionPicker}
               openMessageActions={openMessageActions}
               renderMessagePreview={renderMessagePreview}
@@ -3916,12 +3939,38 @@ export default function MessagesPage() {
           ) : null}
 
           {reactionPicker && activeReactionMessage ? (
-            <div ref={reactionPickerRef} className={styles.reactionPicker}>
+            <div
+              ref={reactionPickerRef}
+              className={`${styles.reactionPicker} ${reactionPicker.placement === 'above' ? styles.reactionPickerAbove : styles.reactionPickerBelow}`}
+              role="toolbar"
+              aria-label="Chọn cảm xúc"
+              onKeyDown={(event) => {
+                if (!reactionPickerRef.current) return
+                const buttons = Array.from(reactionPickerRef.current.querySelectorAll('button')) as HTMLButtonElement[]
+                if (buttons.length === 0) return
+                const currentIndex = buttons.findIndex((btn) => btn === document.activeElement)
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setReactionPicker(null)
+                  return
+                }
+                if (event.key === 'ArrowRight') {
+                  event.preventDefault()
+                  const nextIndex = (currentIndex + 1) % buttons.length
+                  buttons[nextIndex]?.focus()
+                }
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault()
+                  const nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1
+                  buttons[nextIndex]?.focus()
+                }
+              }}
+            >
               {MESSAGE_REACTION_ICONS.map((reaction) => (
                 <button
                   key={reaction.type}
                   type="button"
-                  className={cn(activeReactionMessage.viewerReaction === reaction.type && styles.reactionPickerActive)}
+                  className={activeReactionMessage.viewerReaction === reaction.type ? styles.reactionPickerActive : ''}
                   title={reaction.label}
                   aria-label={reaction.label}
                   disabled={busyActionId === activeReactionMessage.id}
