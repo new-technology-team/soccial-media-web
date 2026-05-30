@@ -888,6 +888,10 @@
   position: relative;
 }
 
+.messageBlockHasReactions {
+  padding-bottom: 22px;
+}
+
 .senderLink {
   color: #465660;
   font-size: 0.74rem;
@@ -1144,20 +1148,30 @@
 }
 
 .reactionPicker {
-  justify-self: end;
-  position: absolute;
-  right: 0;
-  bottom: 2rem;
-  display: flex;
-  gap: 0.24rem;
-  border: 1px solid rgba(171, 173, 174, 0.28);
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  width: max-content;
+  height: 40px;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
   border-radius: 999px;
   background: #fff;
-  box-shadow: 0 10px 24px rgba(14, 20, 28, 0.18);
-  padding: 0.24rem;
-  margin-top: 0.2rem;
-  z-index: 4;
-  animation: reactionPickerIn 150ms ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 60;
+  max-width: calc(100% - 16px);
+  animation: reactionPickerIn 170ms ease-out;
+  transform-origin: center top;
+}
+
+.reactionPickerAbove {
+  transform-origin: center bottom;
+}
+
+.reactionPickerBelow {
+  transform-origin: center top;
 }
 
 @keyframes reactionPickerIn {
@@ -1166,21 +1180,30 @@
 }
 
 .reactionPicker button {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   cursor: pointer;
-  font-size: 1rem;
   display: grid;
   place-items: center;
+  transition: transform 150ms ease, background 150ms ease;
 }
 
 .reactionPicker button:hover,
 .reactionPickerActive {
-  background: #edf3fb !important;
-  transform: translateY(-1px);
+  background: rgba(229, 231, 235, 0.7) !important;
+  transform: translateY(-4px) scale(1.06);
+}
+
+.reactionPickerGlyph {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.reactionPickerSpacer {
+  height: 44px;
 }
 
 .messageTime {
@@ -1454,7 +1477,7 @@
 }
 
 .reactionPickerGlyph {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
 }
 
 .stickerMessageGlyph {
@@ -4286,36 +4309,26 @@
   50% { opacity: 0.85; }
 }
 
-/* Final reaction layout override */
-.bubble {
-  overflow: visible;
-}
-
-.bubble:has(.reactionsPill) {
-  margin-bottom: 12px;
-}
-
+/* Compact reaction badges attached outside the bubble */
 .reactionsPill {
-  position: fixed;
-  z-index: 3;
-  align-items: center;
+  position: absolute;
+  left: 8px;
+  right: auto;
+  bottom: 2px;
+  z-index: 4;
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 2px;
-  max-width: min(240px, calc(100vw - 112px));
+  max-width: min(240px, calc(100% - 24px));
   min-height: 20px;
-  margin-top: 0;
-  z-index: 70;
-  max-width: min(292px, calc(100vw - 24px));
-  overflow: visible;
+  margin: 0;
+  padding: 2px 6px;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
   background: #fff;
   color: #111827;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .messageRowMine .reactionsPill {
@@ -4415,39 +4428,9 @@
   text-align: center;
 }
 
-/* Modern compact reactions: Messenger/Zalo-style badges attached to the bubble. */
+/* Keep bubble overflow visible for badge attachment */
 .bubble {
   overflow: visible;
-}
-
-.bubble:has(.reactionsPill) {
-  margin-bottom: 12px;
-}
-
-.reactionsPill {
-  position: absolute;
-  left: 8px;
-  right: auto;
-  bottom: -12px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px;
-  max-width: min(240px, calc(100vw - 112px));
-  min-height: 20px;
-  margin: 0;
-  padding: 2px 4px;
-  border: 1px solid #e5e7eb;
-  border-radius: 999px;
-  background: #fff;
-  color: #111827;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.messageRowMine .reactionsPill {
-  left: auto;
-  right: 8px;
 }
 
 .reactionChip {

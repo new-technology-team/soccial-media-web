@@ -21,6 +21,8 @@ type MessageThreadProps = {
   loadingOlderMessages: boolean
   typingUserIds: Set<number>
   pinnedMessageIds: Set<string>
+  reactionPickerMessageId: string | null
+  reactionPickerPlacement: 'above' | 'below' | null
   openReactionPicker: (event: MouseEvent<HTMLElement>, messageId: string) => void
   openMessageActions: (event: MouseEvent<HTMLElement>, messageId: string) => void
   renderMessagePreview: (message: ChatMessage) => ReactNode
@@ -56,6 +58,8 @@ export function MessageThread({
   loadingOlderMessages,
   typingUserIds,
   pinnedMessageIds,
+  reactionPickerMessageId,
+  reactionPickerPlacement,
   openReactionPicker,
   openMessageActions,
   renderMessagePreview,
@@ -88,6 +92,7 @@ export function MessageThread({
         const mine = msg.senderId === userId
         const reactionItems = getMessageReactionItems(msg)
         const isRecalled = !!(msg.isDeleted || (msg.meta && (msg.meta as Record<string, unknown>).recalled))
+        const hasReactions = !isRecalled && reactionItems.length > 0
         const sender = selectedConversation?.members.find((member) => member.userId === msg.senderId) || null
         const senderName = sender?.fullName || msg.senderName || `Người dùng #${msg.senderId}`
         const readLabel = mine ? getMessageReadLabel(msg) : null
@@ -135,7 +140,7 @@ export function MessageThread({
               <div className={styles.messageAvatarSpacer} aria-hidden="true" />
             )}
 
-            <div className={styles.messageBlock}>
+            <div className={cn(styles.messageBlock, hasReactions && styles.messageBlockHasReactions)}>
               {showSenderName ? (
                 <div className={styles.senderRow}>
                   <Link to={`/profile/${msg.senderId}`} className={styles.senderLink}>
@@ -144,8 +149,13 @@ export function MessageThread({
                 </div>
               ) : null}
 
+              {reactionPickerMessageId === msg.id && reactionPickerPlacement === 'above' ? (
+                <div className={styles.reactionPickerSpacer} aria-hidden="true" />
+              ) : null}
+
               <div
                 className={cn(styles.bubble, mine && styles.bubbleMine)}
+                data-message-bubble="true"
                 onContextMenu={(event) => {
                   event.preventDefault()
                   openMessageActions(event, msg.id)
@@ -167,17 +177,18 @@ export function MessageThread({
                 {renderMessagePreview(msg)}
                 {pinnedMessageIds.has(msg.id) ? <small className={styles.forwardTag}>Đã ghim</small> : null}
 
-                {!isRecalled && reactionGroups.length > 0 ? (
-                  <div className={styles.reactionsPill} title={reactionNames}>
-                    {reactionGroups.map((reaction) => (
-                      <span key={reaction.reaction} className={styles.reactionChip} title={reaction.label}>
-                        <span className={styles.reactionEmoji}>{reaction.emoji}</span>
-                        {reaction.count > 1 ? <span className={styles.reactionCount}>{reaction.count}</span> : null}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
               </div>
+
+              {hasReactions ? (
+                <div className={styles.reactionsPill} title={reactionNames}>
+                  {reactionGroups.map((reaction) => (
+                    <span key={reaction.reaction} className={styles.reactionChip} title={reaction.label}>
+                      <span className={styles.reactionEmoji}>{reaction.emoji}</span>
+                      {reaction.count > 1 ? <span className={styles.reactionCount}>{reaction.count}</span> : null}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
 
               <div className={cn(styles.messageFooter, mine && styles.messageFooterMine)}>
                 {!isRecalled ? (
@@ -194,6 +205,10 @@ export function MessageThread({
                 <span className={styles.messageTime}>{formatVietnamTime(msg.createdAt)}</span>
                 {readLabel ? <span className={styles.readLabel}>· {readLabel}</span> : null}
               </div>
+
+              {reactionPickerMessageId === msg.id && reactionPickerPlacement !== 'above' ? (
+                <div className={styles.reactionPickerSpacer} aria-hidden="true" />
+              ) : null}
             </div>
           </div>
         )
