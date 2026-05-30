@@ -68,7 +68,7 @@ import { callSession } from '@/services/call-session'
 import { toast } from '@/hooks/use-toast'
 import { connectSocket, getSocket } from '@/services/socket'
 import { useConversationRouting } from '@/hooks/use-conversation-routing'
-import { fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
+import { compressImageFile, fileToBase64, mapTypeFromFile } from '@/services/messages/file-utils'
 import {
   loadChatConversations,
   loadChatMessages,
@@ -321,6 +321,7 @@ export default function MessagesPage() {
     }
   })
   const typingTimeoutRef = useRef<number | null>(null)
+  const remoteTypingTimeoutsRef = useRef<Map<number, number>>(new Map())
   const sendingMessageRef = useRef(false)
 
   // AI States
@@ -750,7 +751,33 @@ export default function MessagesPage() {
     setTypingUserIds(new Set())
     setMessageSearchDraft('')
     markConversationRead(selectedConversationId)
+    const socket = getSocket()
+    socket?.emit('stopTyping', { conversationId: selectedConversationId })
+    if (typingTimeoutRef.current) {
+      window.clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = null
+    }
   }, [markConversationRead, selectedConversationId])
+
+  const emitTypingState = useCallback((isTyping: boolean, conversationId = selectedConversationId) => {
+    const socket = getSocket()
+    if (!socket || !conversationId) return
+    socket.emit(isTyping ? 'typing' : 'stopTyping', { conversationId })
+    socket.emit('message:typing', { conversationId, isTyping })
+  }, [selectedConversationId])
+
+  const handleComposerMessageChange = useCallback((value: string) => {
+    setMessage(value)
+    if (!selectedConversationId) return
+    emitTypingState(Boolean(value.trim()), selectedConversationId)
+    if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current)
+    if (value.trim()) {
+      typingTimeoutRef.current = window.setTimeout(() => {
+        emitTypingState(false, selectedConversationId)
+        typingTimeoutRef.current = null
+      }, 1800)
+    }
+  }, [emitTypingState, selectedConversationId])
 
   useEffect(() => {
     if (!token) return
@@ -818,8 +845,22 @@ export default function MessagesPage() {
         const next = new Set(prev)
         if (payload.isTyping) {
           next.add(payload.fromUserId)
+          const existing = remoteTypingTimeoutsRef.current.get(payload.fromUserId)
+          if (existing) window.clearTimeout(existing)
+          const timeoutId = window.setTimeout(() => {
+            setTypingUserIds((current) => {
+              const updated = new Set(current)
+              updated.delete(payload.fromUserId)
+              return updated
+            })
+            remoteTypingTimeoutsRef.current.delete(payload.fromUserId)
+          }, 2500)
+          remoteTypingTimeoutsRef.current.set(payload.fromUserId, timeoutId)
         } else {
           next.delete(payload.fromUserId)
+          const existing = remoteTypingTimeoutsRef.current.get(payload.fromUserId)
+          if (existing) window.clearTimeout(existing)
+          remoteTypingTimeoutsRef.current.delete(payload.fromUserId)
         }
         return next
       })
@@ -1033,6 +1074,8 @@ export default function MessagesPage() {
       socket.off('group_call_ended')
       socket.off('participant_updated')
       socket.off('participant_speaking')
+      remoteTypingTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
+      remoteTypingTimeoutsRef.current.clear()
     }
   }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, upsertMessage, user?.id])
 
@@ -1059,6 +1102,7 @@ export default function MessagesPage() {
 
     socket.emit('join-conversation', selectedConversationId)
     return () => {
+      socket.emit('stopTyping', { conversationId: selectedConversationId })
       socket.emit('leave-conversation', selectedConversationId)
     }
   }, [selectedConversationId])
@@ -1339,6 +1383,18 @@ export default function MessagesPage() {
     if (!selectedConversationId || pinnedMessageIds.size === 0) return []
     return (messagesByConversation[selectedConversationId] || []).filter((item) => pinnedMessageIds.has(item.id))
   }, [messagesByConversation, pinnedMessageIds, selectedConversationId])
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(messageId) : messageId.replace(/"/g, '\\"')
+    const target = messagesWrapRef.current?.querySelector<HTMLElement>(`[data-message-id="${escapedId}"]`)
+    if (!target) {
+      setChatNotice('Tin nhắn đã ghim chưa có trong phần lịch sử đang tải hoặc đã bị xóa.')
+      return
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    target.classList.add(styles.messageRowHighlighted)
+    window.setTimeout(() => target.classList.remove(styles.messageRowHighlighted), 1400)
+  }, [])
 
   const chatPanelThemeClass = useMemo(() => {
     const themeColor = selectedConversationUiPrefs.themeColor ?? selectedConversation?.themeColor
@@ -2231,10 +2287,11 @@ export default function MessagesPage() {
       const trimmedMessage = message.trim()
       const response = attachmentDraft
         ? await (async () => {
-            const base64Data = await fileToBase64(attachmentDraft.file)
+            const uploadFile = await compressImageFile(attachmentDraft.file)
+            const base64Data = await fileToBase64(uploadFile)
             const upload = await api.uploadMessageBase64(token, selectedConversationId, {
-              fileName: attachmentDraft.file.name,
-              contentType: attachmentDraft.file.type || 'application/octet-stream',
+              fileName: uploadFile.name,
+              contentType: uploadFile.type || 'application/octet-stream',
               base64Data,
             })
 
@@ -2246,14 +2303,15 @@ export default function MessagesPage() {
               type: attachmentDraft.type,
               text: trimmedMessage || undefined,
               mediaUrl: upload.mediaUrl,
-              fileName: attachmentDraft.file.name,
-              mimeType: attachmentDraft.file.type || 'application/octet-stream',
-              fileSize: attachmentDraft.file.size,
+              fileName: uploadFile.name,
+              mimeType: uploadFile.type || 'application/octet-stream',
+              fileSize: uploadFile.size,
             })
           })()
         : await api.sendMessage(token, selectedConversationId, trimmedMessage)
       upsertMessage(selectedConversationId, response.message)
-      setMessage('')
+      handleComposerMessageChange('')
+      emitTypingState(false, selectedConversationId)
       clearAttachmentDraft()
       setChatNotice(null)
       setShowEmojiPanel(false)
@@ -2481,9 +2539,13 @@ export default function MessagesPage() {
     event.preventDefault()
     event.stopPropagation()
     const rect = event.currentTarget.getBoundingClientRect()
-    const menuWidth = 180
-    const x = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, rect.right - menuWidth))
-    const y = Math.max(12, Math.min(window.innerHeight - 240, rect.bottom + 8))
+    const menuWidth = 220
+    const menuHeight = 320
+    const preferredX = rect.left + rect.width / 2
+    const x = Math.min(window.innerWidth - menuWidth - 12, Math.max(12, preferredX - menuWidth / 2))
+    const y = rect.bottom + menuHeight + 12 > window.innerHeight
+      ? Math.max(12, rect.top - menuHeight - 8)
+      : Math.max(12, rect.bottom + 8)
     setActionMenu({
       messageId,
       x,
@@ -3265,6 +3327,18 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
+          {selectedConversation?.pinnedMessageIds && selectedConversation.pinnedMessageIds.length > 0 ? (
+            <div className={styles.pinnedQuickList}>
+              {pinnedMessages.length > 0 ? pinnedMessages.map((item) => (
+                <button key={item.id} type="button" onClick={() => jumpToMessage(item.id)}>
+                  {item.text || item.fileName || (item.type === 'image' ? 'Ảnh' : 'Tin nhắn đã ghim')}
+                </button>
+              )) : (
+                <span>Tin nhắn đã ghim chưa nằm trong phần lịch sử đang tải.</span>
+              )}
+            </div>
+          ) : null}
+
           {directPeer ? (
             <div className={styles.chatSocialBar}>
               {!isDirectPeerFriend && !isDirectPeerPending ? (
@@ -3361,7 +3435,7 @@ export default function MessagesPage() {
                     key={idx}
                     type="button"
                     className={styles.aiSuggestBtn}
-                    onClick={() => { setMessage(suggestion); setReplySuggestions([]) }}
+                  onClick={() => { handleComposerMessageChange(suggestion); setReplySuggestions([]) }}
                   >
                     {suggestion}
                   </button>
@@ -3380,7 +3454,7 @@ export default function MessagesPage() {
           {selectedConversationId ? (
             <MessageComposer
               message={message}
-              setMessage={setMessage}
+              setMessage={handleComposerMessageChange}
               handleSend={handleSend}
               handleFileSelected={handleFileSelected}
               handlePickAttachment={handlePickAttachment}
@@ -3679,7 +3753,7 @@ export default function MessagesPage() {
           ) : null}
 
           {actionMenu && activeActionMessage ? (
-            <div ref={actionMenuRef} className={styles.actionMenu}>
+            <div ref={actionMenuRef} className={styles.actionMenu} style={{ left: actionMenu.x, top: actionMenu.y }}>
               <div className={styles.actionMenuHeader}>
                 <span className={styles.listEntryAvatar}>{getAvatarInitial(getSenderName(activeActionMessage.senderId, activeActionMessage))}</span>
                 <div className={styles.actionMenuMeta}>

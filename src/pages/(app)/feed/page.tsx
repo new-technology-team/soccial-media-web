@@ -36,6 +36,7 @@ import type { Conversation, FeedComment, FeedPost } from '@/types'
 import { useAuthStore } from '@/contexts/auth-store'
 import { useSocialRealtime } from '@/hooks/use-social-realtime'
 import { toast } from '@/hooks/use-toast'
+import { compressImageFile } from '@/services/messages/file-utils'
 import styles from './page.module.css'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
@@ -98,6 +99,46 @@ const dedupePostsById = (items: FeedPost[]) => {
   return result
 }
 
+const dedupeCommentsById = (items: FeedComment[]) => {
+  const seen = new Set<string>()
+  const result: FeedComment[] = []
+  items.forEach((item) => {
+    const id = String(item.id)
+    if (seen.has(id)) return
+    seen.add(id)
+    result.push({
+      ...item,
+      replies: item.replies ? dedupeCommentsById(item.replies) : [],
+    })
+  })
+  return result
+}
+
+const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComment[] => {
+  const commentId = String(comment.id)
+  const parentId = comment.parentCommentId ? String(comment.parentCommentId) : null
+  if (!parentId) {
+    return items.some((item) => String(item.id) === commentId) ? items : [...items, comment]
+  }
+  return items.map((item) => {
+    if (String(item.id) === parentId) {
+      return {
+        ...item,
+        replies: appendCommentOnce(item.replies || [], comment),
+      }
+    }
+    return {
+      ...item,
+      replies: item.replies ? appendCommentOnce(item.replies, comment) : [],
+    }
+  })
+}
+
+const removeCommentById = (items: FeedComment[], commentId: number | string) =>
+  items
+    .filter((item) => String(item.id) !== String(commentId))
+    .map((item) => ({ ...item, replies: item.replies ? removeCommentById(item.replies, commentId) : [] }))
+
 type ConfirmModalState = {
   title: string
   description: string
@@ -136,6 +177,11 @@ export default function FeedPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [errorText, setErrorText] = useState('')
   const [commentInputs, setCommentInputs] = useState<Record<number, string>>({})
+  const [commentImageDrafts, setCommentImageDrafts] = useState<Record<number, { file: File; previewUrl: string } | null>>({})
+  const [replyInputs, setReplyInputs] = useState<Record<string, string>>({})
+  const [replyImageDrafts, setReplyImageDrafts] = useState<Record<string, { file: File; previewUrl: string } | null>>({})
+  const [replyingToCommentIds, setReplyingToCommentIds] = useState<Record<string, boolean>>({})
+  const [expandedReplyIds, setExpandedReplyIds] = useState<Record<string, boolean>>({})
   const [isCommenting, setIsCommenting] = useState<Record<number, boolean>>({})
   const [modalMediaUrl, setModalMediaUrl] = useState('')
   const [modalVisibility, setModalVisibility] = useState<'public' | 'private'>('public')
@@ -220,6 +266,10 @@ export default function FeedPage() {
   useEffect(() => {
     const loadFeed = async () => {
       setIsLoadingFeed(true)
+      setPosts([])
+      setCommentLists({})
+      setCommentPaging({})
+      setExpandedComments({})
       try {
         let fetchedPosts: FeedPost[]
         if (isSavedView && token) {
@@ -642,7 +692,8 @@ export default function FeedPage() {
 
   const handleAddComment = async (postId: number) => {
     const value = (commentInputs[postId] || '').trim()
-    if (!value) return
+    const imageDraft = commentImageDrafts[postId]
+    if (!value && !imageDraft) return
     if (!token) {
       navigate('/auth/login')
       return
@@ -650,7 +701,17 @@ export default function FeedPage() {
 
     setIsCommenting((prev) => ({ ...prev, [postId]: true }))
     try {
-      const response = await api.addComment(token, postId, value)
+      let imageUrl: string | null = null
+      if (imageDraft?.file) {
+        const file = await compressImageFile(imageDraft.file)
+        const uploaded = await api.uploadCommentImageBase64(token, {
+          fileName: file.name,
+          contentType: file.type || 'image/jpeg',
+          base64Data: await fileToBase64(file),
+        })
+        imageUrl = uploaded.mediaUrl || null
+      }
+      const response = await api.addComment(token, postId, value, imageUrl)
       setPosts((prev) =>
         prev.map((item) =>
           item.id === postId ? { ...item, commentCount: Number(item.commentCount || 0) + 1 } : item
@@ -658,7 +719,7 @@ export default function FeedPage() {
       )
       setCommentLists((prev) => ({
         ...prev,
-        [postId]: [...(prev[postId] || []), response.comment],
+        [postId]: appendCommentOnce(prev[postId] || [], response.comment),
       }))
       setCommentPaging((prev) => {
         const current = prev[postId]
@@ -674,11 +735,86 @@ export default function FeedPage() {
       })
       setExpandedComments((prev) => ({ ...prev, [postId]: true }))
       setCommentInputs((prev) => ({ ...prev, [postId]: '' }))
+      setCommentImageDrafts((prev) => {
+        const current = prev[postId]
+        if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
+        return { ...prev, [postId]: null }
+      })
     } catch (error) {
       if (handleAuthExpired(error)) return
       console.error('Failed to add comment', error)
     } finally {
       setIsCommenting((prev) => ({ ...prev, [postId]: false }))
+    }
+  }
+
+  const handleCommentImageSelected = (postId: number, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Chỉ hỗ trợ ảnh cho bình luận', variant: 'destructive' })
+      return
+    }
+    setCommentImageDrafts((prev) => {
+      const current = prev[postId]
+      if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
+      return { ...prev, [postId]: { file, previewUrl: URL.createObjectURL(file) } }
+    })
+  }
+
+  const handleReplyImageSelected = (commentId: number | string, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Chỉ hỗ trợ ảnh cho phản hồi', variant: 'destructive' })
+      return
+    }
+    const key = String(commentId)
+    setReplyImageDrafts((prev) => {
+      const current = prev[key]
+      if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
+      return { ...prev, [key]: { file, previewUrl: URL.createObjectURL(file) } }
+    })
+  }
+
+  const handleAddReply = async (postId: number, comment: FeedComment) => {
+    const key = String(comment.id)
+    const value = (replyInputs[key] || '').trim()
+    const imageDraft = replyImageDrafts[key]
+    if (!token || (!value && !imageDraft)) return
+    setBusyCommentId(comment.id)
+    try {
+      let imageUrl: string | null = null
+      if (imageDraft?.file) {
+        const file = await compressImageFile(imageDraft.file)
+        const uploaded = await api.uploadCommentImageBase64(token, {
+          fileName: file.name,
+          contentType: file.type || 'image/jpeg',
+          base64Data: await fileToBase64(file),
+        })
+        imageUrl = uploaded.mediaUrl || null
+      }
+      const response = await api.addCommentReply(token, comment.id, value, imageUrl)
+      setPosts((prev) => prev.map((item) => (item.id === postId ? { ...item, commentCount: Number(item.commentCount || 0) + 1 } : item)))
+      setCommentLists((prev) => ({
+        ...prev,
+        [postId]: appendCommentOnce(prev[postId] || [], response.comment),
+      }))
+      setReplyInputs((prev) => ({ ...prev, [key]: '' }))
+      setExpandedReplyIds((prev) => ({ ...prev, [key]: true }))
+      setReplyingToCommentIds((prev) => ({ ...prev, [key]: false }))
+      setReplyImageDrafts((prev) => {
+        const current = prev[key]
+        if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
+        return { ...prev, [key]: null }
+      })
+    } catch (error) {
+      if (handleAuthExpired(error)) return
+      toast({ title: 'Không thể gửi phản hồi', description: error instanceof Error ? error.message : 'Vui lòng thử lại.', variant: 'destructive' })
+    } finally {
+      setBusyCommentId(null)
     }
   }
 
@@ -709,7 +845,7 @@ export default function FeedPage() {
         setBusyCommentId(comment.id)
         try {
           await api.deleteComment(token, comment.id)
-          setCommentLists((prev) => ({ ...prev, [post.id]: (prev[post.id] || []).filter((item) => item.id !== comment.id) }))
+          setCommentLists((prev) => ({ ...prev, [post.id]: removeCommentById(prev[post.id] || [], comment.id) }))
           setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, commentCount: Math.max(0, item.commentCount - 1) } : item)))
           toast({ title: 'Đã xóa bình luận' })
         } catch (error) {
@@ -921,10 +1057,11 @@ export default function FeedPage() {
 
     setUploadingMedia(true)
     try {
+      const uploadFile = await compressImageFile(file)
       const upload = await api.uploadPostMediaBase64(token, {
-        fileName: file.name,
-        contentType: file.type || 'application/octet-stream',
-        base64Data: await fileToBase64(file),
+        fileName: uploadFile.name,
+        contentType: uploadFile.type || 'application/octet-stream',
+        base64Data: await fileToBase64(uploadFile),
       })
       if (!upload.mediaUrl) {
         throw new Error('Không thể tải media bài viết.')
@@ -1096,10 +1233,11 @@ export default function FeedPage() {
     setUploadingMedia(true)
     setErrorText('')
     try {
-      const base64Data = await fileToBase64(file)
+      const uploadFile = await compressImageFile(file)
+      const base64Data = await fileToBase64(uploadFile)
       const uploaded = await api.uploadPostMediaBase64(token, {
-        fileName: file.name,
-        contentType: file.type || 'application/octet-stream',
+        fileName: uploadFile.name,
+        contentType: uploadFile.type || 'application/octet-stream',
         base64Data,
       })
       if (!uploaded.mediaUrl) {
@@ -1125,7 +1263,7 @@ export default function FeedPage() {
     setLoadingComments((prev) => ({ ...prev, [postId]: true }))
     try {
       const result = await api.listComments(postId, token || undefined, { limit: 3, offset: 0 })
-      setCommentLists((prev) => ({ ...prev, [postId]: result.comments }))
+      setCommentLists((prev) => ({ ...prev, [postId]: dedupeCommentsById(result.comments) }))
       setCommentPaging((prev) => ({
         ...prev,
         [postId]: {
@@ -1155,7 +1293,7 @@ export default function FeedPage() {
       })
       setCommentLists((prev) => ({
         ...prev,
-        [postId]: [...(prev[postId] || []), ...result.comments],
+        [postId]: dedupeCommentsById([...(prev[postId] || []), ...result.comments]),
       }))
       setCommentPaging((prev) => ({
         ...prev,
@@ -1198,6 +1336,90 @@ export default function FeedPage() {
     if (!q) return VN_LOCATIONS.slice(0, 8)
     return VN_LOCATIONS.filter((item) => item.toLowerCase().includes(q)).slice(0, 8)
   }, [locationKeyword])
+
+  const renderCommentItem = (post: FeedPost, comment: FeedComment, depth = 0) => {
+    const commentKey = String(comment.id)
+    const replies = comment.replies || []
+    const showReplies = expandedReplyIds[commentKey] || replies.length <= 2
+    const visibleReplies = showReplies ? replies : replies.slice(0, 2)
+    const replyDraft = replyImageDrafts[commentKey]
+
+    return (
+      <div key={comment.id} className={`${styles.commentItem} ${depth > 0 ? styles.commentReplyItem : ''}`}>
+        <div className={styles.commentAvatar}>{(comment.authorName[0] || 'U').toUpperCase()}</div>
+        <div className={styles.commentBody}>
+          <Link to={`/profile/${comment.userId}`}>
+            <b>{comment.authorName}</b>
+          </Link>
+          {comment.content ? <p>{comment.content}</p> : null}
+          {comment.imageUrl ? <img src={comment.imageUrl} alt="Comment attachment" className={styles.commentImage} loading="lazy" /> : null}
+          {token ? (
+            <div className={styles.commentActions}>
+              <button type="button" onClick={() => setReplyingToCommentIds((prev) => ({ ...prev, [commentKey]: !prev[commentKey] }))}>
+                Trả lời
+              </button>
+              <button type="button" onClick={() => void handleReportComment(comment)} disabled={busyCommentId === comment.id}>
+                Báo cáo
+              </button>
+              {Number(comment.userId) === Number(me?.id) ||
+              Number(post.authorId) === Number(me?.id) ||
+              me?.role === 'admin' ||
+              me?.role === 'moderator' ? (
+                <button type="button" onClick={() => void handleDeleteComment(post, comment)} disabled={busyCommentId === comment.id}>
+                  Xóa
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {replyingToCommentIds[commentKey] ? (
+            <div className={styles.replyComposer}>
+              <input
+                value={replyInputs[commentKey] || ''}
+                onChange={(event) => setReplyInputs((prev) => ({ ...prev, [commentKey]: event.target.value }))}
+                placeholder={`Trả lời ${comment.authorName}...`}
+              />
+              <label className={styles.commentImageBtn}>
+                Ảnh
+                <input type="file" accept="image/*" onChange={(event) => handleReplyImageSelected(comment.id, event)} />
+              </label>
+              <button type="button" onClick={() => void handleAddReply(post.id, comment)} disabled={busyCommentId === comment.id}>
+                Gửi
+              </button>
+              {replyDraft ? (
+                <button
+                  type="button"
+                  className={styles.commentImagePreviewBtn}
+                  onClick={() => {
+                    if (replyDraft.previewUrl) URL.revokeObjectURL(replyDraft.previewUrl)
+                    setReplyImageDrafts((prev) => ({ ...prev, [commentKey]: null }))
+                  }}
+                >
+                  <img src={replyDraft.previewUrl} alt="Reply preview" />
+                  X
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {replies.length > 0 ? (
+            <div className={styles.replyList}>
+              {visibleReplies.map((reply) => renderCommentItem(post, reply, depth + 1))}
+              {replies.length > 2 ? (
+                <button
+                  type="button"
+                  className={styles.replyToggle}
+                  onClick={() => setExpandedReplyIds((prev) => ({ ...prev, [commentKey]: !prev[commentKey] }))}
+                >
+                  {showReplies ? 'Thu gọn phản hồi' : `Xem thêm ${replies.length - 2} phản hồi`}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.page}>
@@ -1528,11 +1750,29 @@ export default function FeedPage() {
                       onChange={(event) =>
                         setCommentInputs((prev) => ({ ...prev, [post.id]: event.target.value }))
                       }
-                      placeholder="Viết bình luận nhanh..."
+                      placeholder={commentImageDrafts[post.id] ? 'Thêm chú thích cho ảnh...' : 'Viết bình luận nhanh...'}
                     />
+                    <label className={styles.commentImageBtn}>
+                      Ảnh
+                      <input type="file" accept="image/*" onChange={(event) => handleCommentImageSelected(post.id, event)} />
+                    </label>
                     <button type="button" onClick={() => handleAddComment(post.id)} disabled={isCommenting[post.id]}>
                       {isCommenting[post.id] ? 'Đang gửi...' : 'Gửi'}
                     </button>
+                    {commentImageDrafts[post.id] ? (
+                      <button
+                        type="button"
+                        className={styles.commentImagePreviewBtn}
+                        onClick={() => {
+                          const current = commentImageDrafts[post.id]
+                          if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
+                          setCommentImageDrafts((prev) => ({ ...prev, [post.id]: null }))
+                        }}
+                      >
+                        <img src={commentImageDrafts[post.id]?.previewUrl} alt="Comment preview" />
+                        X
+                      </button>
+                    ) : null}
                   </div>
                 ) : (
                   <div className={styles.guestPostHint}>
@@ -1543,32 +1783,7 @@ export default function FeedPage() {
                 {expandedComments[post.id] ? (
                   <div className={`${styles.commentsList} ${styles.commentsListOpen}`}>
                     {loadingComments[post.id] ? <p className={styles.commentState}>Đang tải bình luận...</p> : null}
-                    {postComments.map((comment) => (
-                      <div key={comment.id} className={styles.commentItem}>
-                        <div className={styles.commentAvatar}>{(comment.authorName[0] || 'U').toUpperCase()}</div>
-                        <div className={styles.commentBody}>
-                          <Link to={`/profile/${comment.userId}`}>
-                            <b>{comment.authorName}</b>
-                          </Link>
-                          <p>{comment.content}</p>
-                          {token ? (
-                            <div className={styles.commentActions}>
-                              <button type="button" onClick={() => void handleReportComment(comment)} disabled={busyCommentId === comment.id}>
-                                Báo cáo
-                              </button>
-                              {Number(comment.userId) === Number(me?.id) ||
-                              Number(post.authorId) === Number(me?.id) ||
-                              me?.role === 'admin' ||
-                              me?.role === 'moderator' ? (
-                                <button type="button" onClick={() => void handleDeleteComment(post, comment)} disabled={busyCommentId === comment.id}>
-                                  Xóa
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
+                    {postComments.map((comment) => renderCommentItem(post, comment))}
                     {!loadingComments[post.id] && postComments.length === 0 ? (
                       <p className={styles.commentState}>Chưa có bình luận nào.</p>
                     ) : null}

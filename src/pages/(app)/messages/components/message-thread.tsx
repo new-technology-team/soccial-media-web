@@ -115,6 +115,7 @@ export function MessageThread({
         return (
           <div
             key={msg.id}
+            data-message-id={msg.id}
             className={cn(
               styles.messageRow,
               mine && styles.messageRowMine,

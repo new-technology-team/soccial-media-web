@@ -85,16 +85,20 @@ export default function ProfilePage() {
   )
 
   const profileMedia = useMemo(
-    () => posts.filter((post) => Boolean(post.mediaUrl)).slice(0, 6),
+    () => posts.filter((post) => Boolean(post.mediaUrl || post.sharedPost?.mediaUrl)).slice(0, 6),
     [posts]
   )
 
-  const isVideoPost = (post: FeedPost) => Boolean(post.mediaUrl && /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(post.mediaUrl))
+  const getPostMediaUrl = (post: FeedPost) => post.mediaUrl || post.sharedPost?.mediaUrl || null
+  const isVideoPost = (post: FeedPost) => {
+    const mediaUrl = getPostMediaUrl(post)
+    return Boolean(mediaUrl && /\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/i.test(mediaUrl))
+  }
 
   const visiblePosts = useMemo(() => {
-    if (activeTab === 'photos') return posts.filter((post) => post.mediaUrl && !isVideoPost(post))
+    if (activeTab === 'photos') return posts.filter((post) => getPostMediaUrl(post) && !isVideoPost(post))
     if (activeTab === 'videos') return posts.filter(isVideoPost)
-    if (mediaOnly) return posts.filter((post) => Boolean(post.mediaUrl))
+    if (mediaOnly) return posts.filter((post) => Boolean(getPostMediaUrl(post)))
     return posts
   }, [activeTab, mediaOnly, posts])
 
@@ -403,6 +407,25 @@ export default function ProfilePage() {
                         loading="lazy"
                         onError={(event) => { event.currentTarget.style.display = 'none' }}
                       />
+                    ) : null}
+                    {post.sharedPost ? (
+                      <Link to={post.sharedPost.unavailable ? `/profile/${post.authorId}` : `/posts/${post.sharedPost.id}`} className={styles.sharedPostBox}>
+                        {post.sharedPost.unavailable ? (
+                          <p>Bài viết gốc không còn khả dụng.</p>
+                        ) : (
+                          <>
+                            <div className={styles.sharedPostAuthor}>
+                              <span>{(post.sharedPost.authorName?.[0] || 'U').toUpperCase()}</span>
+                              <b>{post.sharedPost.authorName || 'Người dùng ZChat'}</b>
+                            </div>
+                            {post.sharedPost.content ? <p>{post.sharedPost.content}</p> : null}
+                            {post.sharedPost.mediaUrl ? <img src={post.sharedPost.mediaUrl} alt="Shared post media" loading="lazy" /> : null}
+                            <small>
+                              {Number(post.sharedPost.reactionCount || 0)} cảm xúc · {Number(post.sharedPost.commentCount || 0)} bình luận
+                            </small>
+                          </>
+                        )}
+                      </Link>
                     ) : null}
                     <div className={styles.postFoot}>
                       <span>{post.reactionCount} lượt thích</span>

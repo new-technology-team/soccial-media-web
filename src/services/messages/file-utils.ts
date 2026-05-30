@@ -16,3 +16,41 @@ export const mapTypeFromFile = (file: File): 'image' | 'video' | 'audio' | 'file
   if (file.type.startsWith('audio/')) return 'audio'
   return 'file'
 }
+
+export const compressImageFile = async (file: File, maxDimension = 1600, quality = 0.82) => {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml') {
+    return file
+  }
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      resolve(img)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Cannot read image'))
+    }
+    img.src = url
+  })
+
+  const scale = Math.min(1, maxDimension / Math.max(image.width, image.height))
+  if (scale >= 1 && file.size < 900 * 1024) return file
+
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(image.width * scale))
+  canvas.height = Math.max(1, Math.round(image.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) return file
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', quality)
+  })
+  if (!blob || blob.size >= file.size) return file
+
+  const nextName = file.name.replace(/\.[^.]+$/, '') || 'image'
+  return new File([blob], `${nextName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() })
+}

@@ -11,7 +11,7 @@ type SidebarProps = {
 }
 
 export default function Sidebar({ user, onCreatePost }: SidebarProps) {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const profileHref = user ? `/profile/${user.id}` : '/auth/login?next=/feed'
   const initials = (user?.fullName || 'K').trim()[0]?.toUpperCase() || 'K'
 
@@ -40,7 +40,8 @@ export default function Sidebar({ user, onCreatePost }: SidebarProps) {
       <nav className={styles.shortcuts} aria-label="Lối tắt bảng tin">
         {shortcuts.map((item) => {
           const Icon = item.icon
-          const active = pathname === item.href || (item.href === '/feed' && pathname === '/feed')
+          const current = `${pathname}${search}`
+          const active = item.href.includes('?') ? current === item.href : pathname === item.href && !search
           return (
             <Link key={item.label} to={item.href} className={`${styles.shortcut} ${active ? styles.shortcutActive : ''}`}>
               <Icon size={18} />

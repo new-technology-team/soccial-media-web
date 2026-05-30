@@ -40,7 +40,7 @@ export function AppDialog({
               <DialogPrimitive.Title className={styles.title}>{title}</DialogPrimitive.Title>
               {description ? <DialogPrimitive.Description className={styles.description}>{description}</DialogPrimitive.Description> : null}
             </div>
-            {children}
+            <div className={styles.body}>{children}</div>
             {footer ? <div className={styles.footer}>{footer}</div> : null}
           </div>
           <DialogPrimitive.Close className={styles.close} aria-label="Đóng">
