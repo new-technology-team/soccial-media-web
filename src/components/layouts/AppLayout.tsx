@@ -70,10 +70,12 @@ export default function AppLayout({
       const hasSdp = Boolean(payload?.offer?.sdp)
       // Chấp nhận cả offer WebRTC (web) lẫn offer Jitsi từ mobile (chỉ có roomId).
       if (!hasSdp && !payload?.roomId) return
-      const { setIncomingCall } = useCallStore.getState()
+      const conversationId = payload.conversationId ? String(payload.conversationId) : null
+      const { activeCall: currentCall, callAnswered: answered, setIncomingCall } = useCallStore.getState()
+      if (answered && currentCall?.conversationId && conversationId === currentCall.conversationId) return
       setIncomingCall({
         fromUserId: Number(payload.fromUserId || 0),
-        conversationId: payload.conversationId ? String(payload.conversationId) : null,
+        conversationId,
         callType: payload.callType === 'video' ? 'video' : 'voice',
         offer: hasSdp ? payload.offer : undefined,
         roomId: payload?.roomId ? String(payload.roomId) : undefined,
@@ -220,7 +222,9 @@ export default function AppLayout({
   const handleEndCallGlobal = () => {
     const socket = getSocket()
     const conversationId = activeCall?.conversationId
-    if (socket && conversationId && activeCall?.targetUserIds?.length) {
+    if (socket && conversationId && activeCall?.mode === 'group') {
+      socket.emit('group_call_left', { conversationId, callType: activeCall.type })
+    } else if (socket && conversationId && activeCall?.targetUserIds?.length) {
       activeCall.targetUserIds.forEach((targetUserId) => {
         socket.emit('call:end', { targetUserId, conversationId })
       })

@@ -1049,6 +1049,7 @@ export default function MessagesPage() {
       const state = useCallStore.getState()
       const activeConvId = state.activeCall?.conversationId
       if (state.callAnswered && state.activeCall && incomingConversationId && incomingConversationId === activeConvId) {
+        clearIncomingCall()
         try {
           const pc = peersRef.current.get(fromUserId) || await buildPeerConnection(fromUserId, state.activeCall.type, incomingConversationId)
           if (pc) {
@@ -1395,11 +1396,16 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
+    const activeConversationId = useCallStore.getState().activeCall?.conversationId
+    if (useCallStore.getState().callAnswered && activeConversationId && globalIncomingCall.conversationId === activeConversationId) {
+      clearIncomingCall()
+      return
+    }
     setIncomingCall(globalIncomingCall)
     setCallStatus(`Cuộc gọi ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
     setCallState('incoming')
     startRingtone('incoming')
-  }, [globalIncomingCall, incomingCall, startRingtone])
+  }, [clearIncomingCall, globalIncomingCall, incomingCall, startRingtone])
 
   // Auto-accept when user navigated from AppLayout's accept button
   useEffect(() => {
@@ -3365,39 +3371,30 @@ export default function MessagesPage() {
     if (!socket || !selectedConversationId) return
     
     const endingCall = activeCall
-    const remainingCount = Math.max(0, joinedCallUserIds.length - 1)
-    
-    socket.emit('call:leave', {
-      conversationId: selectedConversationId,
-    })
-    
-    socket.emit('call:participants', {
-      conversationId: selectedConversationId,
-      participantCount: remainingCount,
-      participantIds: joinedCallUserIds.filter(id => id !== user?.id),
-    })
-    socket.emit(endingCall?.mode === 'group' ? 'group_call_left' : 'call_ended', {
-      conversationId: selectedConversationId,
-      callType: endingCall?.type,
-    })
-    
-    callTargets.forEach((targetUserId) => {
-      socket.emit('call:end', {
-        targetUserId,
+    if (endingCall?.mode === 'group') {
+      socket.emit('group_call_left', {
         conversationId: selectedConversationId,
+        callType: endingCall.type,
       })
-    })
+    } else {
+      callTargets.forEach((targetUserId) => {
+        socket.emit('call:end', {
+          targetUserId,
+          conversationId: selectedConversationId,
+        })
+      })
+    }
     
     logCall(callAnswered ? 'completed' : 'cancelled')
     closeCallResources()
     const historyText = endingCall?.mode === 'group'
-      ? `Cuộc gọi nhóm đã kết thúc • ${formattedCallTime}`
+      ? `Bạn đã rời cuộc gọi nhóm • ${formattedCallTime}`
       : callAnswered
         ? `Cuộc gọi đã kết thúc • ${formattedCallTime}`
         : 'Bạn đã hủy cuộc gọi'
     addLocalCallHistory(historyText)
     setCallState(callAnswered ? 'ended' : 'cancelled')
-    setCallStatus(callAnswered ? 'Cuộc gọi đã kết thúc' : 'Đã hủy cuộc gọi')
+    setCallStatus(endingCall?.mode === 'group' ? 'Bạn đã rời cuộc gọi nhóm' : callAnswered ? 'Cuộc gọi đã kết thúc' : 'Đã hủy cuộc gọi')
     clearIncomingCall()
     setGlobalCallErrorMessage(null)
     setActiveCall(null)
