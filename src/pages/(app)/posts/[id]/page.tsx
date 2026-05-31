@@ -1,30 +1,20 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type React from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import {
-  ArrowLeft,
-  Clock3,
-  Copy,
-  Heart,
-  MessageCircle,
-  MoreHorizontal,
-  RefreshCw,
-  Send,
-  Share2,
-  ShieldCheck,
-  Sparkles,
-  UserRound,
-} from 'lucide-react'
-
+import { Link } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { Heart } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Skeleton } from '@/components/ui/skeleton'
-import { api, normalizeFeedComment, resolveApiAssetUrl } from '@/api/client'
+import { api, resolveApiAssetUrl } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import { connectSocket } from '@/services/socket'
+import { normalizeFeedComment } from '@/api/client'
 import type { FeedComment, FeedPost } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
+
+const isVideoMediaUrl = (url: string) =>
+  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
 
 const POST_REACTIONS = [
   { type: 'like', emoji: '👍', label: 'Thích' },
@@ -35,70 +25,20 @@ const POST_REACTIONS = [
   { type: 'angry', emoji: '😡', label: 'Phẫn nộ' },
 ] as const
 
-type ReactionType = (typeof POST_REACTIONS)[number]['type']
-
-const isVideoMediaUrl = (url: string) =>
-  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
-
-const formatDateTime = (value?: string | Date | null) => {
-  if (!value) return 'Không rõ thời gian'
-
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return 'Không rõ thời gian'
-  }
-
-  return date.toLocaleString('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
-
-const getRelativeTime = (value?: string | Date | null) => {
-  if (!value) return 'Vừa xong'
-
-  const date = new Date(value)
-  const diffMs = Date.now() - date.getTime()
-
-  if (Number.isNaN(diffMs)) return 'Vừa xong'
-
-  const diffMinutes = Math.floor(diffMs / 60_000)
-  const diffHours = Math.floor(diffMinutes / 60)
-  const diffDays = Math.floor(diffHours / 24)
-
-  if (diffMinutes < 1) return 'Vừa xong'
-  if (diffMinutes < 60) return `${diffMinutes} phút trước`
-  if (diffHours < 24) return `${diffHours} giờ trước`
-  if (diffDays < 7) return `${diffDays} ngày trước`
-
-  return formatDateTime(value)
-}
-
-const countAllComments = (items: FeedComment[]): number =>
-  items.reduce((total, item) => total + 1 + countAllComments(item.replies || []), 0)
-
 const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComment[] => {
   const commentId = String(comment.id)
   const parentId = comment.parentCommentId ? String(comment.parentCommentId) : null
-
   if (!parentId) {
-    return items.some((item) => String(item.id) === commentId) ? items : [comment, ...items]
+    return items.some((item) => String(item.id) === commentId) ? items : [...items, comment]
   }
-
   return items.map((item) => {
     if (String(item.id) === parentId) {
-      const alreadyExists = (item.replies || []).some((reply) => String(reply.id) === commentId)
-
+      const alreadyExists = (item.replies || []).some((r) => String(r.id) === commentId)
       return {
         ...item,
         replies: alreadyExists ? item.replies || [] : [...(item.replies || []), comment],
       }
     }
-
     return {
       ...item,
       replies: item.replies ? appendCommentOnce(item.replies, comment) : [],
@@ -106,22 +46,9 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
   })
 }
 
-const removeCommentById = (items: FeedComment[], commentId?: string | number): FeedComment[] => {
-  const id = String(commentId || '')
-
-  return items
-    .filter((item) => String(item.id) !== id)
-    .map((item) => ({
-      ...item,
-      replies: item.replies ? removeCommentById(item.replies, id) : [],
-    }))
-}
-
 export default function PostDetailPage() {
-  const navigate = useNavigate()
   const params = useParams<{ id: string }>()
   const postId = String(params.id || '').trim()
-
   const token = useAuthStore((state) => state.accessToken)
   const me = useAuthStore((state) => state.user)
 
@@ -129,19 +56,13 @@ export default function PostDetailPage() {
   const [comments, setComments] = useState<FeedComment[]>([])
   const [commentInput, setCommentInput] = useState('')
   const [loading, setLoading] = useState(true)
-  const [reloading, setReloading] = useState(false)
-  const [submittingComment, setSubmittingComment] = useState(false)
   const [showReactionPicker, setShowReactionPicker] = useState(false)
   const [replyingToCommentIds, setReplyingToCommentIds] = useState<Record<string, boolean>>({})
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({})
   const [busyCommentId, setBusyCommentId] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-
   const reactionPickerRef = useRef<HTMLDivElement>(null)
-  const commentTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const commentSectionRef = useRef<HTMLElement>(null)
 
-  const loadData = async (silent = false) => {
+  useEffect(() => {
     if (!postId) {
       setLoading(false)
       setPost(null)
@@ -149,127 +70,67 @@ export default function PostDetailPage() {
       return
     }
 
-    if (silent) {
-      setReloading(true)
-    } else {
+    const loadData = async () => {
       setLoading(true)
+      try {
+        const [postRes, commentRes] = await Promise.all([
+          api.getPost(postId, token || undefined),
+          api.listComments(postId, token || undefined),
+        ])
+        setPost(postRes.post || null)
+        setComments(commentRes.comments)
+      } catch (error) {
+        console.error('Không thể tải chi tiết bài viết', error)
+      } finally {
+        setLoading(false)
+      }
     }
 
-    try {
-      const [postRes, commentRes] = await Promise.all([
-        api.getPost(postId, token || undefined),
-        api.listComments(postId, token || undefined),
-      ])
-
-      setPost(postRes.post || null)
-      setComments(commentRes.comments || [])
-    } catch (error) {
-      console.error('Không thể tải chi tiết bài viết', error)
-    } finally {
-      setLoading(false)
-      setReloading(false)
-    }
-  }
-
-  useEffect(() => {
-    void loadData()
+    loadData()
   }, [postId, token])
 
   useEffect(() => {
     if (!token || !me?.id || !postId) return
-
     const socket = connectSocket(token, me.id)
+
     const isThisPost = (value: unknown) => String(value || '') === String(postId)
-
     const onPostUpdated = (payload: { post?: FeedPost }) => {
-      if (payload?.post && isThisPost(payload.post.id)) {
-        setPost(payload.post)
-      }
+      if (payload?.post && isThisPost(payload.post.id)) setPost(payload.post)
     }
-
     const onPostDeleted = (payload: { postId?: number | string }) => {
-      if (isThisPost(payload?.postId)) {
-        setPost(null)
-      }
+      if (isThisPost(payload?.postId)) setPost(null)
     }
-
-    const onPostReaction = (payload: {
-      postId?: number | string
-      actorId?: number | string
-      reaction?: string | null
-      reactionCount?: number
-    }) => {
+    const onPostReaction = (payload: { postId?: number | string; actorId?: number | string; reaction?: string | null; reactionCount?: number }) => {
       if (!isThisPost(payload?.postId)) return
-
       setPost((current) =>
         current
           ? {
               ...current,
               reactionCount: Number(payload.reactionCount ?? current.reactionCount),
-              viewerReaction:
-                String(payload.actorId || '') === String(me.id)
-                  ? payload.reaction || null
-                  : current.viewerReaction,
+              viewerReaction: String(payload.actorId || '') === String(me.id) ? payload.reaction || null : current.viewerReaction,
             }
-          : current,
+          : current
       )
     }
-
-    const onCommentCreated = (payload: {
-      postId?: number | string
-      comment?: FeedComment
-      commentCount?: number
-    }) => {
+    const onCommentCreated = (payload: { postId?: number | string; parentCommentId?: string | null; comment?: FeedComment; commentCount?: number }) => {
       if (!isThisPost(payload?.postId)) return
-
       if (payload.comment) {
         setComments((prev) => appendCommentOnce(prev, payload.comment as FeedComment))
       }
-
-      setPost((current) =>
-        current
-          ? {
-              ...current,
-              commentCount: Number(payload.commentCount ?? current.commentCount + 1),
-            }
-          : current,
-      )
+      setPost((current) => (current ? { ...current, commentCount: Number(payload.commentCount ?? current.commentCount + 1) } : current))
     }
-
-    const onCommentDeleted = (payload: {
-      postId?: number | string
-      commentId?: number | string
-      commentCount?: number
-    }) => {
+    const onCommentDeleted = (payload: { postId?: number | string; commentId?: number | string; commentCount?: number }) => {
       if (!isThisPost(payload?.postId)) return
-
-      setComments((prev) => removeCommentById(prev, payload.commentId))
-
-      setPost((current) =>
-        current
-          ? {
-              ...current,
-              commentCount: Number(payload.commentCount ?? Math.max(0, current.commentCount - 1)),
-            }
-          : current,
-      )
+      setComments((prev) => prev.filter((item) => String(item.id) !== String(payload.commentId)))
+      setPost((current) => (current ? { ...current, commentCount: Number(payload.commentCount ?? Math.max(0, current.commentCount - 1)) } : current))
     }
-
     const onAvatarUpdated = (payload: { userId?: number | string; avatarUrl?: string }) => {
       const avatarUrl = resolveApiAssetUrl(payload?.avatarUrl) ?? payload?.avatarUrl ?? null
-
       setPost((current) =>
-        current && String(current.authorId) === String(payload?.userId)
-          ? { ...current, authorAvatar: avatarUrl }
-          : current,
+        current && String(current.authorId) === String(payload?.userId) ? { ...current, authorAvatar: avatarUrl } : current
       )
-
       setComments((prev) =>
-        prev.map((comment) =>
-          String(comment.userId) === String(payload?.userId)
-            ? { ...comment, authorAvatar: avatarUrl }
-            : comment,
-        ),
+        prev.map((comment) => (String(comment.userId) === String(payload?.userId) ? { ...comment, authorAvatar: avatarUrl } : comment))
       )
     }
 
@@ -290,104 +151,66 @@ export default function PostDetailPage() {
     }
   }, [me?.id, postId, token])
 
+  // Đóng reaction picker khi click ra ngoài
   useEffect(() => {
     if (!showReactionPicker) return
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (reactionPickerRef.current && !reactionPickerRef.current.contains(event.target as Node)) {
+    const handle = (e: MouseEvent) => {
+      if (reactionPickerRef.current && !reactionPickerRef.current.contains(e.target as Node)) {
         setShowReactionPicker(false)
       }
     }
-
-    document.addEventListener('mousedown', handleClickOutside)
-
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
   }, [showReactionPicker])
 
-  const createdAtText = useMemo(() => formatDateTime(post?.createdAt), [post?.createdAt])
-  const relativeCreatedAtText = useMemo(() => getRelativeTime(post?.createdAt), [post?.createdAt])
-
-  const totalComments = useMemo(() => countAllComments(comments), [comments])
+  const createdAtText = useMemo(() => {
+    if (!post) return ''
+    return new Date(post.createdAt).toLocaleString('vi-VN')
+  }, [post])
 
   const currentReaction = useMemo(() => {
     if (!post?.viewerReaction) return null
-    return POST_REACTIONS.find((reaction) => reaction.type === post.viewerReaction) || null
+    return POST_REACTIONS.find((r) => r.type === post.viewerReaction) || null
   }, [post?.viewerReaction])
 
-  const handleReactPost = async (type: ReactionType) => {
+  const handleReactPost = async (type: string) => {
     if (!token || !post) return
-
-    const oldPost = post
-    const isSameReaction = post.viewerReaction === type
-
     setShowReactionPicker(false)
-
-    setPost({
-      ...post,
-      viewerReaction: isSameReaction ? null : type,
-      reactionCount: Math.max(0, post.reactionCount + (isSameReaction ? -1 : post.viewerReaction ? 0 : 1)),
-    })
-
+    const isSame = post.viewerReaction === type
     try {
-      const response = isSameReaction
-        ? await api.unreactPost(token, post.id)
-        : await api.reactPost(token, post.id, type)
-
-      setPost(response.post)
+      if (isSame) {
+        const res = await api.unreactPost(token, post.id)
+        setPost(res.post)
+      } else {
+        const res = await api.reactPost(token, post.id, type)
+        setPost(res.post)
+      }
     } catch (error) {
-      setPost(oldPost)
       console.error('Không thể thả cảm xúc', error)
     }
   }
 
-  const handleFocusComment = () => {
-    commentSectionRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    })
-
-    window.setTimeout(() => {
-      commentTextareaRef.current?.focus()
-    }, 350)
-  }
-
   const handleAddComment = async () => {
-    const value = commentInput.trim()
-
-    if (!token || !value || !postId || submittingComment) return
-
-    setSubmittingComment(true)
-
+    if (!token || !commentInput.trim() || !postId) return
     try {
-      const response = await api.addComment(token, postId, value)
-
-      setComments((prev) => appendCommentOnce(prev, normalizeFeedComment(response.comment)))
-      setPost((current) =>
-        current ? { ...current, commentCount: current.commentCount + 1 } : current,
-      )
+      const response = await api.addComment(token, postId, commentInput.trim())
+      setComments((prev) => appendCommentOnce(prev, response.comment))
+      setPost((current) => (current ? { ...current, commentCount: current.commentCount + 1 } : current))
       setCommentInput('')
     } catch (error) {
       console.error('Không thể thêm bình luận', error)
-    } finally {
-      setSubmittingComment(false)
     }
   }
 
   const handleAddReply = async (comment: FeedComment) => {
     const key = String(comment.id)
     const value = (replyInputs[key] || '').trim()
-
-    if (!token || !value || busyCommentId) return
-
+    if (!token || !value) return
     setBusyCommentId(key)
-
     try {
       const response = await api.addCommentReply(token, comment.id, value)
-
       setComments((prev) => appendCommentOnce(prev, normalizeFeedComment(response.comment)))
-      setPost((current) =>
-        current ? { ...current, commentCount: current.commentCount + 1 } : current,
-      )
+      setPost((current) => (current ? { ...current, commentCount: current.commentCount + 1 } : current))
       setReplyInputs((prev) => ({ ...prev, [key]: '' }))
       setReplyingToCommentIds((prev) => ({ ...prev, [key]: false }))
     } catch (error) {
@@ -397,85 +220,32 @@ export default function PostDetailPage() {
     }
   }
 
-  const handleSharePost = async () => {
-    const url = window.location.href
-
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: 'ZChat - Chi tiết bài viết',
-          text: post?.content || 'Xem bài viết này trên ZChat',
-          url,
-        })
-        return
-      }
-
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-
-      window.setTimeout(() => {
-        setCopied(false)
-      }, 1600)
-    } catch (error) {
-      console.error('Không thể chia sẻ bài viết', error)
-    }
-  }
-
   const renderComment = (comment: FeedComment, depth = 0): React.ReactNode => {
     const key = String(comment.id)
     const showReplyForm = replyingToCommentIds[key]
-    const canReply = Boolean(token && depth < 3)
-
     return (
-      <div
-        key={comment.id}
-        className={`${styles.commentItem} ${depth > 0 ? styles.commentReply : ''}`}
-      >
-        <Link to={`/profile/${comment.userId}`} className={styles.commentAvatarLink}>
+      <div key={comment.id} className={`${styles.commentItem} ${depth > 0 ? styles.commentReply : ''}`}>
+        <div className={styles.commentAvatarWrap}>
           <Avatar className={styles.commentAvatar}>
             <AvatarImage src={comment.authorAvatar || ''} />
             <AvatarFallback>{comment.authorName?.[0] || 'U'}</AvatarFallback>
           </Avatar>
-        </Link>
-
-        <div className={styles.commentContent}>
-          <div className={styles.commentBubble}>
-            <div className={styles.commentTop}>
-              <Link to={`/profile/${comment.userId}`} className={styles.commentAuthor}>
-                {comment.authorName || 'Người dùng'}
-              </Link>
-              <span>{getRelativeTime(comment.createdAt)}</span>
-            </div>
-
-            {comment.content ? <p className={styles.commentText}>{comment.content}</p> : null}
-
-            {comment.imageUrl ? (
-              <img
-                src={comment.imageUrl}
-                alt="Ảnh trong bình luận"
-                className={styles.commentImage}
-                loading="lazy"
-              />
-            ) : null}
-          </div>
-
+        </div>
+        <div className={styles.commentBody}>
+          <p className={styles.commentAuthor}>
+            <Link to={`/profile/${comment.userId}`}>{comment.authorName}</Link>
+          </p>
+          {comment.content ? <p className={styles.commentText}>{comment.content}</p> : null}
+          {comment.imageUrl ? <img src={comment.imageUrl} alt="Comment attachment" className={styles.commentImage} loading="lazy" /> : null}
           <div className={styles.commentActions}>
-            <span title={formatDateTime(comment.createdAt)}>
-              <Clock3 size={13} />
-              {formatDateTime(comment.createdAt)}
-            </span>
-
-            {canReply ? (
+            <p className={styles.commentTime}>{new Date(comment.createdAt).toLocaleString('vi-VN')}</p>
+            {token ? (
               <button
                 type="button"
-                onClick={() =>
-                  setReplyingToCommentIds((prev) => ({
-                    ...prev,
-                    [key]: !prev[key],
-                  }))
-                }
+                className={styles.replyBtn}
+                onClick={() => setReplyingToCommentIds((prev) => ({ ...prev, [key]: !prev[key] }))}
               >
-                {showReplyForm ? 'Hủy' : 'Trả lời'}
+                Trả lời
               </button>
             ) : null}
           </div>
@@ -485,29 +255,18 @@ export default function PostDetailPage() {
               <input
                 className={styles.replyInput}
                 value={replyInputs[key] || ''}
-                onChange={(event) =>
-                  setReplyInputs((prev) => ({
-                    ...prev,
-                    [key]: event.target.value,
-                  }))
-                }
-                placeholder={`Trả lời ${comment.authorName || 'người dùng'}...`}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    void handleAddReply(comment)
-                  }
-                }}
+                onChange={(e) => setReplyInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                placeholder={`Trả lời ${comment.authorName}...`}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddReply(comment) } }}
                 autoFocus
               />
-
               <button
                 type="button"
                 className={styles.replySubmit}
                 onClick={() => void handleAddReply(comment)}
                 disabled={busyCommentId === key || !replyInputs[key]?.trim()}
               >
-                {busyCommentId === key ? 'Đang gửi...' : 'Gửi'}
+                {busyCommentId === key ? '...' : 'Gửi'}
               </button>
             </div>
           ) : null}
@@ -522,366 +281,126 @@ export default function PostDetailPage() {
     )
   }
 
-  if (loading) {
-    return (
-      <main className={styles.page}>
-        <div className={styles.backgroundBlurOne} />
-        <div className={styles.backgroundBlurTwo} />
-
-        <div className={styles.container}>
-          <div className={styles.pageHeader}>
-            <Skeleton className={styles.skeletonBack} />
-            <div>
-              <Skeleton className={styles.skeletonTitle} />
-              <Skeleton className={styles.skeletonSubtitle} />
-            </div>
-          </div>
-
-          <div className={styles.layout}>
-            <section className={styles.mainColumn}>
-              <div className={styles.postCard}>
-                <Skeleton className={styles.skeletonHeader} />
-                <Skeleton className={styles.skeletonText} />
-                <Skeleton className={styles.skeletonTextShort} />
-                <Skeleton className={styles.skeletonMedia} />
-              </div>
-
-              <div className={styles.commentCard}>
-                <Skeleton className={styles.skeletonText} />
-                <Skeleton className={styles.skeletonTextShort} />
-              </div>
-            </section>
-
-            <aside className={styles.sideColumn}>
-              <Skeleton className={styles.skeletonSide} />
-            </aside>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  if (!post) {
-    return (
-      <main className={styles.page}>
-        <div className={styles.container}>
-          <div className={styles.emptyState}>
-            <Sparkles size={46} />
-            <h1>Không tìm thấy bài viết</h1>
-            <p>Bài viết có thể đã bị xóa, bị ẩn hoặc đường dẫn không còn hợp lệ.</p>
-
-            <div className={styles.emptyActions}>
-              <button type="button" className={styles.primaryBtn} onClick={() => navigate('/')}>
-                <ArrowLeft size={18} />
-                Về trang chủ
-              </button>
-
-              <button type="button" className={styles.secondaryBtn} onClick={() => void loadData()}>
-                <RefreshCw size={18} />
-                Tải lại
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
   return (
-    <main className={styles.page}>
-      <div className={styles.backgroundBlurOne} />
-      <div className={styles.backgroundBlurTwo} />
-
+    <div className={styles.page}>
       <div className={styles.container}>
-        <div className={styles.pageHeader}>
-          <button type="button" className={styles.backLink} onClick={() => navigate(-1)}>
-            <ArrowLeft size={18} />
-            Quay lại
-          </button>
-
-          <div>
-            <span className={styles.pageBadge}>
-              <Sparkles size={15} />
-              Bài viết realtime
-            </span>
-            <h1>Chi tiết bài viết</h1>
-            <p>Theo dõi nội dung, cảm xúc và bình luận mới nhất.</p>
-          </div>
-
-          <button
-            type="button"
-            className={styles.refreshBtn}
-            onClick={() => void loadData(true)}
-            disabled={reloading}
-          >
-            <RefreshCw size={17} className={reloading ? styles.spinIcon : ''} />
-            Làm mới
-          </button>
+        <div className={styles.header}>
+          <h1>Chi tiết bài viết</h1>
+          <p>Xem nội dung đầy đủ và toàn bộ bình luận theo thời gian thực.</p>
         </div>
 
-        <div className={styles.layout}>
-          <section className={styles.mainColumn}>
-            <article className={styles.postCard}>
-              <header className={styles.postHeader}>
-                <div className={styles.authorBlock}>
-                  <Link to={`/profile/${post.authorId}`}>
-                    <Avatar className={styles.postAvatar}>
-                      <AvatarImage src={post.authorAvatar || ''} />
-                      <AvatarFallback>{post.authorName?.[0] || 'U'}</AvatarFallback>
-                    </Avatar>
-                  </Link>
+        {loading && (
+          <div className={styles.infoCard}>
+            <Skeleton style={{ height: 192, borderRadius: 12, marginBottom: 12 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12, marginBottom: 8 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12, marginBottom: 8 }} />
+            <Skeleton style={{ height: 64, borderRadius: 12 }} />
+          </div>
+        )}
 
-                  <div>
-                    <Link to={`/profile/${post.authorId}`} className={styles.authorName}>
-                      {post.authorName || 'Người dùng'}
-                    </Link>
-                    <div className={styles.postTimeRow}>
-                      <span>{relativeCreatedAtText}</span>
-                      <span>•</span>
-                      <span>{createdAtText}</span>
-                    </div>
-                  </div>
-                </div>
+        {!loading && !post && <div className={styles.infoCard}>Không tìm thấy bài viết.</div>}
 
-                <button type="button" className={styles.iconBtn}>
-                  <MoreHorizontal size={20} />
-                </button>
-              </header>
-
-              {post.content ? (
-                <div className={styles.postContentBox}>
-                  <p className={styles.postContent}>{post.content}</p>
-                </div>
-              ) : (
-                <div className={styles.noContentBox}>
-                  <Sparkles size={18} />
-                  Bài viết này không có nội dung chữ.
-                </div>
-              )}
-
-              {post.mediaUrl ? (
-                <div className={styles.mediaFrame}>
-                  {isVideoMediaUrl(post.mediaUrl) ? (
-                    <video
-                      src={post.mediaUrl}
-                      className={styles.postMedia}
-                      controls
-                      preload="metadata"
-                    />
-                  ) : (
-                    <img
-                      src={post.mediaUrl}
-                      alt="Ảnh bài viết"
-                      className={styles.postMedia}
-                      loading="lazy"
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none'
-                      }}
-                    />
-                  )}
-                </div>
-              ) : null}
-
-              <div className={styles.statRow}>
-                <div className={styles.statLeft}>
-                  <span className={styles.reactionBadge}>{currentReaction?.emoji || '👍'}</span>
-                  <span>{post.reactionCount} lượt cảm xúc</span>
-                </div>
-
-                <button type="button" onClick={handleFocusComment}>
-                  {totalComments || post.commentCount} bình luận
-                </button>
-              </div>
-
-              <div className={styles.actionBar}>
-                {token ? (
-                  <div className={styles.reactionWrap} ref={reactionPickerRef}>
-                    <button
-                      type="button"
-                      className={`${styles.actionBtn} ${
-                        currentReaction ? styles.actionBtnActive : ''
-                      }`}
-                      onClick={() => setShowReactionPicker((value) => !value)}
-                    >
-                      {currentReaction ? (
-                        <>
-                          <span>{currentReaction.emoji}</span>
-                          {currentReaction.label}
-                        </>
-                      ) : (
-                        <>
-                          <Heart size={18} />
-                          Thích
-                        </>
-                      )}
-                    </button>
-
-                    {showReactionPicker ? (
-                      <div className={styles.reactionPicker}>
-                        {POST_REACTIONS.map((reaction) => (
-                          <button
-                            key={reaction.type}
-                            type="button"
-                            className={`${styles.reactionOption} ${
-                              post.viewerReaction === reaction.type
-                                ? styles.reactionOptionActive
-                                : ''
-                            }`}
-                            onClick={() => void handleReactPost(reaction.type)}
-                            title={reaction.label}
-                          >
-                            <span>{reaction.emoji}</span>
-                            <small>{reaction.label}</small>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <button type="button" className={styles.actionBtn} disabled>
-                    <Heart size={18} />
-                    Thích
-                  </button>
-                )}
-
-                <button type="button" className={styles.actionBtn} onClick={handleFocusComment}>
-                  <MessageCircle size={18} />
-                  Bình luận
-                </button>
-
-                <button type="button" className={styles.actionBtn} onClick={() => void handleSharePost()}>
-                  {copied ? <Copy size={18} /> : <Share2 size={18} />}
-                  {copied ? 'Đã copy' : 'Chia sẻ'}
-                </button>
-              </div>
-            </article>
-
-            <section className={styles.commentCard} ref={commentSectionRef}>
-              <div className={styles.commentHeader}>
-                <div>
-                  <h2>Bình luận</h2>
-                  <p>{totalComments} bình luận đang hiển thị trong bài viết này</p>
-                </div>
-
-                <button type="button" onClick={() => void loadData(true)} disabled={reloading}>
-                  <RefreshCw size={15} className={reloading ? styles.spinIcon : ''} />
-                  Cập nhật
-                </button>
-              </div>
-
-              {token ? (
-                <div className={styles.commentForm}>
-                  <Avatar className={styles.myAvatar}>
-                    <AvatarImage src={me?.avatarUrl || ''} />
-                    <AvatarFallback>{me?.name?.[0] || 'U'}</AvatarFallback>
-                  </Avatar>
-
-                  <div className={styles.commentInputWrap}>
-                    <textarea
-                      ref={commentTextareaRef}
-                      value={commentInput}
-                      onChange={(event) => setCommentInput(event.target.value)}
-                      placeholder="Viết bình luận của bạn..."
-                      className={styles.commentTextarea}
-                      rows={2}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                          event.preventDefault()
-                          void handleAddComment()
-                        }
-                      }}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => void handleAddComment()}
-                      disabled={!commentInput.trim() || submittingComment}
-                      className={styles.submitBtn}
-                    >
-                      {submittingComment ? <RefreshCw size={17} className={styles.spinIcon} /> : <Send size={17} />}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className={styles.loginNotice}>
-                  <div>
-                    <ShieldCheck size={20} />
-                    <p>Đăng nhập để thả cảm xúc và bình luận bài viết.</p>
-                  </div>
-                  <Link to="/auth/login">Đăng nhập</Link>
-                </div>
-              )}
-
-              <div className={styles.commentList}>
-                {comments.length > 0 ? (
-                  comments.map((comment) => renderComment(comment))
-                ) : (
-                  <div className={styles.emptyComments}>
-                    <MessageCircle size={38} />
-                    <p>Chưa có bình luận nào.</p>
-                    <span>Hãy là người đầu tiên mở đầu cuộc trò chuyện.</span>
-                  </div>
-                )}
-              </div>
-            </section>
-          </section>
-
-          <aside className={styles.sideColumn}>
-            <div className={styles.sideCard}>
-              <div className={styles.sideTitle}>
-                <UserRound size={19} />
-                <h3>Tác giả</h3>
-              </div>
-
-              <div className={styles.authorMiniCard}>
-                <Avatar className={styles.sideAvatar}>
+        {post ? (
+          <article className={styles.postCard}>
+            <header className={styles.postHeader}>
+              <div className={styles.postAuthorRow}>
+                <Avatar className={styles.postAuthorAvatar}>
                   <AvatarImage src={post.authorAvatar || ''} />
                   <AvatarFallback>{post.authorName?.[0] || 'U'}</AvatarFallback>
                 </Avatar>
-
                 <div>
-                  <Link to={`/profile/${post.authorId}`}>{post.authorName || 'Người dùng'}</Link>
-                  <span>Người đăng bài</span>
+                  <Link to={`/profile/${post.authorId}`}>
+                    <h2>{post.authorName}</h2>
+                  </Link>
+                  <p>{createdAtText}</p>
                 </div>
               </div>
+            </header>
+
+            {post.content ? <p className={styles.postContent}>{post.content}</p> : null}
+
+            {post.mediaUrl ? (
+              isVideoMediaUrl(post.mediaUrl) ? (
+                <video
+                  src={post.mediaUrl}
+                  className={styles.postMedia}
+                  controls
+                  preload="metadata"
+                />
+              ) : (
+                <img
+                  src={post.mediaUrl}
+                  alt="Ảnh bài viết"
+                  className={styles.postMedia}
+                  loading="lazy"
+                  onError={(event) => {
+                    event.currentTarget.style.display = 'none'
+                  }}
+                />
+              )
+            ) : null}
+
+            <div className={styles.postMeta}>
+              <span>{post.reactionCount} lượt thích • {post.commentCount} bình luận</span>
+
+              {token ? (
+                <div className={styles.reactionWrap} ref={reactionPickerRef}>
+                  <button
+                    type="button"
+                    className={`${styles.reactionBtn} ${currentReaction ? styles.reactionBtnActive : ''}`}
+                    onClick={() => setShowReactionPicker((v) => !v)}
+                  >
+                    {currentReaction ? (
+                      <span>{currentReaction.emoji} {currentReaction.label}</span>
+                    ) : (
+                      <span><Heart size={15} style={{ verticalAlign: 'middle' }} /> Thích</span>
+                    )}
+                  </button>
+                  {showReactionPicker ? (
+                    <div className={styles.reactionPicker}>
+                      {POST_REACTIONS.map((r) => (
+                        <button
+                          key={r.type}
+                          type="button"
+                          className={`${styles.reactionOption} ${post.viewerReaction === r.type ? styles.reactionOptionActive : ''}`}
+                          onClick={() => void handleReactPost(r.type)}
+                          title={r.label}
+                        >
+                          {r.emoji}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
+          </article>
+        ) : null}
 
-            <div className={styles.sideCard}>
-              <div className={styles.sideTitle}>
-                <Sparkles size={19} />
-                <h3>Thống kê</h3>
-              </div>
+        <section className={styles.commentCard}>
+          <h3>Bình luận</h3>
 
-              <div className={styles.sideStat}>
-                <span>Lượt cảm xúc</span>
-                <strong>{post.reactionCount}</strong>
-              </div>
-
-              <div className={styles.sideStat}>
-                <span>Bình luận</span>
-                <strong>{totalComments || post.commentCount}</strong>
-              </div>
-
-              <div className={styles.sideStat}>
-                <span>Trạng thái</span>
-                <strong>Realtime</strong>
-              </div>
+          {token ? (
+            <div className={styles.commentForm}>
+              <textarea
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                placeholder="Viết bình luận của bạn..."
+                className={styles.commentTextarea}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleAddComment() } }}
+              />
+              <button type="button" onClick={handleAddComment} disabled={!commentInput.trim()} className={styles.submitBtn}>
+                Gửi bình luận
+              </button>
             </div>
+          ) : null}
 
-            <div className={styles.sideCard}>
-              <div className={styles.sideTitle}>
-                <ShieldCheck size={19} />
-                <h3>Gợi ý tương tác</h3>
-              </div>
-
-              <p className={styles.sideText}>
-                Thả cảm xúc, bình luận hoặc chia sẻ bài viết để tăng tương tác và giúp hệ thống đề xuất
-                nội dung phù hợp hơn.
-              </p>
-            </div>
-          </aside>
-        </div>
+          <div className={styles.commentList}>
+            {comments.map((comment) => renderComment(comment))}
+            {comments.length === 0 ? <p className={styles.emptyText}>Chưa có bình luận nào.</p> : null}
+          </div>
+        </section>
       </div>
-    </main>
+    </div>
   )
 }
