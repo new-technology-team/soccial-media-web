@@ -24,6 +24,10 @@ jobs:
             git fetch origin
             git reset --hard origin/tongquockhanh2510
             npm install
+            export VITE_API_BASE_URL="${{ secrets.VITE_API_BASE_URL }}"
+            export VITE_SOCKET_URL="${{ secrets.VITE_SOCKET_URL }}"
+            export VITE_BACKEND_TARGET="${{ secrets.VITE_BACKEND_TARGET }}"
+            export VITE_GOOGLE_CLIENT_ID="${{ secrets.VITE_GOOGLE_CLIENT_ID }}"
             npm run build
             sudo rm -rf /usr/share/nginx/html/*
             sudo cp -r dist/* /usr/share/nginx/html/
