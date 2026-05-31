@@ -415,6 +415,7 @@ export default function MessagesPage() {
     callType: 'voice' | 'video'
     mode: 'private' | 'group'
     conversationId: string
+    callSessionId?: string
     startedAt: number
     answeredAt: number | null
     withName: string
@@ -893,6 +894,7 @@ export default function MessagesPage() {
     if (!selectedConversationId) return
     const socket = getSocket()
     socket?.emit('join-conversation', selectedConversationId)
+    socket?.emit('conversation:join', { conversationId: selectedConversationId })
     emitTypingState(Boolean(value.trim()), selectedConversationId)
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current)
     if (value.trim()) {
@@ -1204,41 +1206,6 @@ export default function MessagesPage() {
     })
 
     const handleRemoteCallEnd = (payload: any) => {
-      const endedByUserId = Number(payload?.fromUserId || 0)
-
-      if (endedByUserId > 0 && activeCall) {
-        const peer = peersRef.current.get(endedByUserId)
-        if (peer) {
-          peer.close()
-          peersRef.current.delete(endedByUserId)
-        }
-
-        setRemoteStreams((prev) => prev.filter((item) => item.userId !== endedByUserId))
-
-        const nextJoined = joinedCallUserIds.filter((id) => id !== endedByUserId)
-        setJoinedCallUserIds(nextJoined)
-
-        const myId = Number(user?.id || 0)
-        const remainingOthers = nextJoined.filter((id) => id !== myId)
-
-        if (remainingOthers.length === 0) {
-          logCall(callMetaRef.current?.answeredAt ? 'completed' : 'cancelled')
-          closeCallResources()
-          setActiveCall(null)
-          setCallSeconds(0)
-          setCallAnswered(false)
-          setRingingStartedAt(null)
-          setCallState('ended')
-          setCallStatus(activeCall.mode === 'group' ? 'Cuộc gọi nhóm đã kết thúc' : 'Mọi người đã rời cuộc gọi')
-          callMetaRef.current = null
-          isEndingCallRef.current = false
-        } else {
-          setRemoteMediaState((prev) => { const next = { ...prev }; delete next[endedByUserId]; return next })
-          setCallStatus(remainingOthers.length === 0 ? 'Bạn đang ở một mình trong cuộc gọi nhóm' : 'Một người đã rời cuộc gọi')
-        }
-        return
-      }
-
       logCall(payload?.reason === 'disconnected' ? 'completed' : (callMetaRef.current?.answeredAt ? 'completed' : 'cancelled'))
       setCallState('ended')
       stopRingtone()
@@ -1435,9 +1402,11 @@ export default function MessagesPage() {
     if (!socket) return
 
     socket.emit('join-conversation', selectedConversationId)
+    socket.emit('conversation:join', { conversationId: selectedConversationId })
     return () => {
       socket.emit('stopTyping', { conversationId: selectedConversationId })
       socket.emit('leave-conversation', selectedConversationId)
+      socket.emit('conversation:leave', { conversationId: selectedConversationId })
     }
   }, [selectedConversationId])
 
@@ -1646,11 +1615,14 @@ export default function MessagesPage() {
     if (Number(user?.id || 0) !== meta.initiatorId) return
     callLoggedRef.current = true
     const endedAt = Date.now()
-    const durationSec = meta.answeredAt ? Math.max(0, Math.round((endedAt - meta.answeredAt) / 1000)) : 0
-    api.createCall(token, {
+    const durationSec = meta.answeredAt
+      ? Math.max(0, Math.round((endedAt - meta.answeredAt) / 1000))
+      : Math.max(0, Math.round((endedAt - meta.startedAt) / 1000))
+      api.createCall(token, {
       conversationId: meta.conversationId,
       initiatorId: meta.initiatorId,
       participantIds: meta.participantIds,
+      callSessionId: meta.callSessionId,
       participantStatuses: meta.participantIds.map((participantId) => ({
         userId: participantId,
         joinedAt: meta.answeredAt || meta.startedAt,
@@ -1695,17 +1667,11 @@ export default function MessagesPage() {
     const timeoutLimit = activeCall.mode === 'group' ? GROUP_CALL_RING_TIMEOUT_MS : CALL_RING_TIMEOUT_MS
     const timeoutMs = timeoutLimit - (Date.now() - ringingStartedAt)
     const conversationId = selectedConversationId
-    const targets = [...callTargets]
 
     const autoEnd = () => {
       const socket = getSocket()
       if (socket && conversationId) {
-        targets.forEach((targetUserId) => {
-          socket.emit('call:end', {
-            targetUserId,
-            conversationId,
-          })
-        })
+        socket.emit('call:end', { conversationId, mode: activeCall.mode, callType: activeCall.type, reason: 'timeout' })
       }
       closeCallResources()
       logCall('no_answer')
@@ -1725,7 +1691,7 @@ export default function MessagesPage() {
 
     const timer = window.setTimeout(autoEnd, timeoutMs)
     return () => window.clearTimeout(timer)
-  }, [activeCall, addLocalCallHistory, callAnswered, callTargets, clearIncomingCall, logCall, ringingStartedAt, scheduleClearCall, selectedConversationId, setGlobalCallErrorMessage])
+  }, [activeCall, addLocalCallHistory, callAnswered, clearIncomingCall, logCall, ringingStartedAt, scheduleClearCall, selectedConversationId, setGlobalCallErrorMessage])
 
   const directPeer = useMemo(() => {
     if (!selectedConversation || !user?.id) return null
@@ -3154,21 +3120,11 @@ export default function MessagesPage() {
       return
     }
 
-    const presenceResults = await Promise.all(callTargets.map(async (targetUserId) => {
-      const status = await checkUserPresence(targetUserId)
-      return status.online ? status : { ...status, online: false }
-    }))
+    const activeCallTargets = [...callTargets]
+    const presenceResults = await Promise.all(callTargets.map((targetUserId) => checkUserPresence(targetUserId)))
     const onlineCallTargets = presenceResults.filter((item) => item.online).map((item) => item.userId)
 
-    if (!isGroupCall && onlineCallTargets.length === 0) {
-      toast({ title: 'User is currently offline.', description: 'User is currently offline.', variant: 'destructive' })
-      return
-    }
-    if (isGroupCall && onlineCallTargets.length === 0) {
-      toast({ title: 'Không có thành viên nào đang online để gọi.', variant: 'destructive' })
-      return
-    }
-    if (isGroupCall && onlineCallTargets.length + 1 > GROUP_CALL_MAX_PARTICIPANTS) {
+    if (isGroupCall && activeCallTargets.length + 1 > GROUP_CALL_MAX_PARTICIPANTS) {
       toast({ title: `Cuộc gọi nhóm chỉ hỗ trợ tối đa ${GROUP_CALL_MAX_PARTICIPANTS} người.`, variant: 'destructive' })
       return
     }
@@ -3183,7 +3139,7 @@ export default function MessagesPage() {
 
     try {
       await ensureLocalStream(callType)
-      for (const targetUserId of onlineCallTargets) {
+      for (const targetUserId of (isGroupCall ? onlineCallTargets : activeCallTargets)) {
         const pc = await buildPeerConnection(targetUserId, callType)
         if (!pc) continue
         const offer = await pc.createOffer()
@@ -3216,7 +3172,7 @@ export default function MessagesPage() {
         mode: selectedConversation?.type === 'group' ? 'group' : 'private',
         avatarUrl: selectedConversation?.avatarUrl || null,
         conversationId: selectedConversationId,
-        targetUserIds: [...onlineCallTargets],
+        targetUserIds: [...activeCallTargets],
       })
       scheduleClearCall()
       return
@@ -3227,10 +3183,11 @@ export default function MessagesPage() {
     const withName = selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : `Người dùng #${callTargetId}`
     callMetaRef.current = {
       initiatorId: Number(user?.id || 0),
-      participantIds: [...(user?.id ? [user.id] : []), ...onlineCallTargets],
+      participantIds: [...(user?.id ? [user.id] : []), ...activeCallTargets],
       callType,
       mode: callMode,
       conversationId: selectedConversationId,
+      callSessionId: callRoomId,
       startedAt,
       answeredAt: null,
       withName,
@@ -3249,11 +3206,12 @@ export default function MessagesPage() {
       mode: callMode,
       avatarUrl: selectedConversation?.avatarUrl || selectedConversation?.members.find((member) => member.userId === directPeer?.id)?.avatarUrl || null,
       conversationId: selectedConversationId,
-      targetUserIds: [...onlineCallTargets],
+      targetUserIds: [...activeCallTargets],
     })
     setCallMinimized(false)
     setJoinedCallUserIds(initialParticipants)
     socket.emit('join-conversation', selectedConversationId)
+    socket.emit('conversation:join', { conversationId: selectedConversationId })
     socket.emit('call:join', {
       conversationId: selectedConversationId,
       callType,
@@ -3262,12 +3220,29 @@ export default function MessagesPage() {
       cameraOff: mutedCam || callType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     
-    if (onlineCallTargets.length > 1) {
+    if (activeCallTargets.length > 1) {
       socket.emit('call:participants', {
         conversationId: selectedConversationId,
-        participantCount: 1 + onlineCallTargets.length,
-        participantIds: [...initialParticipants, ...onlineCallTargets],
+        participantCount: 1 + activeCallTargets.length,
+        participantIds: [...initialParticipants, ...activeCallTargets],
       })
+    }
+    if (token && callMode === 'group') {
+      void api.sendMessagePayload(token, selectedConversationId, {
+        type: 'call-history',
+        text: `${callType === 'video' ? 'Cuộc gọi video nhóm' : 'Cuộc gọi thoại nhóm'} đang diễn ra`,
+        meta: {
+          system: true,
+          callHistory: true,
+          status: 'active',
+          mode: 'group',
+          callType,
+          callSessionId: callRoomId,
+          initiatorId: user?.id || 0,
+          participantIds: [...initialParticipants, ...activeCallTargets],
+          startedAt,
+        },
+      }).catch(() => undefined)
     }
   }
 
@@ -3392,6 +3367,7 @@ export default function MessagesPage() {
     const newJoinedIds = user?.id ? [user.id, call.fromUserId] : [call.fromUserId]
     setJoinedCallUserIds(newJoinedIds)
     socket.emit('join-conversation', activeConversationId)
+    socket.emit('conversation:join', { conversationId: activeConversationId })
     socket.emit('call:join', {
       conversationId: activeConversationId,
       callType: effectiveType,
@@ -3438,6 +3414,69 @@ export default function MessagesPage() {
     addLocalCallHistory(selectedConversation?.type === 'group' ? 'Bạn đã bỏ lỡ cuộc gọi nhóm' : 'Cuộc gọi đã bị từ chối', activeConversationId || undefined)
   }
 
+  const handleJoinGroupCallFromMessage = async (chatMessage: ChatMessage) => {
+    const socket = getSocket()
+    const conversationId = chatMessage.conversationId || selectedConversationId
+    const meta = (chatMessage.meta || {}) as Record<string, unknown>
+    if (!socket || !conversationId || !user?.id) return
+    if (activeCall?.conversationId === conversationId && callAnswered) {
+      toast({ title: 'Bạn đang ở trong cuộc gọi này.' })
+      return
+    }
+
+    const conv = conversations.find((item) => item.id === conversationId) || selectedConversation
+    const callType: 'voice' | 'video' = meta.callType === 'video' ? 'video' : 'voice'
+    const startedAt = Date.now()
+    try {
+      await ensureLocalStream(callType)
+    } catch (error) {
+      console.error('Không thể tham gia cuộc gọi nhóm:', error)
+      setGlobalCallErrorMessage('Không thể truy cập micro/camera')
+      toast({ title: 'Không thể tham gia cuộc gọi', description: 'Hãy cấp quyền micro/camera rồi thử lại.', variant: 'destructive' })
+      return
+    }
+
+    if (selectedConversationId !== conversationId) routeOpenConversation(conversationId)
+    const peerIds = conv?.members.map((member) => member.userId).filter((id) => id !== user.id) || []
+    callMetaRef.current = {
+      initiatorId: Number(meta.initiatorId || 0),
+      participantIds: [user.id, ...peerIds],
+      callType,
+      mode: 'group',
+      conversationId,
+      callSessionId: String(meta.callSessionId || ''),
+      startedAt,
+      answeredAt: startedAt,
+      withName: conv ? getConversationDisplayName(conv, user.id) : 'Cuộc gọi nhóm',
+    }
+    setActiveCall({
+      type: callType,
+      withName: conv ? getConversationDisplayName(conv, user.id) : 'Cuộc gọi nhóm',
+      startedAt,
+      mode: 'group',
+      avatarUrl: conv?.avatarUrl || null,
+      conversationId,
+      targetUserIds: peerIds,
+    })
+    setCallState('connected')
+    setCallAnswered(true)
+    setCallMinimized(false)
+    setCallStatus('Đã tham gia cuộc gọi nhóm')
+    setRingingStartedAt(null)
+    setCallSeconds(0)
+    setJoinedCallUserIds((prev) => Array.from(new Set([...prev, user.id])))
+    socket.emit('join-conversation', conversationId)
+    socket.emit('conversation:join', { conversationId })
+    socket.emit('call:join', {
+      conversationId,
+      callType,
+      mode: 'group',
+      micMuted,
+      cameraOff: mutedCam || callType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
+    })
+    socket.emit('group_call_joined', { conversationId, callType })
+  }
+
   const handleEndCall = () => {
     if (isEndingCallRef.current) return
     const socket = getSocket()
@@ -3445,30 +3484,17 @@ export default function MessagesPage() {
     isEndingCallRef.current = true
     
     const endingCall = activeCall
-    if (endingCall?.mode === 'group') {
-      socket.emit('group_call_left', {
-        conversationId: selectedConversationId,
-        callType: endingCall.type,
-      })
-    } else {
-      callTargets.forEach((targetUserId) => {
-        socket.emit('call:end', {
-          targetUserId,
-          conversationId: selectedConversationId,
-        })
-      })
-    }
+    socket.emit('call:end', {
+      conversationId: endingCall?.conversationId || selectedConversationId,
+      callType: endingCall?.type,
+      mode: endingCall?.mode,
+    })
     
-    logCall(callAnswered ? 'completed' : 'cancelled')
+    const finalStatus = callAnswered ? 'completed' : 'no_answer'
+    logCall(finalStatus)
     closeCallResources()
-    const historyText = endingCall?.mode === 'group'
-      ? `Bạn đã rời cuộc gọi nhóm • ${formattedCallTime}`
-      : callAnswered
-        ? `Cuộc gọi đã kết thúc • ${formattedCallTime}`
-        : 'Bạn đã hủy cuộc gọi'
-    addLocalCallHistory(historyText)
-    setCallState(callAnswered ? 'ended' : 'cancelled')
-    setCallStatus(endingCall?.mode === 'group' ? 'Bạn đã rời cuộc gọi nhóm' : callAnswered ? 'Cuộc gọi đã kết thúc' : 'Đã hủy cuộc gọi')
+    setCallState(callAnswered ? 'ended' : 'no_answer')
+    setCallStatus(endingCall?.mode === 'group' ? 'Bạn đã rời cuộc gọi nhóm' : callAnswered ? 'Cuộc gọi đã kết thúc' : 'Không có phản hồi')
     clearIncomingCall()
     setGlobalCallErrorMessage(null)
     setActiveCall(null)
@@ -4338,6 +4364,7 @@ export default function MessagesPage() {
               openMessageActions={openMessageActions}
               renderMessagePreview={renderMessagePreview}
               getMessageReadLabel={getMessageReadLabel}
+              onJoinGroupCall={handleJoinGroupCallFromMessage}
               onLoadOlderMessages={loadOlderMessages}
               onScroll={(event) => {
                 const element = event.currentTarget

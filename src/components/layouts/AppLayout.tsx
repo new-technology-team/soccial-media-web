@@ -138,13 +138,15 @@ export default function AppLayout({
     }
 
     socket.on('call:offer', onOffer)
-    socket.on('call:end', onEnd)
+    socket.on('call:incoming', onOffer)
+    socket.on('call:ended', onEnd)
     socket.on('auth:revoked', onAuthRevoked)
     socket.on('user:avatar-updated', onAvatarUpdated)
 
     return () => {
       socket.off('call:offer', onOffer)
-      socket.off('call:end', onEnd)
+      socket.off('call:incoming', onOffer)
+      socket.off('call:ended', onEnd)
       socket.off('auth:revoked', onAuthRevoked)
       socket.off('user:avatar-updated', onAvatarUpdated)
     }
@@ -244,12 +246,8 @@ export default function AppLayout({
     isEndingCallRef.current = true
     const socket = getSocket()
     const conversationId = activeCall?.conversationId
-    if (socket && conversationId && activeCall?.mode === 'group') {
-      socket.emit('group_call_left', { conversationId, callType: activeCall.type })
-    } else if (socket && conversationId && activeCall?.targetUserIds?.length) {
-      activeCall.targetUserIds.forEach((targetUserId) => {
-        socket.emit('call:end', { targetUserId, conversationId })
-      })
+    if (socket && conversationId) {
+      socket.emit('call:end', { conversationId, callType: activeCall?.type, mode: activeCall?.mode })
     }
     resetCallSession()
     const {

@@ -483,10 +483,15 @@ export function MinimizedCallPill({ name, avatarUrl, duration, participantCount,
   )
 }
 
-export function CallHistoryMessage({ text }: { text: string }) {
+export function CallHistoryMessage({ text, actionLabel, onAction }: { text: string; actionLabel?: string; onAction?: () => void }) {
   return (
     <p className={styles.history}>
       <Phone size={16} /> {text}
+      {actionLabel && onAction ? (
+        <button type="button" className={styles.historyAction} onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
     </p>
   )
 }

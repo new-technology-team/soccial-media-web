@@ -44,7 +44,7 @@ const FEED_BATCH_SIZE = 4
 
 const parseFeedDate = (value: string) => {
   const base = new Date(value)
-  if (Number.isNaN(base.getTime())) return new Date()
+  if (Number.isNaN(base.getTime())) return null
   return base
 }
 
@@ -592,6 +592,7 @@ export default function FeedPage() {
   const formatTime = (value: string) => {
     void timeTick
     const date = parseFeedDate(value)
+    if (!date) return 'Không rõ thời gian'
     const diffMs = Math.max(0, Date.now() - date.getTime())
     const diffMinutes = Math.floor(diffMs / (60 * 1000))
     const diffHours = Math.floor(diffMs / (60 * 60 * 1000))
@@ -613,8 +614,10 @@ export default function FeedPage() {
     }).format(date)
   }
 
-  const formatExactTime = (value: string) =>
-    new Intl.DateTimeFormat('vi-VN', {
+  const formatExactTime = (value: string) => {
+    const date = parseFeedDate(value)
+    if (!date) return 'Không rõ thời gian'
+    return new Intl.DateTimeFormat('vi-VN', {
       timeZone: VN_TIMEZONE,
       hour12: false,
       day: '2-digit',
@@ -623,7 +626,8 @@ export default function FeedPage() {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-    }).format(parseFeedDate(value))
+    }).format(date)
+  }
 
   const submitPost = async (payload: {
     text: string

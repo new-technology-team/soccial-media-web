@@ -17,6 +17,7 @@ export type CallHistoryItem = {
   conversationId: string
   initiatorId: number
   participantIds: number[]
+  callSessionId?: string
   participantStatuses?: Array<{
     userId: number
     joinedAt: string | null
@@ -774,7 +775,7 @@ export const api = {
     token: string,
     conversationId: string,
     payload: {
-      type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'sticker'
+      type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'sticker' | 'call-history'
       text?: string
       mediaUrl?: string
       fileName?: string
@@ -907,6 +908,7 @@ export const api = {
       conversationId: string
       initiatorId: number
       participantIds: number[]
+      callSessionId?: string
       callType: 'voice' | 'video'
       mode: 'private' | 'group'
       status: 'completed' | 'missed' | 'rejected' | 'no_answer' | 'cancelled' | 'failed'

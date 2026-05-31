@@ -27,6 +27,7 @@ type MessageThreadProps = {
   openMessageActions: (event: MouseEvent<HTMLElement>, messageId: string) => void
   renderMessagePreview: (message: ChatMessage) => ReactNode
   getMessageReadLabel: (message: ChatMessage) => string | null
+  onJoinGroupCall?: (message: ChatMessage) => void
   onLoadOlderMessages: () => Promise<void>
   onScroll?: (event: UIEvent<HTMLDivElement>) => void
 }
@@ -64,6 +65,7 @@ export function MessageThread({
   openMessageActions,
   renderMessagePreview,
   getMessageReadLabel,
+  onJoinGroupCall,
   onLoadOlderMessages,
   onScroll,
 }: MessageThreadProps) {
@@ -86,7 +88,21 @@ export function MessageThread({
 
       {virtualSlice.items.map((msg, index) => {
         if (msg.type === 'call-history') {
-          return <CallHistoryMessage key={msg.id} text={msg.text || 'Cuộc gọi đã kết thúc'} />
+          const meta = (msg.meta || {}) as Record<string, unknown>
+          const callSessionId = String(meta.callSessionId || '')
+          const hasEndedMessage = Boolean(callSessionId && virtualSlice.items.some((item) => {
+            const itemMeta = (item.meta || {}) as Record<string, unknown>
+            return item.type === 'call-history' && itemMeta.callSessionId === callSessionId && itemMeta.status && itemMeta.status !== 'active'
+          }))
+          const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage
+          return (
+            <CallHistoryMessage
+              key={msg.id}
+              text={msg.text || 'Cuộc gọi đã kết thúc'}
+              actionLabel={canJoinGroupCall ? 'Tham gia' : undefined}
+              onAction={canJoinGroupCall ? () => onJoinGroupCall?.(msg) : undefined}
+            />
+          )
         }
 
         const mine = msg.senderId === userId
