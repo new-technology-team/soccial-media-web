@@ -1,31 +1,21 @@
 'use client'
 
-/**
- * PostDetailPage
- * -------------------------------------------------------
- * Trang chi tiết bài viết.
- *
- * Chức năng chính:
- * - Lấy thông tin bài viết theo id trên URL.
- * - Hiển thị nội dung bài viết, ảnh hoặc video.
- * - Hiển thị số lượt cảm xúc, số bình luận.
- * - Cho phép người dùng đã đăng nhập thả cảm xúc.
- * - Cho phép người dùng đã đăng nhập bình luận.
- * - Cho phép trả lời bình luận.
- * - Lắng nghe socket realtime để cập nhật bài viết, bình luận, avatar.
- */
-
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
+  Clock3,
+  Copy,
   Heart,
   MessageCircle,
   MoreHorizontal,
+  RefreshCw,
   Send,
   Share2,
+  ShieldCheck,
   Sparkles,
+  UserRound,
 } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -36,22 +26,6 @@ import { connectSocket } from '@/services/socket'
 import type { FeedComment, FeedPost } from '@/types'
 import styles from './page.module.css'
 
-/**
- * Kiểm tra mediaUrl có phải video không.
- *
- * Dùng để quyết định render:
- * - <video /> nếu là video
- * - <img /> nếu là ảnh
- */
-const isVideoMediaUrl = (url: string) =>
-  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
-
-/**
- * Danh sách cảm xúc cho bài viết.
- *
- * `as const` giúp TypeScript hiểu đây là mảng cố định,
- * tránh việc type bị suy rộng thành string thông thường.
- */
 const POST_REACTIONS = [
   { type: 'like', emoji: '👍', label: 'Thích' },
   { type: 'love', emoji: '❤️', label: 'Yêu thích' },
@@ -61,31 +35,60 @@ const POST_REACTIONS = [
   { type: 'angry', emoji: '😡', label: 'Phẫn nộ' },
 ] as const
 
-/**
- * Thêm bình luận vào danh sách nhưng tránh bị trùng.
- *
- * Vì comment có thể được thêm từ 2 nguồn:
- * - API response sau khi user gửi bình luận.
- * - Socket realtime trả về comment mới.
- *
- * Nếu không kiểm tra trùng id, comment có thể xuất hiện 2 lần.
- */
+type ReactionType = (typeof POST_REACTIONS)[number]['type']
+
+const isVideoMediaUrl = (url: string) =>
+  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
+
+const formatDateTime = (value?: string | Date | null) => {
+  if (!value) return 'Không rõ thời gian'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Không rõ thời gian'
+  }
+
+  return date.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+const getRelativeTime = (value?: string | Date | null) => {
+  if (!value) return 'Vừa xong'
+
+  const date = new Date(value)
+  const diffMs = Date.now() - date.getTime()
+
+  if (Number.isNaN(diffMs)) return 'Vừa xong'
+
+  const diffMinutes = Math.floor(diffMs / 60_000)
+  const diffHours = Math.floor(diffMinutes / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffMinutes < 1) return 'Vừa xong'
+  if (diffMinutes < 60) return `${diffMinutes} phút trước`
+  if (diffHours < 24) return `${diffHours} giờ trước`
+  if (diffDays < 7) return `${diffDays} ngày trước`
+
+  return formatDateTime(value)
+}
+
+const countAllComments = (items: FeedComment[]): number =>
+  items.reduce((total, item) => total + 1 + countAllComments(item.replies || []), 0)
+
 const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComment[] => {
   const commentId = String(comment.id)
   const parentId = comment.parentCommentId ? String(comment.parentCommentId) : null
 
-  /**
-   * Nếu không có parentCommentId thì đây là bình luận gốc.
-   * Ta chỉ thêm nếu danh sách hiện tại chưa có comment này.
-   */
   if (!parentId) {
-    return items.some((item) => String(item.id) === commentId) ? items : [...items, comment]
+    return items.some((item) => String(item.id) === commentId) ? items : [comment, ...items]
   }
 
-  /**
-   * Nếu có parentCommentId thì đây là reply.
-   * Ta cần tìm comment cha rồi thêm vào mảng replies.
-   */
   return items.map((item) => {
     if (String(item.id) === parentId) {
       const alreadyExists = (item.replies || []).some((reply) => String(reply.id) === commentId)
@@ -96,10 +99,6 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
       }
     }
 
-    /**
-     * Nếu comment hiện tại không phải cha trực tiếp,
-     * tiếp tục tìm sâu trong replies.
-     */
     return {
       ...item,
       replies: item.replies ? appendCommentOnce(item.replies, comment) : [],
@@ -107,87 +106,42 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
   })
 }
 
+const removeCommentById = (items: FeedComment[], commentId?: string | number): FeedComment[] => {
+  const id = String(commentId || '')
+
+  return items
+    .filter((item) => String(item.id) !== id)
+    .map((item) => ({
+      ...item,
+      replies: item.replies ? removeCommentById(item.replies, id) : [],
+    }))
+}
+
 export default function PostDetailPage() {
-  /**
-   * Lấy id bài viết từ URL.
-   * Ví dụ: /posts/123 => postId = "123"
-   */
+  const navigate = useNavigate()
   const params = useParams<{ id: string }>()
   const postId = String(params.id || '').trim()
 
-  /**
-   * Lấy thông tin đăng nhập từ auth store.
-   *
-   * token:
-   * - Có token thì được thả cảm xúc, bình luận, trả lời.
-   * - Không token thì chỉ xem bài viết.
-   *
-   * me:
-   * - Thông tin user hiện tại.
-   * - Dùng để hiện avatar khi nhập bình luận.
-   */
   const token = useAuthStore((state) => state.accessToken)
   const me = useAuthStore((state) => state.user)
 
-  /**
-   * State lưu bài viết hiện tại.
-   */
   const [post, setPost] = useState<FeedPost | null>(null)
-
-  /**
-   * State lưu danh sách bình luận.
-   */
   const [comments, setComments] = useState<FeedComment[]>([])
-
-  /**
-   * State lưu nội dung textarea bình luận chính.
-   */
   const [commentInput, setCommentInput] = useState('')
-
-  /**
-   * State loading khi đang tải dữ liệu.
-   */
   const [loading, setLoading] = useState(true)
-
-  /**
-   * State bật/tắt bảng chọn cảm xúc.
-   */
+  const [reloading, setReloading] = useState(false)
+  const [submittingComment, setSubmittingComment] = useState(false)
   const [showReactionPicker, setShowReactionPicker] = useState(false)
-
-  /**
-   * State lưu comment nào đang mở form trả lời.
-   *
-   * Ví dụ:
-   * {
-   *   "commentId1": true,
-   *   "commentId2": false
-   * }
-   */
   const [replyingToCommentIds, setReplyingToCommentIds] = useState<Record<string, boolean>>({})
-
-  /**
-   * State lưu nội dung reply theo từng comment id.
-   */
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({})
-
-  /**
-   * State lưu comment id đang gửi reply.
-   * Dùng để disable nút gửi và hiện trạng thái loading.
-   */
   const [busyCommentId, setBusyCommentId] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
-  /**
-   * Ref của reaction picker.
-   * Dùng để phát hiện click ra ngoài rồi đóng picker.
-   */
   const reactionPickerRef = useRef<HTMLDivElement>(null)
+  const commentTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const commentSectionRef = useRef<HTMLElement>(null)
 
-  /**
-   * Load bài viết và bình luận khi:
-   * - postId thay đổi
-   * - token thay đổi
-   */
-  useEffect(() => {
+  const loadData = async (silent = false) => {
     if (!postId) {
       setLoading(false)
       setPost(null)
@@ -195,71 +149,50 @@ export default function PostDetailPage() {
       return
     }
 
-    const loadData = async () => {
+    if (silent) {
+      setReloading(true)
+    } else {
       setLoading(true)
-
-      try {
-        /**
-         * Gọi song song 2 API để tăng tốc:
-         * - Lấy chi tiết bài viết.
-         * - Lấy danh sách bình luận.
-         */
-        const [postRes, commentRes] = await Promise.all([
-          api.getPost(postId, token || undefined),
-          api.listComments(postId, token || undefined),
-        ])
-
-        setPost(postRes.post || null)
-        setComments(commentRes.comments)
-      } catch (error) {
-        console.error('Không thể tải chi tiết bài viết', error)
-      } finally {
-        setLoading(false)
-      }
     }
 
+    try {
+      const [postRes, commentRes] = await Promise.all([
+        api.getPost(postId, token || undefined),
+        api.listComments(postId, token || undefined),
+      ])
+
+      setPost(postRes.post || null)
+      setComments(commentRes.comments || [])
+    } catch (error) {
+      console.error('Không thể tải chi tiết bài viết', error)
+    } finally {
+      setLoading(false)
+      setReloading(false)
+    }
+  }
+
+  useEffect(() => {
     void loadData()
   }, [postId, token])
 
-  /**
-   * Kết nối socket để cập nhật realtime.
-   *
-   * Chỉ kết nối khi:
-   * - Có token
-   * - Có user hiện tại
-   * - Có postId
-   */
   useEffect(() => {
     if (!token || !me?.id || !postId) return
 
     const socket = connectSocket(token, me.id)
-
-    /**
-     * Hàm kiểm tra event socket có thuộc bài viết hiện tại không.
-     */
     const isThisPost = (value: unknown) => String(value || '') === String(postId)
 
-    /**
-     * Khi bài viết được chỉnh sửa.
-     */
     const onPostUpdated = (payload: { post?: FeedPost }) => {
       if (payload?.post && isThisPost(payload.post.id)) {
         setPost(payload.post)
       }
     }
 
-    /**
-     * Khi bài viết bị xóa.
-     */
     const onPostDeleted = (payload: { postId?: number | string }) => {
       if (isThisPost(payload?.postId)) {
         setPost(null)
       }
     }
 
-    /**
-     * Khi có người thả cảm xúc bài viết.
-     */
     const onPostReaction = (payload: {
       postId?: number | string
       actorId?: number | string
@@ -273,11 +206,6 @@ export default function PostDetailPage() {
           ? {
               ...current,
               reactionCount: Number(payload.reactionCount ?? current.reactionCount),
-
-              /**
-               * Nếu người thả cảm xúc là chính mình,
-               * cập nhật viewerReaction để nút cảm xúc đổi trạng thái.
-               */
               viewerReaction:
                 String(payload.actorId || '') === String(me.id)
                   ? payload.reaction || null
@@ -287,12 +215,8 @@ export default function PostDetailPage() {
       )
     }
 
-    /**
-     * Khi có bình luận mới.
-     */
     const onCommentCreated = (payload: {
       postId?: number | string
-      parentCommentId?: string | null
       comment?: FeedComment
       commentCount?: number
     }) => {
@@ -312,13 +236,6 @@ export default function PostDetailPage() {
       )
     }
 
-    /**
-     * Khi bình luận bị xóa.
-     *
-     * Lưu ý:
-     * đoạn này chỉ filter bình luận cấp 1.
-     * Nếu backend có xóa reply sâu, bạn có thể cần viết hàm remove recursive.
-     */
     const onCommentDeleted = (payload: {
       postId?: number | string
       commentId?: number | string
@@ -326,7 +243,7 @@ export default function PostDetailPage() {
     }) => {
       if (!isThisPost(payload?.postId)) return
 
-      setComments((prev) => prev.filter((item) => String(item.id) !== String(payload.commentId)))
+      setComments((prev) => removeCommentById(prev, payload.commentId))
 
       setPost((current) =>
         current
@@ -338,13 +255,6 @@ export default function PostDetailPage() {
       )
     }
 
-    /**
-     * Khi user đổi avatar.
-     *
-     * Cần cập nhật:
-     * - Avatar tác giả bài viết.
-     * - Avatar tác giả bình luận.
-     */
     const onAvatarUpdated = (payload: { userId?: number | string; avatarUrl?: string }) => {
       const avatarUrl = resolveApiAssetUrl(payload?.avatarUrl) ?? payload?.avatarUrl ?? null
 
@@ -363,9 +273,6 @@ export default function PostDetailPage() {
       )
     }
 
-    /**
-     * Đăng ký các event socket.
-     */
     socket.on('post:updated', onPostUpdated)
     socket.on('post:deleted', onPostDeleted)
     socket.on('post:reaction', onPostReaction)
@@ -373,10 +280,6 @@ export default function PostDetailPage() {
     socket.on('comment:deleted', onCommentDeleted)
     socket.on('user:avatar-updated', onAvatarUpdated)
 
-    /**
-     * Cleanup khi component unmount hoặc dependency thay đổi.
-     * Việc này tránh lắng nghe trùng event nhiều lần.
-     */
     return () => {
       socket.off('post:updated', onPostUpdated)
       socket.off('post:deleted', onPostDeleted)
@@ -387,9 +290,6 @@ export default function PostDetailPage() {
     }
   }, [me?.id, postId, token])
 
-  /**
-   * Đóng reaction picker khi user click ra ngoài.
-   */
   useEffect(() => {
     if (!showReactionPicker) return
 
@@ -404,118 +304,91 @@ export default function PostDetailPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showReactionPicker])
 
-  /**
-   * Format thời gian tạo bài viết.
-   *
-   * useMemo giúp không format lại mỗi lần render nếu post không đổi.
-   */
-  const createdAtText = useMemo(() => {
-    if (!post) return ''
-    return new Date(post.createdAt).toLocaleString('vi-VN')
-  }, [post])
+  const createdAtText = useMemo(() => formatDateTime(post?.createdAt), [post?.createdAt])
+  const relativeCreatedAtText = useMemo(() => getRelativeTime(post?.createdAt), [post?.createdAt])
 
-  /**
-   * Lấy object cảm xúc hiện tại của người dùng.
-   *
-   * Ví dụ:
-   * post.viewerReaction = "love"
-   * => currentReaction = { type: "love", emoji: "❤️", label: "Yêu thích" }
-   */
+  const totalComments = useMemo(() => countAllComments(comments), [comments])
+
   const currentReaction = useMemo(() => {
     if (!post?.viewerReaction) return null
     return POST_REACTIONS.find((reaction) => reaction.type === post.viewerReaction) || null
   }, [post?.viewerReaction])
 
-  /**
-   * Xử lý thả cảm xúc bài viết.
-   *
-   * Nếu user bấm lại đúng cảm xúc đang chọn:
-   * - Gỡ cảm xúc.
-   *
-   * Nếu user chọn cảm xúc khác:
-   * - Cập nhật cảm xúc mới.
-   */
-  const handleReactPost = async (type: string) => {
+  const handleReactPost = async (type: ReactionType) => {
     if (!token || !post) return
+
+    const oldPost = post
+    const isSameReaction = post.viewerReaction === type
 
     setShowReactionPicker(false)
 
+    setPost({
+      ...post,
+      viewerReaction: isSameReaction ? null : type,
+      reactionCount: Math.max(0, post.reactionCount + (isSameReaction ? -1 : post.viewerReaction ? 0 : 1)),
+    })
+
     try {
-      const response =
-        post.viewerReaction === type
-          ? await api.unreactPost(token, post.id)
-          : await api.reactPost(token, post.id, type)
+      const response = isSameReaction
+        ? await api.unreactPost(token, post.id)
+        : await api.reactPost(token, post.id, type)
 
       setPost(response.post)
     } catch (error) {
+      setPost(oldPost)
       console.error('Không thể thả cảm xúc', error)
     }
   }
 
-  /**
-   * Gửi bình luận cấp 1.
-   */
+  const handleFocusComment = () => {
+    commentSectionRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+
+    window.setTimeout(() => {
+      commentTextareaRef.current?.focus()
+    }, 350)
+  }
+
   const handleAddComment = async () => {
     const value = commentInput.trim()
 
-    if (!token || !value || !postId) return
+    if (!token || !value || !postId || submittingComment) return
+
+    setSubmittingComment(true)
 
     try {
       const response = await api.addComment(token, postId, value)
 
-      /**
-       * Thêm comment vào UI ngay sau khi API thành công.
-       */
-      setComments((prev) => appendCommentOnce(prev, response.comment))
-
-      /**
-       * Tăng số lượng bình luận trên bài viết.
-       */
+      setComments((prev) => appendCommentOnce(prev, normalizeFeedComment(response.comment)))
       setPost((current) =>
         current ? { ...current, commentCount: current.commentCount + 1 } : current,
       )
-
-      /**
-       * Reset textarea sau khi gửi.
-       */
       setCommentInput('')
     } catch (error) {
       console.error('Không thể thêm bình luận', error)
+    } finally {
+      setSubmittingComment(false)
     }
   }
 
-  /**
-   * Gửi phản hồi cho một bình luận.
-   */
   const handleAddReply = async (comment: FeedComment) => {
     const key = String(comment.id)
     const value = (replyInputs[key] || '').trim()
 
-    if (!token || !value) return
+    if (!token || !value || busyCommentId) return
 
     setBusyCommentId(key)
 
     try {
       const response = await api.addCommentReply(token, comment.id, value)
 
-      /**
-       * normalizeFeedComment giúp chuẩn hóa dữ liệu comment
-       * trước khi đưa vào UI.
-       */
       setComments((prev) => appendCommentOnce(prev, normalizeFeedComment(response.comment)))
-
       setPost((current) =>
         current ? { ...current, commentCount: current.commentCount + 1 } : current,
       )
-
-      /**
-       * Xóa nội dung input reply.
-       */
       setReplyInputs((prev) => ({ ...prev, [key]: '' }))
-
-      /**
-       * Đóng form reply sau khi gửi.
-       */
       setReplyingToCommentIds((prev) => ({ ...prev, [key]: false }))
     } catch (error) {
       console.error('Không thể gửi phản hồi', error)
@@ -524,54 +397,75 @@ export default function PostDetailPage() {
     }
   }
 
-  /**
-   * Render một bình luận.
-   *
-   * Hàm này gọi đệ quy để render replies.
-   *
-   * depth:
-   * - 0: bình luận gốc
-   * - >0: bình luận trả lời
-   */
+  const handleSharePost = async () => {
+    const url = window.location.href
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'ZChat - Chi tiết bài viết',
+          text: post?.content || 'Xem bài viết này trên ZChat',
+          url,
+        })
+        return
+      }
+
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+
+      window.setTimeout(() => {
+        setCopied(false)
+      }, 1600)
+    } catch (error) {
+      console.error('Không thể chia sẻ bài viết', error)
+    }
+  }
+
   const renderComment = (comment: FeedComment, depth = 0): React.ReactNode => {
     const key = String(comment.id)
     const showReplyForm = replyingToCommentIds[key]
+    const canReply = Boolean(token && depth < 3)
 
     return (
       <div
         key={comment.id}
         className={`${styles.commentItem} ${depth > 0 ? styles.commentReply : ''}`}
       >
-        {/* Avatar người bình luận */}
-        <Avatar className={styles.commentAvatar}>
-          <AvatarImage src={comment.authorAvatar || ''} />
-          <AvatarFallback>{comment.authorName?.[0] || 'U'}</AvatarFallback>
-        </Avatar>
+        <Link to={`/profile/${comment.userId}`} className={styles.commentAvatarLink}>
+          <Avatar className={styles.commentAvatar}>
+            <AvatarImage src={comment.authorAvatar || ''} />
+            <AvatarFallback>{comment.authorName?.[0] || 'U'}</AvatarFallback>
+          </Avatar>
+        </Link>
 
         <div className={styles.commentContent}>
-          {/* Bong bóng nội dung bình luận */}
           <div className={styles.commentBubble}>
-            <Link to={`/profile/${comment.userId}`} className={styles.commentAuthor}>
-              {comment.authorName}
-            </Link>
+            <div className={styles.commentTop}>
+              <Link to={`/profile/${comment.userId}`} className={styles.commentAuthor}>
+                {comment.authorName || 'Người dùng'}
+              </Link>
+              <span>{getRelativeTime(comment.createdAt)}</span>
+            </div>
 
             {comment.content ? <p className={styles.commentText}>{comment.content}</p> : null}
 
             {comment.imageUrl ? (
               <img
                 src={comment.imageUrl}
-                alt="Comment attachment"
+                alt="Ảnh trong bình luận"
                 className={styles.commentImage}
                 loading="lazy"
               />
             ) : null}
           </div>
 
-          {/* Khu vực thời gian và nút trả lời */}
           <div className={styles.commentActions}>
-            <span>{new Date(comment.createdAt).toLocaleString('vi-VN')}</span>
+            <span title={formatDateTime(comment.createdAt)}>
+              <Clock3 size={13} />
+              {formatDateTime(comment.createdAt)}
+            </span>
 
-            {token ? (
+            {canReply ? (
               <button
                 type="button"
                 onClick={() =>
@@ -581,12 +475,11 @@ export default function PostDetailPage() {
                   }))
                 }
               >
-                Trả lời
+                {showReplyForm ? 'Hủy' : 'Trả lời'}
               </button>
             ) : null}
           </div>
 
-          {/* Form trả lời bình luận */}
           {showReplyForm ? (
             <div className={styles.replyForm}>
               <input
@@ -598,13 +491,8 @@ export default function PostDetailPage() {
                     [key]: event.target.value,
                   }))
                 }
-                placeholder={`Trả lời ${comment.authorName}...`}
+                placeholder={`Trả lời ${comment.authorName || 'người dùng'}...`}
                 onKeyDown={(event) => {
-                  /**
-                   * Enter để gửi.
-                   * Shift + Enter không áp dụng với input,
-                   * nhưng vẫn giữ điều kiện để đồng bộ logic với textarea.
-                   */
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
                     void handleAddReply(comment)
@@ -619,12 +507,11 @@ export default function PostDetailPage() {
                 onClick={() => void handleAddReply(comment)}
                 disabled={busyCommentId === key || !replyInputs[key]?.trim()}
               >
-                {busyCommentId === key ? '...' : 'Gửi'}
+                {busyCommentId === key ? 'Đang gửi...' : 'Gửi'}
               </button>
             </div>
           ) : null}
 
-          {/* Render danh sách phản hồi */}
           {comment.replies && comment.replies.length > 0 ? (
             <div className={styles.replyList}>
               {comment.replies.map((reply) => renderComment(reply, depth + 1))}
@@ -635,13 +522,21 @@ export default function PostDetailPage() {
     )
   }
 
-  /**
-   * Giao diện khi đang tải dữ liệu.
-   */
   if (loading) {
     return (
       <main className={styles.page}>
+        <div className={styles.backgroundBlurOne} />
+        <div className={styles.backgroundBlurTwo} />
+
         <div className={styles.container}>
+          <div className={styles.pageHeader}>
+            <Skeleton className={styles.skeletonBack} />
+            <div>
+              <Skeleton className={styles.skeletonTitle} />
+              <Skeleton className={styles.skeletonSubtitle} />
+            </div>
+          </div>
+
           <div className={styles.layout}>
             <section className={styles.mainColumn}>
               <div className={styles.postCard}>
@@ -649,6 +544,11 @@ export default function PostDetailPage() {
                 <Skeleton className={styles.skeletonText} />
                 <Skeleton className={styles.skeletonTextShort} />
                 <Skeleton className={styles.skeletonMedia} />
+              </div>
+
+              <div className={styles.commentCard}>
+                <Skeleton className={styles.skeletonText} />
+                <Skeleton className={styles.skeletonTextShort} />
               </div>
             </section>
 
@@ -661,58 +561,68 @@ export default function PostDetailPage() {
     )
   }
 
-  /**
-   * Giao diện khi không tìm thấy bài viết.
-   */
   if (!post) {
     return (
       <main className={styles.page}>
         <div className={styles.container}>
           <div className={styles.emptyState}>
-            <Sparkles size={42} />
+            <Sparkles size={46} />
             <h1>Không tìm thấy bài viết</h1>
-            <p>Bài viết có thể đã bị xóa hoặc không còn tồn tại.</p>
+            <p>Bài viết có thể đã bị xóa, bị ẩn hoặc đường dẫn không còn hợp lệ.</p>
 
-            <Link to="/" className={styles.primaryBtn}>
-              <ArrowLeft size={18} />
-              Quay về trang chủ
-            </Link>
+            <div className={styles.emptyActions}>
+              <button type="button" className={styles.primaryBtn} onClick={() => navigate('/')}>
+                <ArrowLeft size={18} />
+                Về trang chủ
+              </button>
+
+              <button type="button" className={styles.secondaryBtn} onClick={() => void loadData()}>
+                <RefreshCw size={18} />
+                Tải lại
+              </button>
+            </div>
           </div>
         </div>
       </main>
     )
   }
 
-  /**
-   * Giao diện chính của trang chi tiết bài viết.
-   */
   return (
     <main className={styles.page}>
-      {/* Các lớp blur background để tạo chiều sâu cho giao diện */}
       <div className={styles.backgroundBlurOne} />
       <div className={styles.backgroundBlurTwo} />
 
       <div className={styles.container}>
-        {/* Header của trang */}
         <div className={styles.pageHeader}>
-          <Link to="/" className={styles.backLink}>
+          <button type="button" className={styles.backLink} onClick={() => navigate(-1)}>
             <ArrowLeft size={18} />
             Quay lại
-          </Link>
+          </button>
 
           <div>
+            <span className={styles.pageBadge}>
+              <Sparkles size={15} />
+              Bài viết realtime
+            </span>
             <h1>Chi tiết bài viết</h1>
-            <p>Xem bài viết, cảm xúc và bình luận theo thời gian thực.</p>
+            <p>Theo dõi nội dung, cảm xúc và bình luận mới nhất.</p>
           </div>
+
+          <button
+            type="button"
+            className={styles.refreshBtn}
+            onClick={() => void loadData(true)}
+            disabled={reloading}
+          >
+            <RefreshCw size={17} className={reloading ? styles.spinIcon : ''} />
+            Làm mới
+          </button>
         </div>
 
         <div className={styles.layout}>
-          {/* Cột chính */}
           <section className={styles.mainColumn}>
-            {/* Card bài viết */}
             <article className={styles.postCard}>
               <header className={styles.postHeader}>
-                {/* Thông tin tác giả */}
                 <div className={styles.authorBlock}>
                   <Link to={`/profile/${post.authorId}`}>
                     <Avatar className={styles.postAvatar}>
@@ -723,22 +633,32 @@ export default function PostDetailPage() {
 
                   <div>
                     <Link to={`/profile/${post.authorId}`} className={styles.authorName}>
-                      {post.authorName}
+                      {post.authorName || 'Người dùng'}
                     </Link>
-                    <p className={styles.postTime}>{createdAtText}</p>
+                    <div className={styles.postTimeRow}>
+                      <span>{relativeCreatedAtText}</span>
+                      <span>•</span>
+                      <span>{createdAtText}</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Nút menu mở rộng */}
                 <button type="button" className={styles.iconBtn}>
                   <MoreHorizontal size={20} />
                 </button>
               </header>
 
-              {/* Nội dung chữ của bài viết */}
-              {post.content ? <p className={styles.postContent}>{post.content}</p> : null}
+              {post.content ? (
+                <div className={styles.postContentBox}>
+                  <p className={styles.postContent}>{post.content}</p>
+                </div>
+              ) : (
+                <div className={styles.noContentBox}>
+                  <Sparkles size={18} />
+                  Bài viết này không có nội dung chữ.
+                </div>
+              )}
 
-              {/* Media của bài viết */}
               {post.mediaUrl ? (
                 <div className={styles.mediaFrame}>
                   {isVideoMediaUrl(post.mediaUrl) ? (
@@ -762,19 +682,17 @@ export default function PostDetailPage() {
                 </div>
               ) : null}
 
-              {/* Dòng thống kê cảm xúc và bình luận */}
               <div className={styles.statRow}>
-                <div>
+                <div className={styles.statLeft}>
                   <span className={styles.reactionBadge}>{currentReaction?.emoji || '👍'}</span>
                   <span>{post.reactionCount} lượt cảm xúc</span>
                 </div>
 
-                <div>
-                  <span>{post.commentCount} bình luận</span>
-                </div>
+                <button type="button" onClick={handleFocusComment}>
+                  {totalComments || post.commentCount} bình luận
+                </button>
               </div>
 
-              {/* Thanh hành động: thích, bình luận, chia sẻ */}
               <div className={styles.actionBar}>
                 {token ? (
                   <div className={styles.reactionWrap} ref={reactionPickerRef}>
@@ -798,7 +716,6 @@ export default function PostDetailPage() {
                       )}
                     </button>
 
-                    {/* Bảng chọn cảm xúc */}
                     {showReactionPicker ? (
                       <div className={styles.reactionPicker}>
                         {POST_REACTIONS.map((reaction) => (
@@ -813,7 +730,8 @@ export default function PostDetailPage() {
                             onClick={() => void handleReactPost(reaction.type)}
                             title={reaction.label}
                           >
-                            {reaction.emoji}
+                            <span>{reaction.emoji}</span>
+                            <small>{reaction.label}</small>
                           </button>
                         ))}
                       </div>
@@ -826,28 +744,31 @@ export default function PostDetailPage() {
                   </button>
                 )}
 
-                <button type="button" className={styles.actionBtn}>
+                <button type="button" className={styles.actionBtn} onClick={handleFocusComment}>
                   <MessageCircle size={18} />
                   Bình luận
                 </button>
 
-                <button type="button" className={styles.actionBtn}>
-                  <Share2 size={18} />
-                  Chia sẻ
+                <button type="button" className={styles.actionBtn} onClick={() => void handleSharePost()}>
+                  {copied ? <Copy size={18} /> : <Share2 size={18} />}
+                  {copied ? 'Đã copy' : 'Chia sẻ'}
                 </button>
               </div>
             </article>
 
-            {/* Card bình luận */}
-            <section className={styles.commentCard}>
+            <section className={styles.commentCard} ref={commentSectionRef}>
               <div className={styles.commentHeader}>
                 <div>
                   <h2>Bình luận</h2>
-                  <p>{comments.length} bình luận trong bài viết này</p>
+                  <p>{totalComments} bình luận đang hiển thị trong bài viết này</p>
                 </div>
+
+                <button type="button" onClick={() => void loadData(true)} disabled={reloading}>
+                  <RefreshCw size={15} className={reloading ? styles.spinIcon : ''} />
+                  Cập nhật
+                </button>
               </div>
 
-              {/* Form nhập bình luận */}
               {token ? (
                 <div className={styles.commentForm}>
                   <Avatar className={styles.myAvatar}>
@@ -857,15 +778,13 @@ export default function PostDetailPage() {
 
                   <div className={styles.commentInputWrap}>
                     <textarea
+                      ref={commentTextareaRef}
                       value={commentInput}
                       onChange={(event) => setCommentInput(event.target.value)}
                       placeholder="Viết bình luận của bạn..."
                       className={styles.commentTextarea}
+                      rows={2}
                       onKeyDown={(event) => {
-                        /**
-                         * Enter để gửi bình luận.
-                         * Shift + Enter để xuống dòng.
-                         */
                         if (event.key === 'Enter' && !event.shiftKey) {
                           event.preventDefault()
                           void handleAddComment()
@@ -876,39 +795,62 @@ export default function PostDetailPage() {
                     <button
                       type="button"
                       onClick={() => void handleAddComment()}
-                      disabled={!commentInput.trim()}
+                      disabled={!commentInput.trim() || submittingComment}
                       className={styles.submitBtn}
                     >
-                      <Send size={17} />
+                      {submittingComment ? <RefreshCw size={17} className={styles.spinIcon} /> : <Send size={17} />}
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className={styles.loginNotice}>
-                  <p>Đăng nhập để thả cảm xúc và bình luận bài viết.</p>
+                  <div>
+                    <ShieldCheck size={20} />
+                    <p>Đăng nhập để thả cảm xúc và bình luận bài viết.</p>
+                  </div>
                   <Link to="/auth/login">Đăng nhập</Link>
                 </div>
               )}
 
-              {/* Danh sách bình luận */}
               <div className={styles.commentList}>
                 {comments.length > 0 ? (
                   comments.map((comment) => renderComment(comment))
                 ) : (
                   <div className={styles.emptyComments}>
-                    <MessageCircle size={34} />
+                    <MessageCircle size={38} />
                     <p>Chưa có bình luận nào.</p>
-                    <span>Hãy là người đầu tiên bình luận bài viết này.</span>
+                    <span>Hãy là người đầu tiên mở đầu cuộc trò chuyện.</span>
                   </div>
                 )}
               </div>
             </section>
           </section>
 
-          {/* Cột phụ bên phải */}
           <aside className={styles.sideColumn}>
             <div className={styles.sideCard}>
-              <h3>Thông tin bài viết</h3>
+              <div className={styles.sideTitle}>
+                <UserRound size={19} />
+                <h3>Tác giả</h3>
+              </div>
+
+              <div className={styles.authorMiniCard}>
+                <Avatar className={styles.sideAvatar}>
+                  <AvatarImage src={post.authorAvatar || ''} />
+                  <AvatarFallback>{post.authorName?.[0] || 'U'}</AvatarFallback>
+                </Avatar>
+
+                <div>
+                  <Link to={`/profile/${post.authorId}`}>{post.authorName || 'Người dùng'}</Link>
+                  <span>Người đăng bài</span>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.sideCard}>
+              <div className={styles.sideTitle}>
+                <Sparkles size={19} />
+                <h3>Thống kê</h3>
+              </div>
 
               <div className={styles.sideStat}>
                 <span>Lượt cảm xúc</span>
@@ -917,19 +859,24 @@ export default function PostDetailPage() {
 
               <div className={styles.sideStat}>
                 <span>Bình luận</span>
-                <strong>{post.commentCount}</strong>
+                <strong>{totalComments || post.commentCount}</strong>
               </div>
 
               <div className={styles.sideStat}>
-                <span>Người đăng</span>
-                <strong>{post.authorName}</strong>
+                <span>Trạng thái</span>
+                <strong>Realtime</strong>
               </div>
             </div>
 
             <div className={styles.sideCard}>
-              <h3>Gợi ý</h3>
+              <div className={styles.sideTitle}>
+                <ShieldCheck size={19} />
+                <h3>Gợi ý tương tác</h3>
+              </div>
+
               <p className={styles.sideText}>
-                Tương tác với bài viết để nhận thêm nội dung phù hợp với sở thích của bạn.
+                Thả cảm xúc, bình luận hoặc chia sẻ bài viết để tăng tương tác và giúp hệ thống đề xuất
+                nội dung phù hợp hơn.
               </p>
             </div>
           </aside>
