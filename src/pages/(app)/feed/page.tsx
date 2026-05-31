@@ -234,6 +234,12 @@ export default function FeedPage() {
   const isGuestView = !token
   const isSavedView = searchParams.get('saved') === '1'
 
+  useEffect(() => {
+    if (isSavedView && !token) {
+      navigate('/auth/login?next=' + encodeURIComponent('/feed?saved=1'), { replace: true })
+    }
+  }, [isSavedView, token, navigate])
+
   useSocialRealtime({
     token,
     user: me,
@@ -272,7 +278,9 @@ export default function FeedPage() {
       setExpandedComments({})
       try {
         let fetchedPosts: FeedPost[]
-        if (isSavedView && token) {
+        if (isSavedView && !token) {
+          return
+        } else if (isSavedView && token) {
           const response = await api.listSavedPosts(token)
           fetchedPosts = response.posts
         } else {
