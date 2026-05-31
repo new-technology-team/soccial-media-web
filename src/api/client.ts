@@ -110,6 +110,8 @@ export const normalizeFeedComment = (comment: FeedComment): FeedComment => ({
 
 export const normalizeFeedPost = (post: FeedPost): FeedPost => ({
   ...post,
+  createdAt: String((post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).createdAt || (post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).created_at || (post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).updatedAt || (post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).updated_at || ''),
+  updatedAt: String((post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).updatedAt || (post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).updated_at || (post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).createdAt || (post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).created_at || ''),
   mediaUrl: resolveApiAssetUrl(post.mediaUrl),
   authorAvatar: resolveApiAssetUrl(post.authorAvatar),
   sharedPost: post.sharedPost

@@ -41,18 +41,10 @@ import styles from './page.module.css'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
 const FEED_BATCH_SIZE = 4
-const VN_UTC_OFFSET_MS = 7 * 60 * 60 * 1000
 
 const parseFeedDate = (value: string) => {
   const base = new Date(value)
   if (Number.isNaN(base.getTime())) return new Date()
-
-  // Backend currently returns Z-suffixed values that are shifted by UTC offset.
-  // Add 7h to align wall-clock posting time for feed display.
-  if (typeof value === 'string' && value.endsWith('Z')) {
-    return new Date(base.getTime() + VN_UTC_OFFSET_MS)
-  }
-
   return base
 }
 
@@ -605,10 +597,11 @@ export default function FeedPage() {
     const diffHours = Math.floor(diffMs / (60 * 60 * 1000))
     const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000))
 
-    if (diffMinutes < 1) return 'vừa xong'
-    if (diffMinutes < 60) return `${diffMinutes} phút`
-    if (diffHours < 24) return `${diffHours} giờ`
-    if (diffDays < 7) return `${diffDays} ngày`
+    if (diffMinutes < 1) return 'Vừa xong'
+    if (diffMinutes < 60) return `${diffMinutes} phút trước`
+    if (diffHours < 24) return `${diffHours} giờ trước`
+    if (diffDays === 1) return 'Hôm qua'
+    if (diffDays < 7) return `${diffDays} ngày trước`
 
     return new Intl.DateTimeFormat('vi-VN', {
       timeZone: VN_TIMEZONE,

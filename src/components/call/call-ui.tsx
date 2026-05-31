@@ -97,6 +97,7 @@ function StreamVideo({ stream, muted, className }: { stream?: MediaStream | null
   useEffect(() => {
     if (ref.current && stream && hasVideo) {
       ref.current.srcObject = stream
+      ref.current.play().catch(() => undefined)
     }
   }, [stream, hasVideo])
 

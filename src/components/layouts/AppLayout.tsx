@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 
 import { useAuthStore } from '@/contexts/auth-store'
 import { useCallStore } from '@/contexts/call-store'
 import { useChatStore } from '@/contexts/chat-store'
-import { callSession } from '@/services/call-session'
+import { callSession, resetCallSession } from '@/services/call-session'
 import { ActiveCallWindow, IncomingCallModal, MinimizedCallPill, OutgoingCallModal, RemoteAudioSink, isTerminalErrorState } from '@/components/call'
 import { resolveApiAssetUrl } from '@/api/client'
 import { connectSocket, getSocket } from '@/services/socket'
@@ -47,6 +47,7 @@ export default function AppLayout({
   const retryCallAction = useCallStore((s) => s.retryCallAction)
 
   const [mutedSpeaker, setMutedSpeaker] = useState(false)
+  const isEndingCallRef = useRef(false)
 
   const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
 
@@ -86,8 +87,27 @@ export default function AppLayout({
     }
 
     const onEnd = () => {
-      const { setIncomingCall } = useCallStore.getState()
+      const {
+        setIncomingCall, setActiveCall, setCallState, setCallAnswered, setCallMinimized,
+        setCallSeconds, setCallParticipants, setLocalStream, setRemoteStreams,
+        setMutedMic, setMutedCam, setScreenSharing, setConnectionQuality,
+      } = useCallStore.getState()
       setIncomingCall(null)
+      resetCallSession()
+      setLocalStream(null)
+      setRemoteStreams([])
+      setActiveCall(null)
+      setCallState('ended')
+      setCallAnswered(false)
+      setCallMinimized(false)
+      setCallSeconds(0)
+      setCallParticipants([])
+      setMutedMic(false)
+      setMutedCam(false)
+      setScreenSharing(false)
+      setConnectionQuality('unknown')
+      setMutedSpeaker(false)
+      isEndingCallRef.current = false
     }
 
     const onAuthRevoked = (payload: { reason?: string }) => {
@@ -220,6 +240,8 @@ export default function AppLayout({
   }
 
   const handleEndCallGlobal = () => {
+    if (isEndingCallRef.current) return
+    isEndingCallRef.current = true
     const socket = getSocket()
     const conversationId = activeCall?.conversationId
     if (socket && conversationId && activeCall?.mode === 'group') {
@@ -229,10 +251,7 @@ export default function AppLayout({
         socket.emit('call:end', { targetUserId, conversationId })
       })
     }
-    callSession.peers.forEach((p) => p.close())
-    callSession.peers.clear()
-    callSession.pendingCandidates.clear()
-    useCallStore.getState().localStream?.getTracks().forEach((t) => t.stop())
+    resetCallSession()
     const {
       setActiveCall, setCallState, setCallAnswered, setCallMinimized,
       setCallSeconds, setCallParticipants, setLocalStream, setRemoteStreams,
@@ -250,6 +269,9 @@ export default function AppLayout({
     setMutedCam(false)
     setMutedSpeaker(false)
     callSession.localStream = null
+    window.setTimeout(() => {
+      isEndingCallRef.current = false
+    }, 500)
   }
 
   // Chia sẻ màn hình: thay video track của mọi peer bằng luồng màn hình (tự chứa, dùng callSession).

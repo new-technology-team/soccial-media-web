@@ -126,7 +126,7 @@ export function ConversationHeader({
           type="button" 
           className="p-2 rounded-full text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 transition-colors"
           onClick={() => handleStartCall('video')} 
-          disabled={!callTargetId} 
+          disabled={!selectedConversationId || (selectedConversation?.members?.length || 0) <= 1} 
           title="Gọi video"
         >
           <Video size={18} />
@@ -137,7 +137,7 @@ export function ConversationHeader({
           type="button" 
           className="p-2 rounded-full text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 transition-colors"
           onClick={() => handleStartCall('voice')} 
-          disabled={!callTargetId} 
+          disabled={!selectedConversationId || (selectedConversation?.members?.length || 0) <= 1} 
           title="Gọi thoại"
         >
           <Phone size={18} />
