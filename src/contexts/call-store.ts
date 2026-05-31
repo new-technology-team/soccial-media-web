@@ -5,10 +5,13 @@ export type IncomingCallState = {
   fromUserId: number
   conversationId: string | null
   callType: 'voice' | 'video'
-  offer: RTCSessionDescriptionInit
+  offer?: RTCSessionDescriptionInit
   fromUserName?: string
   conversationName?: string
   fromUserAvatar?: string | null
+  // Liên thông với mobile: cuộc gọi đến từ mobile chỉ kèm roomId (Jitsi), không có SDP.
+  roomId?: string
+  useJitsi?: boolean
 }
 
 export type ActiveCall = {

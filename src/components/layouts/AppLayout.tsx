@@ -67,13 +67,19 @@ export default function AppLayout({
     const socket = connectSocket(token, user.id)
 
     const onOffer = (payload: any) => {
-      if (!payload?.offer) return
+      const hasSdp = Boolean(payload?.offer?.sdp)
+      // Chấp nhận cả offer WebRTC (web) lẫn offer Jitsi từ mobile (chỉ có roomId).
+      if (!hasSdp && !payload?.roomId) return
       const { setIncomingCall } = useCallStore.getState()
       setIncomingCall({
         fromUserId: Number(payload.fromUserId || 0),
         conversationId: payload.conversationId ? String(payload.conversationId) : null,
         callType: payload.callType === 'video' ? 'video' : 'voice',
-        offer: payload.offer,
+        offer: hasSdp ? payload.offer : undefined,
+        roomId: payload?.roomId ? String(payload.roomId) : undefined,
+        useJitsi: !hasSdp && Boolean(payload?.roomId),
+        fromUserName: payload?.fromUserName || undefined,
+        conversationName: payload?.conversationName || undefined,
       })
     }
 

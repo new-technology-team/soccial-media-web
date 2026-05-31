@@ -164,6 +164,30 @@ const CALL_RING_TIMEOUT_MS = 60_000
 const GROUP_CALL_RING_TIMEOUT_MS = 60_000
 const GROUP_CALL_MAX_PARTICIPANTS = 6
 
+// Jitsi dùng để liên thông với mobile (mobile gọi qua Jitsi, không phải WebRTC).
+const JITSI_BASE_URL = String(import.meta.env.VITE_VIDEO_CALL_BASE_URL || 'https://meet.jit.si').replace(/\/+$/, '')
+
+const sanitizeRoomName = (input: string): string =>
+  String(input || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '') || `zchat-${Date.now()}`
+
+const buildJitsiRoomId = (conversationId: string): string =>
+  sanitizeRoomName(`zchat-${conversationId}-${Date.now()}`)
+
+const resolveJitsiUrl = (roomId: string, displayName?: string): string => {
+  const hash = [
+    'config.prejoinConfig.enabled=false',
+    'config.prejoinPageEnabled=false',
+    displayName ? `userInfo.displayName=${encodeURIComponent(`"${displayName}"`)}` : '',
+  ]
+    .filter(Boolean)
+    .join('&')
+  return `${JITSI_BASE_URL}/${encodeURIComponent(roomId)}${hash ? `#${hash}` : ''}`
+}
+
 const DEFAULT_CALL_SETTINGS: CallSettings = {
   sound: true,
   vibration: true,
@@ -388,6 +412,7 @@ export default function MessagesPage() {
   } | null>(null)
   const callLoggedRef = useRef(false)
   const lastCallTypeRef = useRef<'voice' | 'video'>('voice')
+  const callRoomIdRef = useRef<string>('')
   const clearCallTimerRef = useRef<number | null>(null)
   const screenShareTrackRef = useRef<MediaStreamTrack | null>(null)
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null)
@@ -951,9 +976,36 @@ export default function MessagesPage() {
     socket.on('notification:new', handleSocketNotification)
 
     socket.on('call:offer', async (payload) => {
-      if (!payload.offer) return
       const fromUserId = Number(payload.fromUserId)
       const incomingConversationId = payload.conversationId ? String(payload.conversationId) : null
+
+      // Liên thông với mobile: offer chỉ kèm roomId (Jitsi), không có SDP → hiển thị cuộc gọi đến
+      // dạng Jitsi; khi chấp nhận sẽ mở meet.jit.si thay vì WebRTC.
+      if (!payload.offer?.sdp && payload.roomId) {
+        const incomingConv = incomingConversationId
+          ? conversations.find((c) => c.id === incomingConversationId) || null
+          : null
+        const callerMember = incomingConv?.members.find((m) => m.userId === fromUserId)
+        const jitsiIncoming: IncomingCallState = {
+          fromUserId,
+          callType: payload.callType || 'video',
+          conversationId: incomingConversationId,
+          roomId: String(payload.roomId),
+          useJitsi: true,
+          fromUserName: callerMember?.fullName || payload.fromUserName || undefined,
+          conversationName: incomingConv ? getConversationDisplayName(incomingConv, user?.id) : payload.conversationName || undefined,
+          fromUserAvatar: callerMember?.avatarUrl || null,
+        }
+        setIncomingCall(jitsiIncoming)
+        setGlobalIncomingCall(jitsiIncoming)
+        setCallStatus('Cuộc gọi video đến')
+        setCallState('incoming')
+        startRingtone('incoming')
+        if (callSettings.vibration && navigator.vibrate) navigator.vibrate([180, 90, 180])
+        return
+      }
+
+      if (!payload.offer) return
 
       // Mesh nhóm: nếu đang trong cuộc gọi cùng hội thoại và nhận offer từ người mới tham gia,
       // tự động thiết lập kết nối (tạo answer) mà KHÔNG hiện modal cuộc gọi đến.
@@ -989,6 +1041,7 @@ export default function MessagesPage() {
         callType: payload.callType || 'voice',
         conversationId: incomingConversationId,
         offer: payload.offer,
+        roomId: payload.roomId ? String(payload.roomId) : undefined,
         fromUserName: callerMember?.fullName || payload.fromUserName || undefined,
         conversationName: incomingConv ? getConversationDisplayName(incomingConv, user?.id) : payload.conversationName || undefined,
         fromUserAvatar: callerMember?.avatarUrl || null,
@@ -1030,6 +1083,29 @@ export default function MessagesPage() {
 
     socket.on('call:answer', async (payload) => {
       const fromUserId = Number(payload.fromUserId || 0)
+
+      // Liên thông: đối phương (mobile) trả lời bằng Jitsi → bên gọi web đang WebRTC phải chuyển
+      // sang mở Jitsi cùng phòng (nhả camera WebRTC, mở tab meet.jit.si).
+      if (payload?.useJitsi || (!payload?.answer?.sdp && payload?.roomId)) {
+        const roomId = String(payload?.roomId || callRoomIdRef.current || '')
+        if (roomId) {
+          stopRingtone()
+          logCall('completed')
+          const myName = user?.fullName || 'Bạn'
+          closeCallResources()
+          window.open(resolveJitsiUrl(roomId, myName), '_blank', 'noopener')
+          setCallState('idle')
+          setCallStatus(null)
+          setActiveCall(null)
+          setCallAnswered(false)
+          setRingingStartedAt(null)
+          setCallSeconds(0)
+          callMetaRef.current = null
+          toast({ title: 'Đang mở cuộc gọi video qua Jitsi...' })
+        }
+        return
+      }
+
       const peer = peersRef.current.get(fromUserId)
       if (peer && payload.answer) {
         await peer.setRemoteDescription(new RTCSessionDescription({
@@ -2890,6 +2966,9 @@ export default function MessagesPage() {
     setGlobalCallErrorMessage(null)
     callLoggedRef.current = false
     lastCallTypeRef.current = callType
+    // roomId Jitsi đính kèm mọi offer để peer là mobile (chỉ hiểu Jitsi) có thể vào cùng phòng.
+    const callRoomId = buildJitsiRoomId(selectedConversationId)
+    callRoomIdRef.current = callRoomId
 
     try {
       await ensureLocalStream(callType)
@@ -2904,6 +2983,8 @@ export default function MessagesPage() {
           conversationId: selectedConversationId,
           callType,
           offer: { type: offer.type, sdp: offer.sdp },
+          roomId: callRoomId,
+          platform: 'web',
         })
         socket.emit(selectedConversation?.type === 'group' ? 'group_call_started' : 'call_started', {
           targetUserId,
@@ -2985,6 +3066,25 @@ export default function MessagesPage() {
     const answeredAt = Date.now()
     const effectiveType: 'voice' | 'video' = audioOnly ? 'voice' : call.callType
 
+    // Liên thông: cuộc gọi đến từ mobile (Jitsi) → mở meet.jit.si cùng phòng, báo lại bằng useJitsi.
+    if (call.useJitsi && call.roomId) {
+      socket.emit('call:answer', {
+        targetUserId: call.fromUserId,
+        conversationId: activeConversationId,
+        roomId: call.roomId,
+        useJitsi: true,
+        answeredAt,
+      })
+      stopRingtone()
+      setIncomingCall(null)
+      setGlobalIncomingCall(null)
+      setCallState('idle')
+      setCallStatus(null)
+      window.open(resolveJitsiUrl(call.roomId, user?.fullName || 'Bạn'), '_blank', 'noopener')
+      toast({ title: 'Đang mở cuộc gọi video qua Jitsi...' })
+      return
+    }
+
     // Ensure local state is in sync
     if (!incomingCall) setIncomingCall(call)
 
@@ -2992,6 +3092,8 @@ export default function MessagesPage() {
     if (call.conversationId && selectedConversationId !== call.conversationId) {
       routeOpenConversation(call.conversationId)
     }
+
+    if (!call.offer?.sdp) return
 
     callLoggedRef.current = false
     setGlobalCallErrorMessage(null)
