@@ -90,13 +90,16 @@ export default function ExplorePage() {
   }, [filteredPosts, sortMode])
 
   const people = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; postCount: number }>()
+    const map = new Map<number, { id: number; name: string; avatarUrl: string | null; postCount: number }>()
     sortedPosts.forEach((post) => {
       if (!map.has(post.authorId)) {
-        map.set(post.authorId, { id: post.authorId, name: post.authorName, postCount: 1 })
+        map.set(post.authorId, { id: post.authorId, name: post.authorName, avatarUrl: post.authorAvatar || null, postCount: 1 })
       } else {
         const current = map.get(post.authorId)
-        if (current) current.postCount += 1
+        if (current) {
+          current.postCount += 1
+          if (!current.avatarUrl && post.authorAvatar) current.avatarUrl = post.authorAvatar
+        }
       }
     })
     return Array.from(map.values())
@@ -174,7 +177,9 @@ export default function ExplorePage() {
             ) : (
               people.length > 0 ? people.map((person) => (
                 <Link key={person.id} to={`/profile/${person.id}`} className={styles.personCard}>
-                  <div className={styles.avatar}>{(person.name[0] || 'U').toUpperCase()}</div>
+                  {person.avatarUrl
+                    ? <img src={person.avatarUrl} alt={person.name} className={styles.avatar} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                    : <div className={styles.avatar}>{(person.name[0] || 'U').toUpperCase()}</div>}
                   <div className={styles.personMeta}>
                     <strong>{person.name}</strong>
                     <small>{person.postCount} bài viết nổi bật</small>
@@ -212,7 +217,9 @@ export default function ExplorePage() {
           {topPosts.map((post, idx) => (
             <article key={post.id} className={`${styles.postCard} ${idx === 0 ? styles.postFeatured : ''}`} onClick={() => navigate(`/posts/${post.id}`)} style={{ cursor: 'pointer' }}>
               <div className={styles.postHead}>
-                <div className={styles.avatar}>{(post.authorName[0] || 'U').toUpperCase()}</div>
+                {post.authorAvatar
+                  ? <img src={post.authorAvatar} alt={post.authorName} className={styles.avatar} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+                  : <div className={styles.avatar}>{(post.authorName[0] || 'U').toUpperCase()}</div>}
                 <div>
                   <Link to={`/profile/${post.authorId}`} onClick={(e) => e.stopPropagation()}>
                     <strong>{post.authorName}</strong>

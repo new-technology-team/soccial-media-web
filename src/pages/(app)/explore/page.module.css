@@ -133,6 +133,11 @@
   display: grid;
   place-items: center;
   font-size: 0.82rem;
+  overflow: hidden;
+}
+
+img.avatar {
+  object-fit: cover;
 }
 
 .personMeta {

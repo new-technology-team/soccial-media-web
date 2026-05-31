@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CallState, CallParticipant } from '@/components/call'
+import type { CallState, CallParticipant, ConnectionQuality } from '@/components/call'
 
 export type IncomingCallState = {
   fromUserId: number
@@ -50,6 +50,24 @@ type CallStoreState = {
   setLocalStream: (s: MediaStream | null) => void
   remoteStreams: Array<{ userId: number; stream: MediaStream }>
   setRemoteStreams: (s: Array<{ userId: number; stream: MediaStream }>) => void
+
+  // Trạng thái UI/UX cuộc gọi nâng cao
+  mutedSpeaker: boolean
+  setMutedSpeaker: (v: boolean) => void
+  micDenied: boolean
+  setMicDenied: (v: boolean) => void
+  screenSharing: boolean
+  setScreenSharing: (v: boolean) => void
+  connectionQuality: ConnectionQuality
+  setConnectionQuality: (v: ConnectionQuality) => void
+  callErrorMessage: string | null
+  setCallErrorMessage: (v: string | null) => void
+
+  // Callback do trang messages đăng ký (chỉ khả dụng khi trang đang mount)
+  addMembersAction: (() => void) | null
+  setAddMembersAction: (fn: (() => void) | null) => void
+  retryCallAction: (() => void) | null
+  setRetryCallAction: (fn: (() => void) | null) => void
 }
 
 export const useCallStore = create<CallStoreState>((set, get) => ({
@@ -81,4 +99,20 @@ export const useCallStore = create<CallStoreState>((set, get) => ({
   setLocalStream: (s) => set({ localStream: s }),
   remoteStreams: [],
   setRemoteStreams: (s) => set({ remoteStreams: s }),
+
+  mutedSpeaker: false,
+  setMutedSpeaker: (v) => set({ mutedSpeaker: v }),
+  micDenied: false,
+  setMicDenied: (v) => set({ micDenied: v }),
+  screenSharing: false,
+  setScreenSharing: (v) => set({ screenSharing: v }),
+  connectionQuality: 'unknown',
+  setConnectionQuality: (v) => set({ connectionQuality: v }),
+  callErrorMessage: null,
+  setCallErrorMessage: (v) => set({ callErrorMessage: v }),
+
+  addMembersAction: null,
+  setAddMembersAction: (fn) => set({ addMembersAction: fn }),
+  retryCallAction: null,
+  setRetryCallAction: (fn) => set({ retryCallAction: fn }),
 }))

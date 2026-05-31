@@ -283,6 +283,14 @@
   font-weight: 800;
   display: grid;
   place-items: center;
+  overflow: hidden;
+}
+
+.inlineAvatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .composer {
@@ -1554,6 +1562,7 @@
   place-items: center;
   font-weight: 700;
   color: #2f3f45;
+  overflow: hidden;
 }
 
 .suggestionName {

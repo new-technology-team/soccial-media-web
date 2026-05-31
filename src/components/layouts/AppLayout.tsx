@@ -5,7 +5,7 @@ import { useAuthStore } from '@/contexts/auth-store'
 import { useCallStore } from '@/contexts/call-store'
 import { useChatStore } from '@/contexts/chat-store'
 import { callSession } from '@/services/call-session'
-import { ActiveCallWindow, IncomingCallModal, MinimizedCallPill, OutgoingCallModal } from '@/components/call'
+import { ActiveCallWindow, IncomingCallModal, MinimizedCallPill, OutgoingCallModal, RemoteAudioSink, isTerminalErrorState } from '@/components/call'
 import { resolveApiAssetUrl } from '@/api/client'
 import { connectSocket, getSocket } from '@/services/socket'
 import { toast } from '@/hooks/use-toast'
@@ -39,6 +39,12 @@ export default function AppLayout({
   const callParticipants = useCallStore((s) => s.callParticipants)
   const localStream = useCallStore((s) => s.localStream)
   const remoteStreams = useCallStore((s) => s.remoteStreams)
+  const micDenied = useCallStore((s) => s.micDenied)
+  const screenSharing = useCallStore((s) => s.screenSharing)
+  const connectionQuality = useCallStore((s) => s.connectionQuality)
+  const callErrorMessage = useCallStore((s) => s.callErrorMessage)
+  const addMembersAction = useCallStore((s) => s.addMembersAction)
+  const retryCallAction = useCallStore((s) => s.retryCallAction)
 
   const [mutedSpeaker, setMutedSpeaker] = useState(false)
 
@@ -127,9 +133,10 @@ export default function AppLayout({
   const handleDeclineCall = () => {
     const socket = getSocket()
     if (socket && incomingCall?.conversationId && incomingCall?.fromUserId) {
-      socket.emit('call:end', {
+      socket.emit('call:reject', {
         targetUserId: incomingCall.fromUserId,
         conversationId: incomingCall.conversationId,
+        reason: 'declined',
       })
     }
     const { setIncomingCall } = useCallStore.getState()
@@ -142,7 +149,7 @@ export default function AppLayout({
     const next = !current
     useCallStore.getState().localStream?.getAudioTracks().forEach((t) => { t.enabled = !next })
     setMutedMic(next)
-    getSocket()?.emit('participant_updated', { conversationId: activeCall?.conversationId, micMuted: next })
+    getSocket()?.emit('participant_muted', { conversationId: activeCall?.conversationId, micMuted: next })
   }
 
   const handleToggleCameraGlobal = () => {
@@ -151,6 +158,7 @@ export default function AppLayout({
     const next = !current
     useCallStore.getState().localStream?.getVideoTracks().forEach((t) => { t.enabled = !next })
     setMutedCam(next)
+    getSocket()?.emit(next ? 'participant_camera_off' : 'participant_camera_on', { conversationId: activeCall?.conversationId })
   }
 
   const handleEndCallGlobal = () => {
@@ -180,16 +188,102 @@ export default function AppLayout({
     setCallParticipants([])
     setMutedMic(false)
     setMutedCam(false)
+    setMutedSpeaker(false)
     callSession.localStream = null
   }
+
+  // Chia sẻ màn hình: thay video track của mọi peer bằng luồng màn hình (tự chứa, dùng callSession).
+  const handleToggleScreenShare = async () => {
+    const store = useCallStore.getState()
+    if (store.screenSharing) {
+      const camTrack = callSession.localStream?.getVideoTracks()[0] || null
+      callSession.peers.forEach((pc) => {
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+        if (sender && camTrack) sender.replaceTrack(camTrack).catch(() => undefined)
+      })
+      store.setScreenSharing(false)
+      return
+    }
+    try {
+      const display = await navigator.mediaDevices.getDisplayMedia({ video: true })
+      const screenTrack = display.getVideoTracks()[0]
+      if (!screenTrack) return
+      callSession.peers.forEach((pc) => {
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+        if (sender) sender.replaceTrack(screenTrack).catch(() => undefined)
+      })
+      screenTrack.onended = () => {
+        const camTrack = callSession.localStream?.getVideoTracks()[0] || null
+        callSession.peers.forEach((pc) => {
+          const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+          if (sender && camTrack) sender.replaceTrack(camTrack).catch(() => undefined)
+        })
+        useCallStore.getState().setScreenSharing(false)
+      }
+      store.setScreenSharing(true)
+    } catch {
+      // người dùng hủy chọn màn hình
+    }
+  }
+
+  const handleCloseCallError = () => {
+    const {
+      setActiveCall, setCallState, setCallAnswered, setCallMinimized,
+      setCallSeconds, setCallParticipants, setCallErrorMessage,
+    } = useCallStore.getState()
+    setActiveCall(null)
+    setCallState('idle')
+    setCallAnswered(false)
+    setCallMinimized(false)
+    setCallSeconds(0)
+    setCallParticipants([])
+    setCallErrorMessage(null)
+  }
+
+  // Giám sát chất lượng kết nối qua RTCStats (RTT) khi đang trong cuộc gọi.
+  useEffect(() => {
+    if (!activeCall || !callAnswered) {
+      useCallStore.getState().setConnectionQuality('unknown')
+      return
+    }
+    const id = window.setInterval(async () => {
+      const peers = Array.from(callSession.peers.values())
+      if (!peers.length) return
+      let worstRtt = 0
+      let sawRtt = false
+      for (const pc of peers) {
+        try {
+          const stats = await pc.getStats()
+          stats.forEach((report) => {
+            if (report.type === 'candidate-pair' && (report as any).state === 'succeeded' && typeof (report as any).currentRoundTripTime === 'number') {
+              sawRtt = true
+              worstRtt = Math.max(worstRtt, (report as any).currentRoundTripTime)
+            }
+          })
+        } catch {
+          // bỏ qua
+        }
+      }
+      const quality = !sawRtt ? 'unknown' : worstRtt < 0.2 ? 'good' : worstRtt < 0.45 ? 'fair' : 'poor'
+      useCallStore.getState().setConnectionQuality(quality)
+    }, 3000)
+    return () => window.clearInterval(id)
+  }, [activeCall, callAnswered])
 
   // Only show global call windows when NOT on /messages (page.tsx handles its own IncomingCallModal there)
   // OutgoingCallModal and ActiveCallWindow always show globally
   const onMessagesPage = pathname.startsWith('/messages')
 
+  const isCallError = isTerminalErrorState(callState)
+
   return (
     <div className={styles.page}>
       <main className={styles.main}>{children}</main>
+
+      {/* Phát âm thanh người tham gia từ xa — luôn render khi có cuộc gọi để nghe được cả khi thu nhỏ. */}
+      {activeCall && callAnswered ? (
+        <RemoteAudioSink remoteStreams={remoteStreams} mutedSpeaker={mutedSpeaker} />
+      ) : null}
 
       {/* Incoming call modal — shown outside /messages only (messages page has its own) */}
       {incomingCall && !onMessagesPage ? (
@@ -206,7 +300,7 @@ export default function AppLayout({
         />
       ) : null}
 
-      {/* OutgoingCallModal — persists across navigation */}
+      {/* OutgoingCallModal — persists across navigation (cũng hiển thị trạng thái lỗi/cuối) */}
       {activeCall && !callAnswered && !callMinimized ? (
         <OutgoingCallModal
           name={activeCall.withName}
@@ -215,7 +309,10 @@ export default function AppLayout({
           mode={activeCall.mode}
           state={callState === 'idle' ? 'calling' : callState}
           timer={formattedCallTime}
+          errorMessage={callErrorMessage || undefined}
           onEnd={handleEndCallGlobal}
+          onRetry={isCallError && retryCallAction ? retryCallAction : undefined}
+          onClose={handleCloseCallError}
         />
       ) : null}
 
@@ -235,9 +332,14 @@ export default function AppLayout({
           mutedCam={mutedCam}
           mutedSpeaker={mutedSpeaker}
           cameraAvailable={cameraAvailable}
+          micDenied={micDenied}
+          screenSharing={screenSharing}
+          connectionQuality={connectionQuality}
           onToggleMic={handleToggleMicGlobal}
           onToggleCamera={handleToggleCameraGlobal}
           onToggleSpeaker={() => setMutedSpeaker((v) => !v)}
+          onToggleScreenShare={handleToggleScreenShare}
+          onAddMembers={activeCall.mode === 'group' && addMembersAction ? addMembersAction : undefined}
           onMinimize={() => useCallStore.getState().setCallMinimized(true)}
           onEnd={handleEndCallGlobal}
         />

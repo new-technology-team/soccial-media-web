@@ -1,4 +1,4 @@
-import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff, Volume2, VolumeX, Minimize2, MonitorUp, UserPlus, Users, LockKeyhole } from 'lucide-react'
+import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff, Volume2, VolumeX, Minimize2, MonitorUp, MonitorOff, UserPlus, Users, LockKeyhole, AlertTriangle, RotateCcw, X, Signal, SignalLow, SignalZero } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { cn } from '@/utils'
@@ -51,6 +51,14 @@ export type CallSettings = {
   blockStrangers: boolean
 }
 
+export type ConnectionQuality = 'good' | 'fair' | 'poor' | 'unknown'
+
+export const TERMINAL_ERROR_STATES: CallState[] = ['failed', 'no_answer', 'rejected', 'cancelled', 'missed']
+
+export function isTerminalErrorState(state: CallState) {
+  return TERMINAL_ERROR_STATES.includes(state)
+}
+
 export const CALL_STATE_LABELS: Record<CallState, string> = {
   idle: 'Sẵn sàng',
   calling: 'Đang gọi...',
@@ -95,6 +103,43 @@ function StreamVideo({ stream, muted, className }: { stream?: MediaStream | null
   return <video ref={ref} className={className} autoPlay playsInline muted={muted} />
 }
 
+function RemoteAudioTrack({ stream, muted }: { stream: MediaStream; muted?: boolean }) {
+  const ref = useRef<HTMLAudioElement | null>(null)
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream
+  }, [stream])
+  return <audio ref={ref} autoPlay playsInline muted={muted} />
+}
+
+/**
+ * Phát âm thanh của tất cả người tham gia từ xa. Tách riêng khỏi phần hiển thị video để
+ * cuộc gọi thoại (không có video) vẫn nghe được và âm thanh không bị mất khi thu nhỏ cửa sổ.
+ */
+export function RemoteAudioSink({ remoteStreams, mutedSpeaker }: { remoteStreams?: Array<{ userId: number; stream: MediaStream }>; mutedSpeaker?: boolean }) {
+  return (
+    <div aria-hidden="true" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+      {(remoteStreams || []).map((item) => (
+        <RemoteAudioTrack key={item.userId} stream={item.stream} muted={mutedSpeaker} />
+      ))}
+    </div>
+  )
+}
+
+export function ConnectionIndicator({ quality }: { quality?: ConnectionQuality }) {
+  if (!quality || quality === 'unknown') return null
+  const map: Record<Exclude<ConnectionQuality, 'unknown'>, { icon: typeof Signal; label: string; cls: string }> = {
+    good: { icon: Signal, label: 'Kết nối tốt', cls: styles.qualityGood },
+    fair: { icon: SignalLow, label: 'Kết nối trung bình', cls: styles.qualityFair },
+    poor: { icon: SignalZero, label: 'Kết nối yếu', cls: styles.qualityPoor },
+  }
+  const { icon: Icon, label, cls } = map[quality]
+  return (
+    <span className={cn(styles.quality, cls)} title={label} aria-label={label}>
+      <Icon size={16} />
+    </span>
+  )
+}
+
 type ModalProps = {
   name: string
   avatarUrl?: string | null
@@ -103,28 +148,41 @@ type ModalProps = {
   state?: CallState
   timer?: string
   callerName?: string
+  errorMessage?: string
+  countdownSeconds?: number
   onAccept?: () => void
+  onAcceptAudioOnly?: () => void
   onDecline?: () => void
   onEnd?: () => void
+  onRetry?: () => void
+  onClose?: () => void
 }
 
-export function IncomingCallModal({ name, avatarUrl, callType, mode = 'private', callerName, onAccept, onDecline }: ModalProps) {
+export function IncomingCallModal({ name, avatarUrl, callType, mode = 'private', callerName, countdownSeconds, onAccept, onAcceptAudioOnly, onDecline }: ModalProps) {
   const group = mode === 'group'
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-label={group ? 'Cuộc gọi nhóm đến' : 'Cuộc gọi đến'}>
       <section className={styles.modal}>
-        <Avatar name={name} avatarUrl={avatarUrl} />
+        <Avatar name={name} avatarUrl={avatarUrl} className={styles.avatarRinging} />
         <p className={styles.eyebrow}>{group ? 'Cuộc gọi nhóm đến' : 'Cuộc gọi đến'}</p>
         <h2 className={styles.name}>{name}</h2>
         {callerName ? <p className={styles.status}>{callerName} đang gọi</p> : null}
         <p className={styles.status}>{group ? (callType === 'video' ? 'Cuộc gọi video nhóm' : 'Cuộc gọi thoại nhóm') : callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}</p>
+        {typeof countdownSeconds === 'number' && countdownSeconds > 0 ? (
+          <p className={styles.countdown}>Tự động kết thúc sau {countdownSeconds}s</p>
+        ) : null}
         <AudioWave />
         <div className={styles.actions}>
           <button type="button" className={cn(styles.button, styles.danger)} onClick={onDecline}>
             <PhoneOff size={18} /> Từ chối
           </button>
+          {callType === 'video' && onAcceptAudioOnly ? (
+            <button type="button" className={cn(styles.button, styles.neutral)} onClick={onAcceptAudioOnly} title="Trả lời không bật camera">
+              <Phone size={18} /> Trả lời (thoại)
+            </button>
+          ) : null}
           <button type="button" className={cn(styles.button, styles.accept)} onClick={() => onAccept?.()}>
-            <Phone size={18} /> {group ? 'Tham gia' : 'Trả lời'}
+            {callType === 'video' && !group ? <Video size={18} /> : <Phone size={18} />} {group ? 'Tham gia' : 'Trả lời'}
           </button>
         </div>
       </section>
@@ -132,23 +190,45 @@ export function IncomingCallModal({ name, avatarUrl, callType, mode = 'private',
   )
 }
 
-export function OutgoingCallModal({ name, avatarUrl, callType, mode = 'private', state, timer, onEnd }: ModalProps) {
+export function OutgoingCallModal({ name, avatarUrl, callType, mode = 'private', state, timer, errorMessage, onEnd, onRetry, onClose }: ModalProps) {
   const group = mode === 'group'
   const currentState = state || 'calling'
-  const label = group && currentState === 'calling' ? 'Đang gọi nhóm...' : CALL_STATE_LABELS[currentState]
+  const isError = isTerminalErrorState(currentState)
+  const label = isError
+    ? errorMessage || CALL_STATE_LABELS[currentState]
+    : group && currentState === 'calling'
+      ? 'Đang gọi nhóm...'
+      : CALL_STATE_LABELS[currentState]
   return (
     <div className={styles.overlay} role="dialog" aria-modal="true" aria-label={group ? 'Đang gọi nhóm' : 'Đang gọi'}>
-      <section className={styles.modal}>
-        <Avatar name={name} avatarUrl={avatarUrl} />
+      <section className={cn(styles.modal, isError && styles.modalError)}>
+        {isError ? (
+          <div className={styles.errorBadge}><AlertTriangle size={30} /></div>
+        ) : (
+          <Avatar name={name} avatarUrl={avatarUrl} />
+        )}
         <p className={styles.eyebrow}>{group ? (callType === 'video' ? 'Cuộc gọi video nhóm' : 'Cuộc gọi thoại nhóm') : callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}</p>
         <h2 className={styles.name}>{name}</h2>
         <p className={styles.status}>{label}</p>
-        {timer ? <p className={styles.timer}>{timer}</p> : null}
-        <AudioWave />
+        {timer && !isError ? <p className={styles.timer}>{timer}</p> : null}
+        {!isError ? <AudioWave /> : null}
         <div className={styles.actions}>
-          <button type="button" className={cn(styles.button, styles.danger)} onClick={onEnd}>
-            <PhoneOff size={18} /> Kết thúc
-          </button>
+          {isError ? (
+            <>
+              {onRetry ? (
+                <button type="button" className={cn(styles.button, styles.accept)} onClick={onRetry}>
+                  <RotateCcw size={18} /> Gọi lại
+                </button>
+              ) : null}
+              <button type="button" className={cn(styles.button, styles.neutral)} onClick={onClose || onEnd}>
+                <X size={18} /> Đóng
+              </button>
+            </>
+          ) : (
+            <button type="button" className={cn(styles.button, styles.danger)} onClick={onEnd}>
+              <PhoneOff size={18} /> Kết thúc
+            </button>
+          )}
         </div>
       </section>
     </div>
@@ -161,19 +241,24 @@ type ControlsProps = {
   mutedCam: boolean
   mutedSpeaker?: boolean
   cameraAvailable?: boolean
+  micDenied?: boolean
+  screenSharing?: boolean
   mode?: CallMode
   onToggleMic: () => void
   onToggleCamera: () => void
   onToggleSpeaker?: () => void
+  onToggleScreenShare?: () => void
+  onAddMembers?: () => void
   onMinimize: () => void
   onEnd: () => void
   onShowParticipants?: () => void
 }
 
-export function CallControls({ callType, mutedMic, mutedCam, mutedSpeaker = false, cameraAvailable = true, mode = 'private', onToggleMic, onToggleCamera, onToggleSpeaker, onMinimize, onEnd, onShowParticipants }: ControlsProps) {
+export function CallControls({ callType, mutedMic, mutedCam, mutedSpeaker = false, cameraAvailable = true, micDenied = false, screenSharing = false, mode = 'private', onToggleMic, onToggleCamera, onToggleSpeaker, onToggleScreenShare, onAddMembers, onMinimize, onEnd, onShowParticipants }: ControlsProps) {
+  const supportsScreenShare = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
   return (
     <div className={styles.controls}>
-      <button type="button" className={cn(styles.controlButton, mutedMic && styles.controlButtonActive)} onClick={onToggleMic}>
+      <button type="button" className={cn(styles.controlButton, mutedMic && styles.controlButtonActive)} onClick={onToggleMic} disabled={micDenied} title={micDenied ? 'Không có quyền micro' : undefined}>
         {mutedMic ? <MicOff size={20} /> : <Mic size={20} />}
         <small>{mutedMic ? 'Bật mic' : 'Tắt mic'}</small>
       </button>
@@ -185,15 +270,17 @@ export function CallControls({ callType, mutedMic, mutedCam, mutedSpeaker = fals
         {mutedSpeaker ? <VolumeX size={20} /> : <Volume2 size={20} />}
         <small>{mutedSpeaker ? 'Bật loa' : 'Tắt loa'}</small>
       </button>
+      {callType === 'video' && supportsScreenShare ? (
+        <button type="button" className={cn(styles.controlButton, screenSharing && styles.controlButtonActive)} onClick={onToggleScreenShare}>
+          {screenSharing ? <MonitorOff size={20} /> : <MonitorUp size={20} />}
+          <small>{screenSharing ? 'Dừng chia sẻ' : 'Chia sẻ màn hình'}</small>
+        </button>
+      ) : null}
       {mode === 'group' ? (
         <>
-          <button type="button" className={styles.controlButton}>
-            <MonitorUp size={20} />
-            <small>Chia sẻ màn hình</small>
-          </button>
-          <button type="button" className={styles.controlButton}>
+          <button type="button" className={styles.controlButton} onClick={onAddMembers} disabled={!onAddMembers}>
             <UserPlus size={20} />
-            <small>Thêm thành viên</small>
+            <small>Mời thêm</small>
           </button>
           <button type="button" className={styles.controlButton} onClick={onShowParticipants}>
             <Users size={20} />
@@ -227,9 +314,15 @@ type ActiveProps = {
   mutedCam: boolean
   mutedSpeaker?: boolean
   cameraAvailable?: boolean
+  micDenied?: boolean
+  screenSharing?: boolean
+  connectionQuality?: ConnectionQuality
+  statusText?: string
   onToggleMic: () => void
   onToggleCamera: () => void
   onToggleSpeaker?: () => void
+  onToggleScreenShare?: () => void
+  onAddMembers?: () => void
   onMinimize: () => void
   onEnd: () => void
 }
@@ -238,6 +331,7 @@ export function ActiveCallWindow(props: ActiveProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const mode = props.mode || 'private'
   const remote = props.remoteStreams?.[0]?.stream || null
+  const reconnecting = props.state === 'connecting'
   return (
     <section className={styles.activeWindow} aria-label={mode === 'group' ? 'Cuộc gọi nhóm đang diễn ra' : 'Cuộc gọi đang diễn ra'}>
       <header className={styles.topBar}>
@@ -245,18 +339,28 @@ export function ActiveCallWindow(props: ActiveProps) {
           <Avatar name={props.name} avatarUrl={props.avatarUrl} className={styles.miniAvatar} />
           <div>
             <h2>{props.name}</h2>
-            <p>{CALL_STATE_LABELS[props.state]} • {props.duration}</p>
+            <p>{props.statusText || CALL_STATE_LABELS[props.state]} • {props.duration}</p>
           </div>
         </div>
-        <p className={styles.timer}>{mode === 'group' ? `${props.participants.filter((item) => item.status === 'joined').length || props.participants.length} người tham gia` : props.callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}</p>
+        <div className={styles.topMeta}>
+          <ConnectionIndicator quality={props.connectionQuality} />
+          <p className={styles.timer}>{mode === 'group' ? `${props.participants.filter((item) => item.status === 'joined').length || props.participants.length} người tham gia` : props.callType === 'video' ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}</p>
+        </div>
       </header>
+
+      {reconnecting ? <div className={styles.reconnectBanner}>Đang kết nối lại...</div> : null}
+      {props.micDenied ? (
+        <div className={styles.permissionBanner}>
+          <AlertTriangle size={16} /> Trình duyệt chưa cấp quyền micro. Hãy cho phép truy cập để người khác nghe được bạn.
+        </div>
+      ) : null}
 
       <main className={styles.stage}>
         {mode === 'group' ? (
-          <GroupCallGrid participants={props.participants} mutedSpeaker={props.mutedSpeaker} />
+          <GroupCallGrid participants={props.participants} />
         ) : props.callType === 'video' ? (
           <div className={styles.videoStage}>
-            {remote ? <StreamVideo stream={remote} muted={props.mutedSpeaker} className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
+            {remote ? <StreamVideo stream={remote} muted className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
             <div className={styles.localPreview}>
               <StreamVideo stream={props.localStream} muted className={styles.localVideo} />
             </div>
@@ -278,9 +382,13 @@ export function ActiveCallWindow(props: ActiveProps) {
         mutedCam={props.mutedCam}
         mutedSpeaker={props.mutedSpeaker}
         cameraAvailable={props.cameraAvailable}
+        micDenied={props.micDenied}
+        screenSharing={props.screenSharing}
         onToggleMic={props.onToggleMic}
         onToggleCamera={props.onToggleCamera}
         onToggleSpeaker={props.onToggleSpeaker}
+        onToggleScreenShare={props.onToggleScreenShare}
+        onAddMembers={props.onAddMembers}
         onMinimize={props.onMinimize}
         onEnd={props.onEnd}
         onShowParticipants={() => setDrawerOpen((value) => !value)}
@@ -289,26 +397,29 @@ export function ActiveCallWindow(props: ActiveProps) {
   )
 }
 
-export function GroupCallGrid({ participants, mutedSpeaker }: { participants: CallParticipant[]; mutedSpeaker?: boolean }) {
+export function GroupCallGrid({ participants }: { participants: CallParticipant[] }) {
   return (
     <div className={styles.grid}>
       {participants.map((participant) => (
-        <GroupParticipantTile key={participant.userId} participant={participant} mutedSpeaker={mutedSpeaker} />
+        <GroupParticipantTile key={participant.userId} participant={participant} />
       ))}
     </div>
   )
 }
 
-export function GroupParticipantTile({ participant, mutedSpeaker }: { participant: CallParticipant; mutedSpeaker?: boolean }) {
+export function GroupParticipantTile({ participant }: { participant: CallParticipant }) {
   const showVideo = participant.stream && !participant.cameraOff
+  const ringing = participant.status === 'ringing'
   return (
-    <article className={cn(styles.tile, participant.speaking && styles.tileSpeaking)}>
-      {showVideo ? <StreamVideo stream={participant.stream} muted={participant.isLocal || mutedSpeaker} className={styles.remoteVideo} /> : <Avatar name={participant.name} avatarUrl={participant.avatarUrl} className={styles.tileAvatar} />}
+    <article className={cn(styles.tile, participant.speaking && styles.tileSpeaking, ringing && styles.tileRinging)}>
+      {/* Video luôn tắt tiếng tại đây — âm thanh phát qua RemoteAudioSink để không nhân đôi/không mất khi thu nhỏ. */}
+      {showVideo ? <StreamVideo stream={participant.stream} muted className={styles.remoteVideo} /> : <Avatar name={participant.name} avatarUrl={participant.avatarUrl} className={styles.tileAvatar} />}
+      {ringing ? <span className={styles.tileRingingTag}>Đang đổ chuông…</span> : null}
       <div className={styles.tileMeta}>
-        <span>{participant.name}</span>
+        <span>{participant.name}{participant.isLocal ? ' (Bạn)' : ''}</span>
         <div className={styles.tileBadges}>
-          <span className={styles.badge}>{participant.micMuted ? <MicOff size={15} /> : <Mic size={15} />}</span>
-          <span className={styles.badge}>{participant.cameraOff ? <VideoOff size={15} /> : <Video size={15} />}</span>
+          <span className={cn(styles.badge, participant.micMuted && styles.badgeMuted)}>{participant.micMuted ? <MicOff size={15} /> : <Mic size={15} />}</span>
+          <span className={cn(styles.badge, participant.cameraOff && styles.badgeMuted)}>{participant.cameraOff ? <VideoOff size={15} /> : <Video size={15} />}</span>
         </div>
       </div>
     </article>

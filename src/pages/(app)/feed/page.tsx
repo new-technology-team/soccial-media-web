@@ -455,16 +455,17 @@ export default function FeedPage() {
   }, [])
 
   const suggestedPeople = useMemo(() => {
-    const byAuthor = new Map<number, { id: number; name: string; postCount: number }>()
+    const byAuthor = new Map<number, { id: number; name: string; avatarUrl: string | null; postCount: number }>()
 
     posts.forEach((post) => {
       if (me?.id && post.authorId === me.id) return
       const current = byAuthor.get(post.authorId)
       if (current) {
         current.postCount += 1
+        if (!current.avatarUrl && post.authorAvatar) current.avatarUrl = post.authorAvatar
         return
       }
-      byAuthor.set(post.authorId, { id: post.authorId, name: post.authorName, postCount: 1 })
+      byAuthor.set(post.authorId, { id: post.authorId, name: post.authorName, avatarUrl: post.authorAvatar || null, postCount: 1 })
     })
 
     return Array.from(byAuthor.values())
@@ -1517,7 +1518,11 @@ export default function FeedPage() {
           ) : (
             <form className={styles.composer} onSubmit={handleQuickCreate}>
               <div className={styles.composerHead}>
-                <div className={styles.avatarBadge}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
+                <div className={styles.avatarBadge}>
+                  {me?.avatarUrl
+                    ? <img src={me.avatarUrl} alt={me.fullName || 'avatar'} className={styles.inlineAvatarImg} />
+                    : (me?.fullName?.[0] || 'U').toUpperCase()}
+                </div>
                 <textarea
                   placeholder="Bạn đang nghĩ gì?"
                   className={styles.composerInput}
@@ -1586,7 +1591,11 @@ export default function FeedPage() {
                 <article key={`${post.id}-${post.createdAt}`} className={styles.postCard}>
                   <div className={styles.postHead}>
                     <div className={styles.authorInfo}>
-                      <div className={styles.avatarBadge}>{(post.authorName[0] || 'U').toUpperCase()}</div>
+                      <div className={styles.avatarBadge}>
+                        {post.authorAvatar
+                          ? <img src={post.authorAvatar} alt={post.authorName} className={styles.inlineAvatarImg} />
+                          : (post.authorName[0] || 'U').toUpperCase()}
+                      </div>
                       <div>
                         <Link to={`/profile/${post.authorId}`} className={styles.authorNameLink}>
                           <p className={styles.authorName}>{post.authorName}</p>
@@ -1875,7 +1884,11 @@ export default function FeedPage() {
             ) : (
               suggestedPeople.map((person) => (
                 <div key={person.id} className={styles.suggestionItem}>
-                  <div className={styles.avatarSm}>{(person.name[0] || 'U').toUpperCase()}</div>
+                  <div className={styles.avatarSm}>
+                    {person.avatarUrl
+                      ? <img src={person.avatarUrl} alt={person.name} className={styles.inlineAvatarImg} />
+                      : (person.name[0] || 'U').toUpperCase()}
+                  </div>
                   <div>
                     <p className={styles.suggestionName}>{person.name}</p>
                     <p className={styles.suggestionMeta}>{person.postCount} bài viết gần đây</p>
@@ -2113,7 +2126,11 @@ export default function FeedPage() {
             </header>
 
             <div className={styles.modalUser}>
-              <div className={styles.avatarBadge}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
+              <div className={styles.avatarBadge}>
+                {me?.avatarUrl
+                  ? <img src={me.avatarUrl} alt={me.fullName || 'avatar'} className={styles.inlineAvatarImg} />
+                  : (me?.fullName?.[0] || 'U').toUpperCase()}
+              </div>
               <div>
                 <b>{me?.fullName || 'Người dùng'}</b>
                 <small>{modalVisibility === 'public' ? 'Công khai' : 'Riêng tư'}</small>
@@ -2368,7 +2385,11 @@ export default function FeedPage() {
             </header>
 
             <div className={styles.modalUser}>
-              <div className={styles.avatarBadge}>{(me?.fullName?.[0] || 'U').toUpperCase()}</div>
+              <div className={styles.avatarBadge}>
+                {me?.avatarUrl
+                  ? <img src={me.avatarUrl} alt={me.fullName || 'avatar'} className={styles.inlineAvatarImg} />
+                  : (me?.fullName?.[0] || 'U').toUpperCase()}
+              </div>
               <div>
                 <b>{me?.fullName || 'Người dùng'}</b>
                 <small>{postEditDraft.visibility === 'public' ? 'Công khai' : 'Riêng tư'}</small>

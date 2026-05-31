@@ -12,6 +12,21 @@
 import { API_BASE } from '@/config/api'
 import { useAuthStore } from '@/contexts/auth-store'
 
+export type CallHistoryItem = {
+  id: string
+  conversationId: string
+  initiatorId: number
+  participantIds: number[]
+  callType: 'voice' | 'video'
+  mode: 'private' | 'group'
+  status: 'completed' | 'missed' | 'rejected' | 'no_answer' | 'cancelled' | 'failed'
+  startedAt: string
+  answeredAt: string | null
+  endedAt: string | null
+  durationSec: number
+  createdAt: string
+}
+
 export const resolveApiAssetUrl = (value: string | null | undefined) => {
   if (!value) return null
   if (/^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')) {
@@ -859,6 +874,29 @@ export const api = {
 
   deleteNotification: (token: string, id: number | string) =>
     request<{ message: string }>(`/social/notifications/${id}`, { method: 'DELETE' }, token),
+
+  createCall: (
+    token: string,
+    payload: {
+      conversationId: string
+      initiatorId: number
+      participantIds: number[]
+      callType: 'voice' | 'video'
+      mode: 'private' | 'group'
+      status: 'completed' | 'missed' | 'rejected' | 'no_answer' | 'cancelled' | 'failed'
+      startedAt?: string | number
+      answeredAt?: string | number | null
+      endedAt?: string | number | null
+      durationSec?: number
+      withName?: string
+    }
+  ) =>
+    request<{ id: string }>('/social/calls', { method: 'POST', body: JSON.stringify(payload) }, token),
+
+  getCallHistory: (token: string, limit?: number) => {
+    const suffix = limit ? `?limit=${limit}` : ''
+    return request<{ calls: CallHistoryItem[] }>(`/social/calls${suffix}`, { method: 'GET' }, token)
+  },
 
   getUserProfile: (token: string, userId: number | string) =>
     request<{ user: User | null }>(`/social/users/${userId}`, { method: 'GET' }, token)
