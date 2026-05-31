@@ -9,5 +9,7 @@ services:
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID}
     container_name: zzchat_frontend
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "80:80"
