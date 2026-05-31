@@ -46,6 +46,12 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
   })
 }
 
+const replaceCommentById = (items: FeedComment[], nextComment: FeedComment): FeedComment[] =>
+  items.map((item) => {
+    if (String(item.id) === String(nextComment.id)) return { ...nextComment, replies: nextComment.replies || item.replies || [] }
+    return { ...item, replies: item.replies ? replaceCommentById(item.replies, nextComment) : [] }
+  })
+
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>()
   const postId = String(params.id || '').trim()
@@ -124,6 +130,23 @@ export default function PostDetailPage() {
       setComments((prev) => prev.filter((item) => String(item.id) !== String(payload.commentId)))
       setPost((current) => (current ? { ...current, commentCount: Number(payload.commentCount ?? Math.max(0, current.commentCount - 1)) } : current))
     }
+    const onCommentReaction = (payload: { postId?: number | string; commentId?: number | string; actorId?: number | string; reaction?: string | null; reactionCount?: number }) => {
+      if (!isThisPost(payload?.postId)) return
+      setComments((prev) => {
+        const update = (items: FeedComment[]): FeedComment[] =>
+          items.map((comment) => {
+            if (String(comment.id) === String(payload.commentId)) {
+              return {
+                ...comment,
+                reactionCount: Number(payload.reactionCount ?? comment.reactionCount),
+                viewerReaction: String(payload.actorId || '') === String(me.id) ? payload.reaction || null : comment.viewerReaction,
+              }
+            }
+            return { ...comment, replies: comment.replies ? update(comment.replies) : [] }
+          })
+        return update(prev)
+      })
+    }
     const onAvatarUpdated = (payload: { userId?: number | string; avatarUrl?: string }) => {
       const avatarUrl = resolveApiAssetUrl(payload?.avatarUrl) ?? payload?.avatarUrl ?? null
       setPost((current) =>
@@ -139,6 +162,7 @@ export default function PostDetailPage() {
     socket.on('post:reaction', onPostReaction)
     socket.on('comment:created', onCommentCreated)
     socket.on('comment:deleted', onCommentDeleted)
+    socket.on('comment:reaction', onCommentReaction)
     socket.on('user:avatar-updated', onAvatarUpdated)
 
     return () => {
@@ -147,6 +171,7 @@ export default function PostDetailPage() {
       socket.off('post:reaction', onPostReaction)
       socket.off('comment:created', onCommentCreated)
       socket.off('comment:deleted', onCommentDeleted)
+      socket.off('comment:reaction', onCommentReaction)
       socket.off('user:avatar-updated', onAvatarUpdated)
     }
   }, [me?.id, postId, token])
@@ -220,6 +245,22 @@ export default function PostDetailPage() {
     }
   }
 
+  const handleReactComment = async (comment: FeedComment) => {
+    if (!token) return
+    const key = String(comment.id)
+    setBusyCommentId(key)
+    try {
+      const response = comment.viewerReaction
+        ? await api.unreactComment(token, comment.id)
+        : await api.reactComment(token, comment.id, 'like')
+      setComments((prev) => replaceCommentById(prev, response.comment))
+    } catch (error) {
+      console.error('Không thể cập nhật lượt thích bình luận', error)
+    } finally {
+      setBusyCommentId(null)
+    }
+  }
+
   const renderComment = (comment: FeedComment, depth = 0): React.ReactNode => {
     const key = String(comment.id)
     const showReplyForm = replyingToCommentIds[key]
@@ -239,6 +280,14 @@ export default function PostDetailPage() {
           {comment.imageUrl ? <img src={comment.imageUrl} alt="Comment attachment" className={styles.commentImage} loading="lazy" /> : null}
           <div className={styles.commentActions}>
             <p className={styles.commentTime}>{new Date(comment.createdAt).toLocaleString('vi-VN')}</p>
+            <button
+              type="button"
+              className={`${styles.replyBtn} ${comment.viewerReaction ? styles.commentLiked : ''}`}
+              onClick={() => void handleReactComment(comment)}
+              disabled={busyCommentId === key}
+            >
+              {comment.viewerReaction ? 'Đã thích' : 'Thích'}{comment.reactionCount ? ` · ${comment.reactionCount}` : ''}
+            </button>
             {token ? (
               <button
                 type="button"

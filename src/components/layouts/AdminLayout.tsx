@@ -8,7 +8,6 @@ import {
   Database,
   FileText,
   Flag,
-  Hash,
   History,
   KeyRound,
   LayoutDashboard,
@@ -48,7 +47,6 @@ const groups = [
       { href: '/admin/posts', label: 'Quản lý nội dung', icon: FileText },
       { href: '/admin/reports', label: 'Báo cáo', icon: Flag },
       { href: '/admin/posts?media=true', label: 'Media', icon: Database },
-      { href: '/admin/statistics#hashtags', label: 'Hashtag', icon: Hash },
     ],
   },
   {

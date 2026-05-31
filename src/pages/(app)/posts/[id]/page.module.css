@@ -276,6 +276,11 @@
   text-decoration: underline;
 }
 
+.commentLiked {
+  color: #16a34a;
+  font-weight: 800;
+}
+
 .replyForm {
   display: flex;
   gap: 0.4rem;

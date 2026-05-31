@@ -92,14 +92,15 @@ function AudioWave() {
 
 function StreamVideo({ stream, muted, className }: { stream?: MediaStream | null; muted?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null)
+  const hasVideo = Boolean(stream?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled))
 
   useEffect(() => {
-    if (ref.current && stream) {
+    if (ref.current && stream && hasVideo) {
       ref.current.srcObject = stream
     }
-  }, [stream])
+  }, [stream, hasVideo])
 
-  if (!stream) return null
+  if (!stream || !hasVideo) return null
   return <video ref={ref} className={className} autoPlay playsInline muted={muted} />
 }
 
@@ -331,6 +332,7 @@ export function ActiveCallWindow(props: ActiveProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const mode = props.mode || 'private'
   const remote = props.remoteStreams?.[0]?.stream || null
+  const remoteHasVideo = Boolean(remote?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled))
   const reconnecting = props.state === 'connecting'
   return (
     <section className={styles.activeWindow} aria-label={mode === 'group' ? 'Cuộc gọi nhóm đang diễn ra' : 'Cuộc gọi đang diễn ra'}>
@@ -360,9 +362,9 @@ export function ActiveCallWindow(props: ActiveProps) {
           <GroupCallGrid participants={props.participants} />
         ) : props.callType === 'video' ? (
           <div className={styles.videoStage}>
-            {remote ? <StreamVideo stream={remote} muted className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
+            {remote && remoteHasVideo ? <StreamVideo stream={remote} muted className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
             <div className={styles.localPreview}>
-              <StreamVideo stream={props.localStream} muted className={styles.localVideo} />
+              {props.mutedCam ? <Avatar name="Bạn" className={styles.miniAvatar} /> : <StreamVideo stream={props.localStream} muted className={styles.localVideo} />}
             </div>
           </div>
         ) : (
@@ -408,7 +410,7 @@ export function GroupCallGrid({ participants }: { participants: CallParticipant[
 }
 
 export function GroupParticipantTile({ participant }: { participant: CallParticipant }) {
-  const showVideo = participant.stream && !participant.cameraOff
+  const showVideo = Boolean(participant.stream?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled)) && !participant.cameraOff
   const ringing = participant.status === 'ringing'
   return (
     <article className={cn(styles.tile, participant.speaking && styles.tileSpeaking, ringing && styles.tileRinging)}>

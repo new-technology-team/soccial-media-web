@@ -158,13 +158,63 @@ export default function AppLayout({
     getSocket()?.emit('participant_muted', { conversationId: activeCall?.conversationId, micMuted: next })
   }
 
-  const handleToggleCameraGlobal = () => {
+  const handleToggleCameraGlobal = async () => {
     const { mutedCam: current, setMutedCam, cameraAvailable: available } = useCallStore.getState()
     if (!available || activeCall?.type === 'voice') return
     const next = !current
-    useCallStore.getState().localStream?.getVideoTracks().forEach((t) => { t.enabled = !next })
+    let stream = useCallStore.getState().localStream
+    if (!stream) return
+
+    if (next) {
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = false
+        stream?.removeTrack(track)
+        track.stop()
+      })
+      callSession.peers.forEach((pc) => {
+        pc.getSenders()
+          .filter((sender) => sender.track?.kind === 'video')
+          .forEach((sender) => sender.replaceTrack(null).catch(() => undefined))
+      })
+    } else {
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        const [videoTrack] = videoStream.getVideoTracks()
+        if (!videoTrack) return
+        stream.addTrack(videoTrack)
+        callSession.peers.forEach((pc) => {
+          const sender = pc.getSenders().find((item) => item.track?.kind === 'video')
+          if (sender) sender.replaceTrack(videoTrack).catch(() => undefined)
+          else pc.addTrack(videoTrack, stream!)
+        })
+      } catch {
+        toast({ title: 'Không thể bật camera', variant: 'destructive' })
+        return
+      }
+    }
+
+    useCallStore.getState().setLocalStream(new MediaStream(stream.getTracks()))
+    callSession.localStream = stream
     setMutedCam(next)
     getSocket()?.emit(next ? 'participant_camera_off' : 'participant_camera_on', { conversationId: activeCall?.conversationId })
+    getSocket()?.emit('participant_updated', { conversationId: activeCall?.conversationId, cameraOff: next })
+    const socket = getSocket()
+    if (socket && activeCall?.conversationId) {
+      callSession.peers.forEach((pc, targetUserId) => {
+        pc.createOffer()
+          .then((offer) => pc.setLocalDescription(offer).then(() => offer))
+          .then((offer) => {
+            socket.emit('call:offer', {
+              targetUserId,
+              conversationId: activeCall.conversationId,
+              callType: activeCall.type,
+              offer: { type: offer.type, sdp: offer.sdp },
+              renegotiate: true,
+            })
+          })
+          .catch(() => undefined)
+      })
+    }
   }
 
   const handleEndCallGlobal = () => {

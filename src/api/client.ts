@@ -17,6 +17,13 @@ export type CallHistoryItem = {
   conversationId: string
   initiatorId: number
   participantIds: number[]
+  participantStatuses?: Array<{
+    userId: number
+    joinedAt: string | null
+    leftAt: string | null
+    durationSec: number
+    role: 'caller' | 'receiver' | 'member'
+  }>
   callType: 'voice' | 'video'
   mode: 'private' | 'group'
   status: 'completed' | 'missed' | 'rejected' | 'no_answer' | 'cancelled' | 'failed'
@@ -558,6 +565,20 @@ export const api = {
   deleteComment: (token: string, commentId: number | string) =>
     request<{ message: string }>(`/social/comments/${commentId}`, { method: 'DELETE' }, token),
 
+  reactComment: (token: string, commentId: number | string, type = 'like') =>
+    request<{ message: string; comment: FeedComment }>(
+      `/social/comments/${commentId}/reaction`,
+      { method: 'POST', body: JSON.stringify({ type }) },
+      token
+    ).then((res) => ({ ...res, comment: normalizeFeedComment(res.comment) })),
+
+  unreactComment: (token: string, commentId: number | string) =>
+    request<{ message: string; comment: FeedComment }>(
+      `/social/comments/${commentId}/reaction`,
+      { method: 'DELETE' },
+      token
+    ).then((res) => ({ ...res, comment: normalizeFeedComment(res.comment) })),
+
   listConversations: (token: string) =>
     request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token).then((data) => ({
       conversations: (data.conversations || []).map(normalizeConversation),
@@ -869,6 +890,9 @@ export const api = {
   readNotification: (token: string, id: number | string) =>
     request<{ message: string }>(`/social/notifications/${id}/read`, { method: 'PATCH' }, token),
 
+  unreadNotification: (token: string, id: number | string) =>
+    request<{ message: string }>(`/social/notifications/${id}/unread`, { method: 'PATCH' }, token),
+
   readAllNotifications: (token: string) =>
     request<{ message: string }>('/social/notifications/read-all', { method: 'PATCH' }, token),
 
@@ -888,6 +912,7 @@ export const api = {
       answeredAt?: string | number | null
       endedAt?: string | number | null
       durationSec?: number
+      participantStatuses?: CallHistoryItem['participantStatuses']
       withName?: string
     }
   ) =>

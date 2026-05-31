@@ -5,6 +5,49 @@
   --msg-muted: hsl(var(--muted, 210 40% 96%));
 }
 
+.imagePreviewButton {
+  display: block;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.mediaLightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(5, 12, 20, 0.86);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.mediaLightbox img {
+  max-width: min(100%, 1100px);
+  max-height: calc(100vh - 80px);
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+
+.mediaLightboxClose {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
 .page {
   height: 100%;
   padding: 0.8rem 0 1rem;

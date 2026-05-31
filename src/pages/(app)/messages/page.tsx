@@ -39,7 +39,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import styles from './page.module.css'
-import { ApiError, api, resolveApiAssetUrl } from '@/api/client'
+import { ApiError, api, resolveApiAssetUrl, type CallHistoryItem } from '@/api/client'
 import {
   ActiveCallWindow,
   CallHistoryMessage,
@@ -163,6 +163,11 @@ const RTC_CONFIG: RTCConfiguration = {
 const CALL_RING_TIMEOUT_MS = 60_000
 const GROUP_CALL_RING_TIMEOUT_MS = 60_000
 const GROUP_CALL_MAX_PARTICIPANTS = 6
+const CALL_LOG_PREFIX = '[ZChat Call]'
+
+const callLog = (event: string, details?: Record<string, unknown>) => {
+  console.info(CALL_LOG_PREFIX, event, details || {})
+}
 
 // Jitsi dùng để liên thông với mobile (mobile gọi qua Jitsi, không phải WebRTC).
 const JITSI_BASE_URL = String(import.meta.env.VITE_VIDEO_CALL_BASE_URL || 'https://meet.jit.si').replace(/\/+$/, '')
@@ -309,6 +314,10 @@ export default function MessagesPage() {
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [showNewMessageModal, setShowNewMessageModal] = useState(false)
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
+  const [showCallHistoryDrawer, setShowCallHistoryDrawer] = useState(false)
+  const [callHistoryFilter, setCallHistoryFilter] = useState<'all' | 'missed' | 'incoming' | 'outgoing' | 'group'>('all')
+  const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([])
+  const [mediaLightbox, setMediaLightbox] = useState<{ url: string; alt: string } | null>(null)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false)
   const [pendingLockedConversationId, setPendingLockedConversationId] = useState<string | null>(null)
@@ -416,6 +425,7 @@ export default function MessagesPage() {
   const clearCallTimerRef = useRef<number | null>(null)
   const screenShareTrackRef = useRef<MediaStreamTrack | null>(null)
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null)
+  const negotiationLocksRef = useRef<Set<number>>(new Set())
 
   const scrollConversationToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     window.setTimeout(() => {
@@ -687,6 +697,16 @@ export default function MessagesPage() {
     }
   }, [token])
 
+  const reloadCallHistory = useCallback(async () => {
+    if (!token) return
+    try {
+      const data = await api.getCallHistory(token, 80)
+      setCallHistory(data.calls || [])
+    } catch {
+      // Call history should never block the chat surface.
+    }
+  }, [token])
+
   const reloadFriendMap = useCallback(async () => {
     if (!token || !user?.id) return
     try {
@@ -791,6 +811,19 @@ export default function MessagesPage() {
   useEffect(() => {
     reloadNotifications().catch(() => undefined)
   }, [reloadNotifications])
+
+  useEffect(() => {
+    reloadCallHistory().catch(() => undefined)
+  }, [reloadCallHistory])
+
+  useEffect(() => {
+    if (!mediaLightbox) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMediaLightbox(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [mediaLightbox])
 
   useEffect(() => {
     if (!token || !newMessageKeyword.trim()) {
@@ -1011,9 +1044,9 @@ export default function MessagesPage() {
       // tự động thiết lập kết nối (tạo answer) mà KHÔNG hiện modal cuộc gọi đến.
       const state = useCallStore.getState()
       const activeConvId = state.activeCall?.conversationId
-      if (state.callAnswered && state.activeCall && incomingConversationId && incomingConversationId === activeConvId && !peersRef.current.has(fromUserId)) {
+      if (state.callAnswered && state.activeCall && incomingConversationId && incomingConversationId === activeConvId) {
         try {
-          const pc = await buildPeerConnection(fromUserId, state.activeCall.type, incomingConversationId)
+          const pc = peersRef.current.get(fromUserId) || await buildPeerConnection(fromUserId, state.activeCall.type, incomingConversationId)
           if (pc) {
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: payload.offer.sdp }))
             await flushPendingCandidates(fromUserId)
@@ -1025,6 +1058,10 @@ export default function MessagesPage() {
               answer: { type: answer.type, sdp: answer.sdp },
             })
             setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
+            callLog(payload.renegotiate ? 'Peer renegotiated' : 'User joined call', {
+              fromUserId,
+              conversationId: incomingConversationId,
+            })
           }
         } catch {
           // bỏ qua: thiết lập peer mesh thất bại
@@ -1129,6 +1166,7 @@ export default function MessagesPage() {
       const fromUserId = Number(payload?.fromUserId || 0)
       if (fromUserId > 0) {
         setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
+        callLog('User joined call', { fromUserId, conversationId: payload?.conversationId })
         void meshInitiate(fromUserId)
       }
     })
@@ -1138,6 +1176,7 @@ export default function MessagesPage() {
       if (fromUserId > 0) {
         setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
         setRemoteMediaState((prev) => { const next = { ...prev }; delete next[fromUserId]; return next })
+        callLog('User left call', { fromUserId, conversationId: payload?.conversationId })
       }
     })
 
@@ -1176,7 +1215,7 @@ export default function MessagesPage() {
         const myId = Number(user?.id || 0)
         const remainingOthers = nextJoined.filter((id) => id !== myId)
 
-        if (remainingOthers.length === 0) {
+        if (remainingOthers.length === 0 && activeCall.mode !== 'group') {
           logCall(callMetaRef.current?.answeredAt ? 'completed' : 'cancelled')
           closeCallResources()
           setActiveCall(null)
@@ -1188,7 +1227,7 @@ export default function MessagesPage() {
           callMetaRef.current = null
         } else {
           setRemoteMediaState((prev) => { const next = { ...prev }; delete next[endedByUserId]; return next })
-          setCallStatus('Một người đã rời cuộc gọi')
+          setCallStatus(remainingOthers.length === 0 ? 'Bạn đang ở một mình trong cuộc gọi nhóm' : 'Một người đã rời cuộc gọi')
         }
         return
       }
@@ -1215,6 +1254,21 @@ export default function MessagesPage() {
         setCallStatus(`Cuộc gọi đang có ${payload.participantCount} người tham gia`)
         ids.forEach((id) => { void meshInitiate(id) })
       }
+      if (Array.isArray(payload?.participants)) {
+        setRemoteMediaState((prev) => {
+          const next = { ...prev }
+          for (const participant of payload.participants) {
+            const id = Number(participant?.userId || 0)
+            if (!id || id === user?.id) continue
+            next[id] = {
+              ...next[id],
+              micMuted: Boolean(participant?.micMuted),
+              cameraOff: Boolean(participant?.cameraOff),
+            }
+          }
+          return next
+        })
+      }
     })
 
     socket.on('group_call_joined', (payload) => {
@@ -1222,6 +1276,7 @@ export default function MessagesPage() {
       if (fromUserId > 0) {
         setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
         setCallStatus('Cuộc gọi nhóm đang diễn ra')
+        callLog('User joined call', { fromUserId, conversationId: payload?.conversationId })
         void meshInitiate(fromUserId)
       }
     })
@@ -1229,6 +1284,7 @@ export default function MessagesPage() {
     socket.on('group_call_left', (payload) => {
       const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
       if (fromUserId > 0) {
+        callLog('User left call', { fromUserId, conversationId: payload?.conversationId })
         const peer = peersRef.current.get(fromUserId)
         if (peer) { peer.close(); peersRef.current.delete(fromUserId) }
         setRemoteStreams((prev) => prev.filter((item) => item.userId !== fromUserId))
@@ -1545,6 +1601,13 @@ export default function MessagesPage() {
       conversationId: meta.conversationId,
       initiatorId: meta.initiatorId,
       participantIds: meta.participantIds,
+      participantStatuses: meta.participantIds.map((participantId) => ({
+        userId: participantId,
+        joinedAt: meta.answeredAt || meta.startedAt,
+        leftAt: endedAt,
+        durationSec,
+        role: participantId === meta.initiatorId ? 'caller' : (meta.mode === 'group' ? 'member' : 'receiver'),
+      })),
       callType: meta.callType,
       mode: meta.mode,
       status,
@@ -1553,8 +1616,8 @@ export default function MessagesPage() {
       endedAt,
       durationSec,
       withName: meta.withName,
-    }).catch(() => undefined)
-  }, [token, user?.id])
+    }).then(() => reloadCallHistory()).catch(() => undefined)
+  }, [reloadCallHistory, token, user?.id])
 
   // Giữ cửa sổ lỗi hiển thị ngắn rồi tự dọn để người dùng kịp đọc lý do.
   const scheduleClearCall = useCallback((delayMs = 4000) => {
@@ -2111,8 +2174,35 @@ export default function MessagesPage() {
     [appendMessage, scrollConversationToBottom, selectedConversationId, user?.avatarUrl, user?.fullName, user?.id]
   )
 
+  const syncLocalStreamState = (stream: MediaStream | null) => {
+    localStreamRef.current = stream
+    callSession.localStream = stream
+    setLocalStreamState(stream ? new MediaStream(stream.getTracks()) : null)
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream
+    }
+  }
+
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
-    if (localStreamRef.current) return localStreamRef.current
+    const existing = localStreamRef.current
+    if (existing) {
+      if (callType === 'video' && !mutedCam && existing.getVideoTracks().length === 0) {
+        try {
+          const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          const [videoTrack] = videoStream.getVideoTracks()
+          if (videoTrack) {
+            existing.addTrack(videoTrack)
+            cameraTrackRef.current = videoTrack
+            setCameraAvailable(true)
+            callLog('Camera enabled', { userId: user?.id, source: 'ensureLocalStream' })
+            syncLocalStreamState(existing)
+          }
+        } catch {
+          setCameraAvailable(false)
+        }
+      }
+      return existing
+    }
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -2126,6 +2216,7 @@ export default function MessagesPage() {
         video: callType === 'video',
       })
       setCameraAvailable(callType === 'video' ? stream.getVideoTracks().length > 0 : true)
+      cameraTrackRef.current = stream.getVideoTracks()[0] || null
     } catch (error) {
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')
       if (callType !== 'video' || denied) {
@@ -2156,13 +2247,42 @@ export default function MessagesPage() {
       })
       setMutedCam(callType === 'video' && callSettings.autoCameraOffOnJoin)
     }
-    localStreamRef.current = stream
-    callSession.localStream = stream
-    setLocalStreamState(stream)
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream
-    }
+    syncLocalStreamState(stream)
+    callLog('Local media acquired', {
+      userId: user?.id,
+      callType,
+      audioTracks: stream.getAudioTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+    })
     return stream
+  }
+
+  const renegotiatePeer = async (targetUserId: number, conversationIdOverride?: string | null) => {
+    const socket = getSocket()
+    const pc = peersRef.current.get(targetUserId)
+    const convId = conversationIdOverride || useCallStore.getState().activeCall?.conversationId || selectedConversationId
+    if (!socket || !pc || !convId || negotiationLocksRef.current.has(targetUserId)) return
+    negotiationLocksRef.current.add(targetUserId)
+    try {
+      const offer = await pc.createOffer({ iceRestart: pc.iceConnectionState === 'failed' })
+      await pc.setLocalDescription(offer)
+      socket.emit('call:offer', {
+        targetUserId,
+        conversationId: convId,
+        callType: useCallStore.getState().activeCall?.type || lastCallTypeRef.current,
+        offer: { type: offer.type, sdp: offer.sdp },
+        renegotiate: true,
+      })
+      callLog('Peer renegotiation offer sent', { targetUserId, conversationId: convId })
+    } catch (error) {
+      console.warn(CALL_LOG_PREFIX, 'Peer renegotiation failed', { targetUserId, error })
+    } finally {
+      negotiationLocksRef.current.delete(targetUserId)
+    }
+  }
+
+  const renegotiateAllPeers = async (conversationIdOverride?: string | null) => {
+    await Promise.all([...peersRef.current.keys()].map((targetUserId) => renegotiatePeer(targetUserId, conversationIdOverride)))
   }
 
   const buildPeerConnection = async (targetUserId: number, callType: 'voice' | 'video', conversationIdOverride?: string | null) => {
@@ -2170,11 +2290,17 @@ export default function MessagesPage() {
     const convId = conversationIdOverride || selectedConversationId
     if (!socket || !convId) return null
 
+    const existingPeer = peersRef.current.get(targetUserId)
+    if (existingPeer && existingPeer.signalingState !== 'closed') return existingPeer
+
     const pc = new RTCPeerConnection(RTC_CONFIG)
     const localStream = await ensureLocalStream(callType)
 
     localStream.getTracks().forEach((track) => {
-      pc.addTrack(track, localStream)
+      if (!pc.getSenders().some((sender) => sender.track === track)) {
+        pc.addTrack(track, localStream)
+        callLog('Track added', { targetUserId, kind: track.kind, trackId: track.id })
+      }
     })
 
     pc.ontrack = (event) => {
@@ -2201,12 +2327,23 @@ export default function MessagesPage() {
 
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState
+      callLog('Peer ICE state', { targetUserId, state })
       if (state === 'failed' || state === 'disconnected') {
         // Mất kết nối tạm thời: hiện trạng thái "đang kết nối lại" và thử khôi phục.
         if (useCallStore.getState().callAnswered) setCallState('connecting')
-        if (state === 'failed') pc.restartIce()
+        if (state === 'failed') {
+          pc.restartIce()
+          void renegotiatePeer(targetUserId, convId)
+        }
       } else if (state === 'connected' || state === 'completed') {
         if (useCallStore.getState().callAnswered) setCallState('connected')
+      }
+    }
+
+    pc.onconnectionstatechange = () => {
+      callLog('Peer connection state', { targetUserId, state: pc.connectionState })
+      if (pc.connectionState === 'failed') {
+        void renegotiatePeer(targetUserId, convId)
       }
     }
 
@@ -3045,6 +3182,10 @@ export default function MessagesPage() {
     socket.emit('join-conversation', selectedConversationId)
     socket.emit('call:join', {
       conversationId: selectedConversationId,
+      callType,
+      mode: callMode,
+      micMuted,
+      cameraOff: mutedCam || callType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     
     if (callTargets.length > 1) {
@@ -3162,6 +3303,10 @@ export default function MessagesPage() {
     socket.emit('join-conversation', activeConversationId)
     socket.emit('call:join', {
       conversationId: activeConversationId,
+      callType: effectiveType,
+      mode: isGroup ? 'group' : 'private',
+      micMuted,
+      cameraOff: mutedCam || effectiveType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     socket.emit(isGroup ? 'group_call_joined' : 'call_joined', {
       conversationId: activeConversationId,
@@ -3269,22 +3414,70 @@ export default function MessagesPage() {
     }
   }
 
-  const handleToggleCamera = () => {
-    if (!cameraAvailable || activeCall?.type === 'voice') {
+  const handleToggleCamera = async () => {
+    if (activeCall?.type === 'voice') {
       toast({ title: 'Không tìm thấy camera trên thiết bị này.', variant: 'destructive' })
       return
     }
     const nextMuted = !mutedCam
-    localStreamRef.current?.getVideoTracks().forEach((track) => {
-      track.enabled = !nextMuted
-    })
-    setMutedCam(nextMuted)
+    const stream = localStreamRef.current || await ensureLocalStream('video')
+
+    if (nextMuted) {
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = false
+        stream.removeTrack(track)
+        track.stop()
+        callLog('Track removed', { kind: 'video', trackId: track.id })
+      })
+      cameraTrackRef.current = null
+      peersRef.current.forEach((pc) => {
+        pc.getSenders()
+          .filter((sender) => sender.track?.kind === 'video')
+          .forEach((sender) => {
+            sender.replaceTrack(null).catch(() => undefined)
+          })
+      })
+      setMutedCam(true)
+      syncLocalStreamState(stream)
+      callLog('Camera disabled', { userId: user?.id })
+    } else {
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        const [videoTrack] = videoStream.getVideoTracks()
+        if (!videoTrack) throw new Error('No video track')
+        videoTrack.enabled = true
+        stream.addTrack(videoTrack)
+        cameraTrackRef.current = videoTrack
+        peersRef.current.forEach((pc) => {
+          const sender = pc.getSenders().find((item) => item.track?.kind === 'video' || item.track === null)
+          if (sender) {
+            sender.replaceTrack(videoTrack).catch(() => undefined)
+          } else {
+            pc.addTrack(videoTrack, stream)
+            callLog('Track added', { kind: 'video', trackId: videoTrack.id })
+          }
+        })
+        setCameraAvailable(true)
+        setMutedCam(false)
+        syncLocalStreamState(stream)
+        callLog('Camera enabled', { userId: user?.id, trackId: videoTrack.id })
+      } catch (error) {
+        setCameraAvailable(false)
+        toast({ title: 'Không thể bật camera', description: 'Hãy kiểm tra quyền camera hoặc thiết bị đang được ứng dụng khác sử dụng.', variant: 'destructive' })
+        return
+      }
+    }
     const socket = getSocket()
     if (socket && selectedConversationId) {
       socket.emit(nextMuted ? 'participant_camera_off' : 'participant_camera_on', {
         conversationId: selectedConversationId,
       })
+      socket.emit('participant_updated', {
+        conversationId: selectedConversationId,
+        cameraOff: nextMuted,
+      })
     }
+    await renegotiateAllPeers(selectedConversationId)
   }
 
   // Mời thêm thành viên nhóm đang chưa tham gia (đổ chuông lại tới họ).
@@ -3561,14 +3754,21 @@ export default function MessagesPage() {
       return (
         <div className={styles.mediaWrap}>
           {forwardedTag}
-          <img
-            src={msg.mediaUrl}
-            alt={msg.fileName || 'image'}
-            loading="lazy"
-            onError={(event) => {
-              event.currentTarget.style.display = 'none'
-            }}
-          />
+          <button
+            type="button"
+            className={styles.imagePreviewButton}
+            onClick={() => setMediaLightbox({ url: msg.mediaUrl!, alt: msg.fileName || 'Ảnh trong tin nhắn' })}
+            aria-label="Xem ảnh"
+          >
+            <img
+              src={msg.mediaUrl}
+              alt={msg.fileName || 'image'}
+              loading="lazy"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none'
+              }}
+            />
+          </button>
           {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
@@ -3649,10 +3849,24 @@ export default function MessagesPage() {
       </div>
     )
   }
-  const activeRailTab = showNotificationsDrawer ? 'notifications' as const
+  const activeRailTab = showCallHistoryDrawer ? 'calls' as const
+    : showNotificationsDrawer ? 'notifications' as const
     : showNewMessageModal ? 'newMessage' as const
     : showCreateGroupModal ? 'createGroup' as const
     : 'messages' as const
+  const filteredCallHistory = callHistory.filter((item) => {
+    if (callHistoryFilter === 'all') return true
+    if (callHistoryFilter === 'missed') return item.status === 'missed' || item.status === 'no_answer'
+    if (callHistoryFilter === 'incoming') return item.initiatorId !== user?.id
+    if (callHistoryFilter === 'outgoing') return item.initiatorId === user?.id
+    return item.mode === 'group'
+  })
+  const formatCallDuration = (seconds: number) => {
+    if (!seconds) return '0 giây'
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return mins ? `${mins} phút ${secs}s` : `${secs}s`
+  }
   return (
     <div className={styles.page}>
       <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''} ${!showDetailsPanelDesktop ? styles.layoutNarrow : ''}`}>
@@ -3668,21 +3882,32 @@ export default function MessagesPage() {
           activeRailTab={activeRailTab}
           onOpenConversation={handleOpenConversation}
           onShowMessages={() => {
+            setShowCallHistoryDrawer(false)
             setShowNotificationsDrawer(false)
             setShowNewMessageModal(false)
             setShowCreateGroupModal(false)
           }}
           onShowNotifications={() => {
+            setShowCallHistoryDrawer(false)
             setShowNotificationsDrawer(true)
             setShowNewMessageModal(false)
             setShowCreateGroupModal(false)
           }}
+          onShowCalls={() => {
+            setShowCallHistoryDrawer(true)
+            setShowNotificationsDrawer(false)
+            setShowNewMessageModal(false)
+            setShowCreateGroupModal(false)
+            reloadCallHistory().catch(() => undefined)
+          }}
           onShowNewMessage={() => {
+            setShowCallHistoryDrawer(false)
             setShowNewMessageModal(true)
             setShowNotificationsDrawer(false)
             setShowCreateGroupModal(false)
           }}
           onShowCreateGroup={() => {
+            setShowCallHistoryDrawer(false)
             setShowCreateGroupModal(true)
             setShowNotificationsDrawer(false)
             setShowNewMessageModal(false)
@@ -4136,6 +4361,75 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
+          {showCallHistoryDrawer ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={styles.overlayCard}>
+                <h3>Lịch sử cuộc gọi</h3>
+                <div className={styles.notifyActions}>
+                  {(['all', 'missed', 'incoming', 'outgoing', 'group'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      className={callHistoryFilter === filter ? styles.notifyAcceptBtn : undefined}
+                      onClick={() => setCallHistoryFilter(filter)}
+                    >
+                      {filter === 'all' ? 'Gần đây' : filter === 'missed' ? 'Nhỡ' : filter === 'incoming' ? 'Đến' : filter === 'outgoing' ? 'Đi' : 'Nhóm'}
+                    </button>
+                  ))}
+                </div>
+                <div className={styles.overlayList}>
+                  {filteredCallHistory.map((item) => {
+                    const outgoing = item.initiatorId === user?.id
+                    const conv = conversations.find((conversation) => conversation.id === item.conversationId)
+                    const title = conv ? getConversationDisplayName(conv, user?.id) : `Hội thoại #${item.conversationId}`
+                    const statusLabel = item.status === 'completed'
+                      ? 'Hoàn tất'
+                      : item.status === 'missed' || item.status === 'no_answer'
+                        ? 'Cuộc gọi nhỡ'
+                        : item.status === 'rejected'
+                          ? 'Đã từ chối'
+                          : item.status === 'cancelled'
+                            ? 'Đã hủy'
+                            : 'Thất bại'
+                    return (
+                      <div key={item.id} className={styles.notifyCard}>
+                        <button type="button" className={styles.notifyMainBtn} onClick={() => handleOpenConversation(item.conversationId)}>
+                          <span className={styles.listEntryIdentity}>
+                            <span className={styles.listEntryAvatar}>{item.callType === 'video' ? 'V' : 'P'}</span>
+                            <span className={styles.listEntryMeta}>
+                              <strong className={styles.listEntryTitle}>{title}</strong>
+                              <span className={styles.listEntrySubtitle}>
+                                {outgoing ? 'Gọi đi' : 'Gọi đến'} · {item.mode === 'group' ? 'Nhóm' : '1-1'} · {statusLabel}
+                              </span>
+                              <small className={styles.listEntrySubtitle}>
+                                {new Date(item.createdAt || item.startedAt).toLocaleString('vi-VN')} · {formatCallDuration(item.durationSec || 0)}
+                              </small>
+                            </span>
+                          </span>
+                        </button>
+                        <div className={styles.notifyActions}>
+                          <button type="button" onClick={() => handleOpenConversation(item.conversationId)}>Mở chat</button>
+                          <button type="button" onClick={() => {
+                            handleOpenConversation(item.conversationId)
+                            window.setTimeout(() => void handleStartCall('voice'), 0)
+                          }}>Gọi lại</button>
+                          <button type="button" onClick={() => {
+                            handleOpenConversation(item.conversationId)
+                            window.setTimeout(() => void handleStartCall('video'), 0)
+                          }}>Video</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {filteredCallHistory.length === 0 ? <p>Chưa có lịch sử cuộc gọi phù hợp.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCallHistoryDrawer(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {showNotificationsDrawer ? (
             <div className={styles.overlayBackdrop}>
               <div className={styles.overlayCard}>
@@ -4459,6 +4753,15 @@ export default function MessagesPage() {
             </div>
           ) : null}
         </section>
+
+        {mediaLightbox ? (
+          <div className={styles.mediaLightbox} role="dialog" aria-modal="true" aria-label="Xem ảnh" onClick={() => setMediaLightbox(null)}>
+            <button type="button" className={styles.mediaLightboxClose} onClick={() => setMediaLightbox(null)} aria-label="Đóng">
+              <X size={20} />
+            </button>
+            <img src={mediaLightbox.url} alt={mediaLightbox.alt} onClick={(event) => event.stopPropagation()} />
+          </div>
+        ) : null}
 
         {showSettingsDrawer ? <button type="button" className={styles.settingsBackdrop} aria-label="Đóng cài đặt hội thoại" onClick={() => setShowSettingsDrawer(false)} /> : null}
         <aside className={`${styles.detailsPanel}${showSettingsDrawer ? ` ${styles.detailsPanelOpen}` : ''}${!showDetailsPanelDesktop ? ` ${styles.detailsPanelHidden}` : ''}`}>

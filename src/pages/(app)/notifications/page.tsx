@@ -1,373 +1,306 @@
-﻿'use client'
+'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, MessageCircle, UserPlus, Heart, Share2, CheckCheck, Trash2 } from 'lucide-react'
+import {
+  Bell,
+  Check,
+  CheckCheck,
+  Heart,
+  MessageCircle,
+  Phone,
+  Search,
+  Settings,
+  Shield,
+  Trash2,
+  UserPlus,
+  Video,
+  Volume2,
+  VolumeX,
+} from 'lucide-react'
+
 import { api } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
-import type { NotificationItem } from '@/types'
 import { connectSocket } from '@/services/socket'
-import { Skeleton } from '@/components/ui/skeleton'
+import type { NotificationItem } from '@/types'
 import styles from './page.module.css'
 
-type NotifFilter = 'all' | 'social' | 'messages'
+type Category = 'all' | 'messages' | 'calls' | 'social' | 'system'
+type ReadFilter = 'all' | 'unread' | 'read' | 'today' | 'yesterday' | 'week' | 'month'
+type SortMode = 'newest' | 'oldest'
 
-type NotificationMeta = {
-  requesterId?: number
-  requester_id?: number
-  friendshipId?: number
-  friendship_id?: number
-  conversationId?: string | number
-  conversation_id?: string | number
-  requesterName?: string
-  accepterId?: number
+const categoryMeta: Record<Category, { label: string; color: string }> = {
+  all: { label: 'Tất cả', color: '#22c55e' },
+  messages: { label: 'Tin nhắn', color: '#2563eb' },
+  calls: { label: 'Cuộc gọi', color: '#22c55e' },
+  social: { label: 'Xã hội', color: '#ec4899' },
+  system: { label: 'Hệ thống', color: '#f97316' },
 }
 
-const formatTime = (iso: string) => {
+const getCategory = (type: string): Exclude<Category, 'all'> => {
+  if (['message', 'mention', 'reply', 'reaction', 'message_recalled', 'group_invitation'].includes(type)) return 'messages'
+  if (['call', 'call_missed', 'incoming_call', 'video_call', 'group_call'].includes(type)) return 'calls'
+  if (['like', 'comment', 'share', 'follow', 'friend-request', 'friend-accepted', 'post_mention'].includes(type)) return 'social'
+  return 'system'
+}
+
+const iconForNotification = (item: NotificationItem) => {
+  const category = getCategory(item.type)
+  if (category === 'messages') return MessageCircle
+  if (category === 'calls') return item.type.includes('video') ? Video : Phone
+  if (category === 'social') return item.type.includes('friend') || item.type === 'follow' ? UserPlus : Heart
+  return item.type.includes('security') ? Shield : Bell
+}
+
+const parseMeta = (item: NotificationItem): Record<string, unknown> => {
+  const source = item.meta ?? item.meta_json
+  if (!source) return {}
   try {
-    return new Date(iso).toLocaleString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    return typeof source === 'string' ? JSON.parse(source) : source
   } catch {
-    return iso
+    return {}
   }
 }
 
-const normalizeType = (type: string): 'message' | 'social' | 'other' => {
-  if (type === 'comment' || type === 'message') return 'message'
-  if (
-    type === 'like' ||
-    type === 'follow' ||
-    type === 'share' ||
-    type === 'friend-request' ||
-    type === 'friend-accepted'
-  ) {
-    return 'social'
-  }
-  return 'other'
+const timeAgo = (value: string) => {
+  const diff = Date.now() - new Date(value).getTime()
+  if (!Number.isFinite(diff)) return value
+  const minutes = Math.max(0, Math.floor(diff / 60000))
+  if (minutes < 1) return 'Vừa xong'
+  if (minutes < 60) return `${minutes} phút trước`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} giờ trước`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} ngày trước`
+  return new Date(value).toLocaleString('vi-VN')
 }
 
-const iconForType = (type: string) => {
-  switch (type) {
-    case 'like':
-      return <Heart className={styles.itemTypeIcon} />
-    case 'follow':
-    case 'friend-request':
-    case 'friend-accepted':
-      return <UserPlus className={styles.itemTypeIcon} />
-    case 'share':
-      return <Share2 className={styles.itemTypeIcon} />
-    case 'comment':
-    case 'message':
-      return <MessageCircle className={styles.itemTypeIcon} />
-    default:
-      return <Bell className={styles.itemTypeIcon} />
-  }
+const isInDateFilter = (item: NotificationItem, filter: ReadFilter) => {
+  if (filter === 'unread') return !item.is_read
+  if (filter === 'read') return Boolean(item.is_read)
+  if (filter === 'all') return true
+  const created = new Date(item.created_at)
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const createdTime = created.getTime()
+  if (filter === 'today') return createdTime >= startToday
+  if (filter === 'yesterday') return createdTime >= startToday - 86400000 && createdTime < startToday
+  if (filter === 'week') return createdTime >= Date.now() - 7 * 86400000
+  return createdTime >= Date.now() - 31 * 86400000
 }
 
 export default function NotificationsPage() {
   const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
-  const [notifications, setNotifications] = useState<NotificationItem[]>([])
-  const [activeFilter, setActiveFilter] = useState<NotifFilter>('all')
   const user = useAuthStore((state) => state.user)
-  const [busyActionId, setBusyActionId] = useState<number | string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [activeCategory, setActiveCategory] = useState<Category>('all')
+  const [readFilter, setReadFilter] = useState<ReadFilter>('all')
+  const [sortMode, setSortMode] = useState<SortMode>('newest')
+  const [query, setQuery] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [soundOn, setSoundOn] = useState(true)
+  const [busyId, setBusyId] = useState<number | string | null>(null)
 
-  const parseMeta = (item: NotificationItem): NotificationMeta | null => {
-    const source = item.meta ?? item.meta_json
-    if (!source) return null
-    try {
-      if (typeof source === 'string') {
-        return JSON.parse(source) as NotificationMeta
-      }
-      return source as NotificationMeta
-    } catch {
-      return null
-    }
-  }
-
-  const getConversationIdFromMeta = (item: NotificationItem) => {
-    const meta = parseMeta(item)
-    if (!meta) return null
-    const value = meta.conversationId ?? meta.conversation_id
-    return value ? String(value) : null
+  const loadNotifications = async () => {
+    if (!token) return
+    const response = await api.notifications(token)
+    setNotifications(response.notifications)
   }
 
   useEffect(() => {
-    if (!token) return
-    api
-      .notifications(token)
-      .then((r) => setNotifications(r.notifications))
-      .catch((error) => {
-        console.error('Không thể tải thông báo', error)
-      })
-      .finally(() => setIsLoading(false))
+    loadNotifications().catch(console.error)
   }, [token])
 
   useEffect(() => {
     if (!token || !user?.id) return
     const socket = connectSocket(token, user.id)
-    const handleNotification = () => {
-      api.notifications(token).then((response) => setNotifications(response.notifications)).catch(console.error)
+    const onNotification = (payload: NotificationItem) => {
+      setNotifications((prev) => [payload, ...prev.filter((item) => item.id !== payload.id)])
+      if (soundOn) {
+        try {
+          const audio = new Audio('/notification.mp3')
+          audio.volume = 0.35
+          void audio.play()
+        } catch {
+          // Browser may block autoplay.
+        }
+      }
+      document.title = `(${notifications.filter((item) => !item.is_read).length + 1}) ZChat`
     }
-    socket.on('notification:new', handleNotification)
+    socket.on('notification:new', onNotification)
     return () => {
-      socket.off('notification:new', handleNotification)
+      socket.off('notification:new', onNotification)
     }
-  }, [token, user?.id])
+  }, [notifications, soundOn, token, user?.id])
 
-  const unreadCount = useMemo(() => notifications.filter((item) => !item.is_read).length, [notifications])
+  const counts = useMemo(() => {
+    const base: Record<Category, number> = { all: notifications.length, messages: 0, calls: 0, social: 0, system: 0 }
+    notifications.forEach((item) => {
+      base[getCategory(item.type)] += 1
+    })
+    return base
+  }, [notifications])
 
   const filteredNotifications = useMemo(() => {
-    if (activeFilter === 'all') return notifications
-    if (activeFilter === 'messages') {
-      return notifications.filter((item) => normalizeType(item.type) === 'message')
-    }
-    return notifications.filter((item) => normalizeType(item.type) === 'social')
-  }, [activeFilter, notifications])
+    const q = query.trim().toLowerCase()
+    return notifications
+      .filter((item) => activeCategory === 'all' || getCategory(item.type) === activeCategory)
+      .filter((item) => isInDateFilter(item, readFilter))
+      .filter((item) => !q || `${item.title} ${item.body || ''}`.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const value = new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return sortMode === 'newest' ? value : -value
+      })
+  }, [activeCategory, notifications, query, readFilter, sortMode])
 
-  const handleMarkAllAsRead = async () => {
-    if (!token) return
-    try {
-      await api.readAllNotifications(token)
-      setNotifications((prev) => prev.map((item) => ({ ...item, is_read: 1 })))
-    } catch (error) {
-      console.error('Không thể đánh dấu tất cả đã đọc', error)
-    }
-  }
-
-  const handleMarkOneAsRead = async (id: number | string) => {
-    if (!token) return
-    const target = notifications.find((item) => item.id === id)
-    if (!target || target.is_read) return
-
-    try {
-      await api.readNotification(token, id)
-      setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, is_read: 1 } : item)))
-    } catch (error) {
-      console.error('Không thể đánh dấu đã đọc', error)
-    }
-  }
-
-  const handleAcceptInvite = async (item: NotificationItem) => {
-    if (!token) return
+  const openNotification = async (item: NotificationItem) => {
     const meta = parseMeta(item)
-    const requesterId = Number(meta?.requesterId ?? meta?.requester_id ?? 0)
-    const friendshipId = Number(meta?.friendshipId ?? meta?.friendship_id ?? 0)
-    const identifier = requesterId || friendshipId
-    if (!identifier) return
+    const conversationId = meta.conversationId ?? meta.conversation_id
+    const postId = meta.postId ?? meta.post_id
+    if (!item.is_read && token) {
+      await api.readNotification(token, item.id).catch(() => undefined)
+      setNotifications((prev) => prev.map((notif) => notif.id === item.id ? { ...notif, is_read: 1 } : notif))
+    }
+    if (conversationId) navigate(`/messages?conversation=${encodeURIComponent(String(conversationId))}`)
+    else if (postId) navigate(`/posts/${postId}`)
+  }
 
-    setBusyActionId(item.id)
+  const markReadState = async (item: NotificationItem, read: boolean) => {
+    if (!token) return
+    setBusyId(item.id)
     try {
-      await api.acceptFriend(token, identifier)
-      await api.readNotification(token, item.id)
-      setNotifications((prev) =>
-        prev.map((notif) =>
-          notif.id === item.id
-            ? {
-                ...notif,
-                is_read: 1,
-                title: 'Đã chấp nhận lời mời kết bạn',
-                body: 'Bạn và người này đã trở thành bạn bè.',
-              }
-            : notif
-        )
-      )
-    } catch (error) {
-      console.error('Không thể chấp nhận lời mời từ thông báo', error)
+      if (read) await api.readNotification(token, item.id)
+      else await api.unreadNotification(token, item.id)
+      setNotifications((prev) => prev.map((notif) => notif.id === item.id ? { ...notif, is_read: read ? 1 : 0 } : notif))
     } finally {
-      setBusyActionId(null)
+      setBusyId(null)
     }
   }
 
-  const handleDeleteNotification = async (id: number | string) => {
+  const deleteNotification = async (item: NotificationItem) => {
     if (!token) return
-    setBusyActionId(id)
+    setBusyId(item.id)
     try {
-      await api.deleteNotification(token, id)
-      setNotifications((prev) => prev.filter((notif) => notif.id !== id))
-    } catch (error) {
-      console.error('Không thể xóa thông báo', error)
-    } finally {
-      setBusyActionId(null)
-    }
-  }
-
-  const handleDeleteInvite = async (item: NotificationItem) => {
-    if (!token) return
-    const meta = parseMeta(item)
-    const requesterId = Number(meta?.requesterId ?? meta?.requester_id ?? 0)
-    if (!requesterId) return
-
-    setBusyActionId(item.id)
-    try {
-      await api.deleteFriend(token, requesterId)
-      await api.readNotification(token, item.id)
+      await api.deleteNotification(token, item.id)
       setNotifications((prev) => prev.filter((notif) => notif.id !== item.id))
-    } catch (error) {
-      console.error('Không thể xóa lời mời từ thông báo', error)
     } finally {
-      setBusyActionId(null)
+      setBusyId(null)
     }
   }
 
-  const handleOpenConversation = (item: NotificationItem) => {
-    const conversationId = getConversationIdFromMeta(item)
-    if (!conversationId) return
-    navigate(`/messages?conversation=${encodeURIComponent(conversationId)}`)
-  }
+  const unreadCount = notifications.filter((item) => !item.is_read).length
 
   return (
-    <div className={styles.page}>
-      <div className={styles.hero}>
+    <main className={styles.page}>
+      <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Trung tâm cập nhật</p>
           <h1>Thông báo</h1>
-          <p className={styles.heroSub}>Theo dõi mọi tương tác mới nhất từ bạn bè và cộng đồng của bạn.</p>
+          <p>Theo dõi tin nhắn, cuộc gọi, tương tác xã hội và cảnh báo hệ thống trong một nơi.</p>
         </div>
-        <button type="button" className={styles.markAllBtn} onClick={handleMarkAllAsRead}>
-          <CheckCheck size={16} />
-          Đánh dấu tất cả đã đọc
-        </button>
-      </div>
+        <div className={styles.headerActions}>
+          <button type="button" onClick={async () => {
+            if (!token) return
+            await api.readAllNotifications(token)
+            setNotifications((prev) => prev.map((item) => ({ ...item, is_read: 1 })))
+          }}>
+            <CheckCheck size={16} /> Đã đọc tất cả
+          </button>
+          <button type="button" onClick={() => setSettingsOpen((value) => !value)} aria-expanded={settingsOpen}>
+            <Settings size={16} /> Cài đặt
+          </button>
+        </div>
+      </header>
 
-      <div className={styles.filterRow}>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${activeFilter === 'all' ? styles.filterBtnActive : ''}`}
-          onClick={() => setActiveFilter('all')}
-        >
-          Tất cả
-        </button>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${activeFilter === 'social' ? styles.filterBtnActive : ''}`}
-          onClick={() => setActiveFilter('social')}
-        >
-          Mạng xã hội
-        </button>
-        <button
-          type="button"
-          className={`${styles.filterBtn} ${activeFilter === 'messages' ? styles.filterBtnActive : ''}`}
-          onClick={() => setActiveFilter('messages')}
-        >
-          Tin nhắn
-        </button>
-      </div>
+      <section className={styles.toolbar}>
+        <label className={styles.searchBox}>
+          <Search size={16} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm thông báo" />
+        </label>
+        <select value={readFilter} onChange={(event) => setReadFilter(event.target.value as ReadFilter)}>
+          <option value="all">Tất cả trạng thái</option>
+          <option value="unread">Chưa đọc</option>
+          <option value="read">Đã đọc</option>
+          <option value="today">Hôm nay</option>
+          <option value="yesterday">Hôm qua</option>
+          <option value="week">Tuần này</option>
+          <option value="month">Tháng này</option>
+        </select>
+        <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+          <option value="newest">Mới nhất</option>
+          <option value="oldest">Cũ nhất</option>
+        </select>
+      </section>
 
-      <div className={styles.layout}>
-        <section className={styles.mainPanel}>
-          <div className={styles.panelHead}>
-            <h2>Danh sách thông báo</h2>
-            <span>{filteredNotifications.length} mục</span>
-          </div>
+      <nav className={styles.tabs} aria-label="Lọc thông báo">
+        {(Object.keys(categoryMeta) as Category[]).map((category) => (
+          <button
+            key={category}
+            type="button"
+            className={activeCategory === category ? styles.tabActive : ''}
+            onClick={() => setActiveCategory(category)}
+            style={{ '--tab-color': categoryMeta[category].color } as CSSProperties}
+          >
+            {categoryMeta[category].label} <span>{counts[category]}</span>
+          </button>
+        ))}
+      </nav>
 
-          <div className={styles.list}>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className={styles.item} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.75rem', alignItems: 'center' }}>
-                  <Skeleton style={{ width: 40, height: 40, borderRadius: '50%' }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <Skeleton style={{ height: 14, width: '70%' }} />
-                    <Skeleton style={{ height: 12, width: '40%' }} />
-                  </div>
-                </div>
-              ))
-            ) : filteredNotifications.map((item) => (
-              <article
-                key={item.id}
-                className={`${styles.item} ${item.is_read ? '' : styles.itemUnread}`}
-                onClick={() => handleMarkOneAsRead(item.id)}
-              >
-                <div className={styles.itemIconWrap}>{iconForType(item.type)}</div>
-                <div className={styles.itemBody}>
-                  <p>
-                    <strong>{item.title}</strong>
-                    {item.body ? ` ${item.body}` : ''}
-                  </p>
-                  <small>{formatTime(item.created_at)}</small>
-                  {item.type === 'friend-request' && !item.is_read ? (
-                    <div className={styles.itemActions}>
-                      <button
-                        type="button"
-                        className={styles.acceptBtn}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void handleAcceptInvite(item)
-                        }}
-                        disabled={busyActionId === item.id}
-                      >
-                        Chấp nhận
-                      </button>
-                      {getConversationIdFromMeta(item) ? (
-                        <button
-                          type="button"
-                          className={styles.deleteBtn}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            handleOpenConversation(item)
-                          }}
-                        >
-                          Mở chat
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className={styles.deleteBtn}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          void handleDeleteInvite(item)
-                        }}
-                        disabled={busyActionId === item.id}
-                      >
-                        Xóa
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className={styles.deleteNotifBtn}
-                  title="Xóa thông báo"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void handleDeleteNotification(item.id)
-                  }}
-                  disabled={busyActionId === item.id}
-                >
-                  <Trash2 size={14} />
-                </button>
-                {!item.is_read ? <span className={styles.dot} /> : null}
-              </article>
-            ))}
-          </div>
-
-          {filteredNotifications.length === 0 ? (
-            <p className={styles.empty}>Không có thông báo nào trong mục này.</p>
-          ) : null}
+      {settingsOpen ? (
+        <section className={styles.settingsPanel}>
+          {['Tin nhắn', 'Cuộc gọi', 'Lời mời kết bạn', 'Bình luận', 'Lượt thích', 'Desktop', 'Email'].map((label) => (
+            <label key={label}>
+              <span>{label}</span>
+              <input type="checkbox" defaultChecked />
+            </label>
+          ))}
+          <button type="button" onClick={() => setSoundOn((value) => !value)}>
+            {soundOn ? <Volume2 size={16} /> : <VolumeX size={16} />} Âm thanh {soundOn ? 'bật' : 'tắt'}
+          </button>
         </section>
+      ) : null}
 
-        <aside className={styles.sidePanel}>
-          <div className={styles.statCard}>
-            <h3>Chưa đọc</h3>
-            <p className={styles.statValue}>{unreadCount}</p>
-            <span>Thông báo cần bạn xem ngay</span>
-          </div>
+      <section className={styles.summary}>
+        <strong>{unreadCount}</strong>
+        <span>thông báo chưa đọc</span>
+      </section>
 
-          <div className={styles.statCard}>
-            <h3>Gợi ý</h3>
-            <ul>
-              <li>Trả lời bình luận mới trên bài viết gần đây.</li>
-              <li>Kiểm tra lời mời tham gia nhóm chat.</li>
-              <li>Mở mục Bạn bè để xem lời mời kết bạn.</li>
-            </ul>
-          </div>
-        </aside>
-      </div>
-    </div>
+      <section className={styles.list} aria-live="polite">
+        {filteredNotifications.map((item) => {
+          const category = getCategory(item.type)
+          const Icon = iconForNotification(item)
+          const meta = parseMeta(item)
+          const avatarText = String(meta.userName || meta.requesterName || item.title || 'Z').slice(0, 1).toUpperCase()
+          return (
+            <article key={item.id} className={`${styles.card} ${!item.is_read ? styles.unread : ''}`}>
+              <button type="button" className={styles.cardMain} onClick={() => void openNotification(item)}>
+                <span className={styles.avatar}>{avatarText}</span>
+                <span className={styles.iconBadge} style={{ background: categoryMeta[category].color }}>
+                  <Icon size={16} />
+                </span>
+                <span className={styles.content}>
+                  <strong>{item.title}</strong>
+                  <span>{item.body || 'Thông báo mới từ ZChat'}</span>
+                  <small>{timeAgo(item.created_at)}</small>
+                </span>
+                {!item.is_read ? <i className={styles.unreadDot} /> : null}
+              </button>
+              <div className={styles.actions}>
+                <button type="button" disabled={busyId === item.id} onClick={() => void openNotification(item)}>
+                  Mở
+                </button>
+                <button type="button" disabled={busyId === item.id} onClick={() => void markReadState(item, !item.is_read)}>
+                  <Check size={14} /> {item.is_read ? 'Chưa đọc' : 'Đã đọc'}
+                </button>
+                <button type="button" disabled={busyId === item.id} onClick={() => void deleteNotification(item)}>
+                  <Trash2 size={14} /> Xóa
+                </button>
+              </div>
+            </article>
+          )
+        })}
+        {filteredNotifications.length === 0 ? <p className={styles.empty}>Không có thông báo phù hợp.</p> : null}
+      </section>
+    </main>
   )
 }
