@@ -583,6 +583,10 @@ export default function MessagesPage() {
   const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
   const acceptPending = useCallStore((state) => state.acceptPending)
   const setAcceptPending = useCallStore((state) => state.setAcceptPending)
+  const clearIncomingCall = useCallback(() => {
+    setGlobalIncomingCall(null)
+    setIncomingCall(null)
+  }, [setGlobalIncomingCall])
 
   // Stable Zustand setters (don't change between renders)
   const {
@@ -1236,8 +1240,7 @@ export default function MessagesPage() {
       setCallState('ended')
       stopRingtone()
       setCallStatus(payload?.reason === 'disconnected' ? 'Đối phương đã ngắt kết nối' : 'Cuộc gọi đã kết thúc')
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
+      clearIncomingCall()
       closeCallResources()
       setActiveCall(null)
       setCallSeconds(0)
@@ -1388,7 +1391,7 @@ export default function MessagesPage() {
       remoteTypingTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
       remoteTypingTimeoutsRef.current.clear()
     }
-  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, updateUserAvatar, upsertMessage, user?.id])
+  }, [activeCall, clearIncomingCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, updateUserAvatar, upsertMessage, user?.id])
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
@@ -1663,7 +1666,7 @@ export default function MessagesPage() {
       addLocalCallHistory(activeCall.mode === 'group' ? 'Cuộc gọi nhóm đã bị hủy' : 'Không có phản hồi')
       setGlobalCallErrorMessage(activeCall.mode === 'group' ? 'Không ai tham gia cuộc gọi' : 'Không có phản hồi')
       setCallStatus('Không có phản hồi')
-      setIncomingCall(null)
+      clearIncomingCall()
       setRingingStartedAt(null)
       scheduleClearCall()
     }
@@ -1675,7 +1678,7 @@ export default function MessagesPage() {
 
     const timer = window.setTimeout(autoEnd, timeoutMs)
     return () => window.clearTimeout(timer)
-  }, [activeCall, addLocalCallHistory, callAnswered, callTargets, logCall, ringingStartedAt, scheduleClearCall, selectedConversationId, setGlobalCallErrorMessage])
+  }, [activeCall, addLocalCallHistory, callAnswered, callTargets, clearIncomingCall, logCall, ringingStartedAt, scheduleClearCall, selectedConversationId, setGlobalCallErrorMessage])
 
   const directPeer = useMemo(() => {
     if (!selectedConversation || !user?.id) return null
@@ -3200,12 +3203,30 @@ export default function MessagesPage() {
   const handleAcceptIncomingCall = async (callData?: IncomingCallState, audioOnly = false) => {
     const socket = getSocket()
     const call = callData || incomingCall
-    if (!socket || !call) return
+    if (!socket || !call) {
+      clearIncomingCall()
+      stopRingtone()
+      setCallState('failed')
+      setGlobalCallErrorMessage('Không thể kết nối cuộc gọi')
+      setCallStatus('Cuộc gọi thất bại')
+      return
+    }
 
     const activeConversationId = call.conversationId || selectedConversationId
-    if (!activeConversationId) return
+    if (!activeConversationId) {
+      clearIncomingCall()
+      stopRingtone()
+      setCallState('failed')
+      setGlobalCallErrorMessage('Không tìm thấy cuộc trò chuyện cho cuộc gọi')
+      setCallStatus('Cuộc gọi thất bại')
+      return
+    }
     const answeredAt = Date.now()
     const effectiveType: 'voice' | 'video' = audioOnly ? 'voice' : call.callType
+    clearIncomingCall()
+    stopRingtone()
+    setCallState('connecting')
+    setCallStatus('Đang kết nối')
 
     // Liên thông: cuộc gọi đến từ mobile (Jitsi) → mở meet.jit.si cùng phòng, báo lại bằng useJitsi.
     if (call.useJitsi && call.roomId) {
@@ -3216,18 +3237,12 @@ export default function MessagesPage() {
         useJitsi: true,
         answeredAt,
       })
-      stopRingtone()
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
       setCallState('idle')
       setCallStatus(null)
       window.open(resolveJitsiUrl(call.roomId, user?.fullName || 'Bạn'), '_blank', 'noopener')
       toast({ title: 'Đang mở cuộc gọi video qua Jitsi...' })
       return
     }
-
-    // Ensure local state is in sync
-    if (!incomingCall) setIncomingCall(call)
 
     // Open the right conversation if not already
     if (call.conversationId && selectedConversationId !== call.conversationId) {
@@ -3262,8 +3277,6 @@ export default function MessagesPage() {
       setCallState('failed')
       setGlobalCallErrorMessage('Không thể truy cập micro/camera')
       setCallStatus('Cuộc gọi thất bại')
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
       return
     }
 
@@ -3317,15 +3330,13 @@ export default function MessagesPage() {
       participantCount: newJoinedIds.length,
       participantIds: newJoinedIds,
     })
-    setIncomingCall(null)
-    setGlobalIncomingCall(null)
+    clearIncomingCall()
   }
 
   const handleDeclineIncomingCall = () => {
     const socket = getSocket()
     if (!socket || !incomingCall) {
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
+      clearIncomingCall()
       return
     }
 
@@ -3342,8 +3353,7 @@ export default function MessagesPage() {
       })
     }
 
-    setIncomingCall(null)
-    setGlobalIncomingCall(null)
+    clearIncomingCall()
     stopRingtone()
     setCallState('idle')
     setCallStatus(null)
@@ -3388,8 +3398,7 @@ export default function MessagesPage() {
     addLocalCallHistory(historyText)
     setCallState(callAnswered ? 'ended' : 'cancelled')
     setCallStatus(callAnswered ? 'Cuộc gọi đã kết thúc' : 'Đã hủy cuộc gọi')
-    setIncomingCall(null)
-    setGlobalIncomingCall(null)
+    clearIncomingCall()
     setGlobalCallErrorMessage(null)
     setActiveCall(null)
     setCallSeconds(0)
