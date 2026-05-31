@@ -12,7 +12,7 @@
 import { API_BASE } from '@/config/api'
 import { useAuthStore } from '@/contexts/auth-store'
 
-const resolveApiAssetUrl = (value: string | null | undefined) => {
+export const resolveApiAssetUrl = (value: string | null | undefined) => {
   if (!value) return null
   if (/^https?:\/\//i.test(value) || value.startsWith('blob:') || value.startsWith('data:')) {
     return value
@@ -40,6 +40,11 @@ const resolveApiAssetUrl = (value: string | null | undefined) => {
 
   return value
 }
+
+const normalizeUser = <T extends { avatarUrl?: string | null }>(user: T): T => ({
+  ...user,
+  avatarUrl: resolveApiAssetUrl(user.avatarUrl),
+})
 
 const normalizeConversation = (conversation: Conversation): Conversation => ({
   ...conversation,
@@ -254,7 +259,7 @@ const refreshAccessToken = async () => {
       auth.setAuth({
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
-        user: data.user,
+        user: normalizeUser(data.user),
       })
       return data.accessToken
     } catch {
@@ -272,7 +277,7 @@ export const api = {
     request<AuthPayload>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ emailOrPhone, password }),
-    }),
+    }).then((p) => ({ ...p, user: normalizeUser(p.user) })),
 
   register: (payload: {
     emailOrPhone: string
@@ -293,7 +298,7 @@ export const api = {
     request<AuthPayload>('/auth/verify-registration', {
       method: 'POST',
       body: JSON.stringify(payload),
-    }),
+    }).then((p) => ({ ...p, user: normalizeUser(p.user) })),
 
   resendVerificationCode: (emailOrPhone: string) =>
     request<{
@@ -551,7 +556,8 @@ export const api = {
     ),
 
   listFriends: (token: string) =>
-    request<{ friends: FriendConnection[] }>('/social/friends', { method: 'GET' }, token),
+    request<{ friends: FriendConnection[] }>('/social/friends', { method: 'GET' }, token)
+      .then((r) => ({ friends: r.friends.map((f) => normalizeUser(f)) })),
 
   requestFriend: (token: string, userId: number) =>
     request<{ message: string }>('/social/friends/request', {
@@ -855,7 +861,8 @@ export const api = {
     request<{ message: string }>(`/social/notifications/${id}`, { method: 'DELETE' }, token),
 
   getUserProfile: (token: string, userId: number | string) =>
-    request<{ user: User | null }>(`/social/users/${userId}`, { method: 'GET' }, token),
+    request<{ user: User | null }>(`/social/users/${userId}`, { method: 'GET' }, token)
+      .then((r) => ({ user: r.user ? normalizeUser(r.user) : null })),
 
   updateUserProfile: (
     token: string,

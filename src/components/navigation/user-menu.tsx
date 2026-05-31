@@ -56,14 +56,22 @@ export default function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className={styles.avatarCircle}>{initials}</span>
+        <span className={styles.avatarCircle}>
+          {user.avatarUrl
+            ? <img src={user.avatarUrl} alt={initials} className={styles.avatarImg} />
+            : initials}
+        </span>
         <span className={styles.userName}>{user.fullName}</span>
       </button>
 
       {open ? (
         <div className={styles.menuPanel} role="menu">
           <Link to={profileHref} className={styles.menuIdentity} onClick={() => setOpen(false)}>
-            <span className={styles.avatarCircle}>{initials}</span>
+            <span className={styles.avatarCircle}>
+              {user.avatarUrl
+                ? <img src={user.avatarUrl} alt={initials} className={styles.avatarImg} />
+                : initials}
+            </span>
             <span>
               <b>{user.fullName}</b>
               <small>{user.role === 'admin' ? 'Khu quản trị' : 'Xem hồ sơ'}</small>

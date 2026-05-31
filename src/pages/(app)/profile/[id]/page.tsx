@@ -12,6 +12,9 @@ import type { FeedPost, FriendConnection } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
 
+const isVideoMediaUrl = (url: string) =>
+  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
+
 type ProfileUser = {
   userId: number
   displayName: string
@@ -400,13 +403,22 @@ export default function ProfilePage() {
                     </div>
                     <p className={styles.postText}>{post.content}</p>
                     {post.mediaUrl ? (
-                      <img
-                        src={post.mediaUrl}
-                        alt="Post media"
-                        className={styles.postMedia}
-                        loading="lazy"
-                        onError={(event) => { event.currentTarget.style.display = 'none' }}
-                      />
+                      isVideoMediaUrl(post.mediaUrl) ? (
+                        <video
+                          src={post.mediaUrl}
+                          className={styles.postMedia}
+                          controls
+                          preload="metadata"
+                        />
+                      ) : (
+                        <img
+                          src={post.mediaUrl}
+                          alt="Post media"
+                          className={styles.postMedia}
+                          loading="lazy"
+                          onError={(event) => { event.currentTarget.style.display = 'none' }}
+                        />
+                      )
                     ) : null}
                     {post.sharedPost ? (
                       <Link to={post.sharedPost.unavailable ? `/profile/${post.authorId}` : `/posts/${post.sharedPost.id}`} className={styles.sharedPostBox}>
@@ -419,7 +431,13 @@ export default function ProfilePage() {
                               <b>{post.sharedPost.authorName || 'Người dùng ZChat'}</b>
                             </div>
                             {post.sharedPost.content ? <p>{post.sharedPost.content}</p> : null}
-                            {post.sharedPost.mediaUrl ? <img src={post.sharedPost.mediaUrl} alt="Shared post media" loading="lazy" /> : null}
+                            {post.sharedPost.mediaUrl ? (
+                              isVideoMediaUrl(post.sharedPost.mediaUrl) ? (
+                                <video src={post.sharedPost.mediaUrl} controls preload="metadata" style={{ width: '100%', borderRadius: 8 }} />
+                              ) : (
+                                <img src={post.sharedPost.mediaUrl} alt="Shared post media" loading="lazy" />
+                              )
+                            ) : null}
                             <small>
                               {Number(post.sharedPost.reactionCount || 0)} cảm xúc · {Number(post.sharedPost.commentCount || 0)} bình luận
                             </small>

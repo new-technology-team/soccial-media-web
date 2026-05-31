@@ -4,8 +4,9 @@ import { ChangeEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Camera, CheckCircle2, Eye, Lock, ShieldCheck, UserRound, X } from 'lucide-react'
 
-import { api } from '@/api/client'
+import { api, resolveApiAssetUrl } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
+import { useChatStore } from '@/contexts/chat-store'
 import { toast } from '@/hooks/use-toast'
 import styles from './page.module.css'
 
@@ -128,9 +129,7 @@ export default function EditProfilePage() {
       }
 
       const nextAvatarUrl = uploaded.mediaUrl || uploaded.fileUrl || uploaded.avatarUrl
-      const resolvedAvatarUrl = String(nextAvatarUrl).startsWith('/uploads/')
-        ? `/backend${nextAvatarUrl}`
-        : nextAvatarUrl
+      const resolvedAvatarUrl = resolveApiAssetUrl(String(nextAvatarUrl)) ?? String(nextAvatarUrl)
       setAvatarUrl(resolvedAvatarUrl)
       setAvatarDraft('')
       setAvatarModalOpen(false)
@@ -143,6 +142,9 @@ export default function EditProfilePage() {
             avatarUrl: resolvedAvatarUrl,
           },
         })
+      }
+      if (me?.id) {
+        useChatStore.getState().updateUserAvatar(Number(me.id), resolvedAvatarUrl)
       }
       setMessage('Đã tải ảnh đại diện mới.')
       toast({ title: 'Đã cập nhật ảnh đại diện', description: 'Avatar đã đồng bộ tới navbar, chat và bình luận.' })

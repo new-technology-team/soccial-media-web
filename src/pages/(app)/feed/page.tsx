@@ -58,23 +58,40 @@ const parseFeedDate = (value: string) => {
 
 const VN_LOCATIONS = [
   'Hà Nội',
-  'Hà Nam',
-  'Hà Giang',
-  'Hà Tĩnh',
-  'Hải Phòng',
-  'Hải Dương',
-  'Đà Nẵng',
-  'Huế',
-  'Nghệ An',
-  'Thanh Hóa',
+  'Cao Bằng',
+  'Tuyên Quang',
+  'Lào Cai',
+  'Thái Nguyên',
+  'Lai Châu',
+  'Điện Biên',
+  'Sơn La',
+  'Lạng Sơn',
   'Quảng Ninh',
-  'Nha Trang',
-  'Đà Lạt',
+  'Bắc Ninh',
+  'Phú Thọ',
+  'Hải Phòng',
+  'Hưng Yên',
+  'Ninh Bình',
+  'Thanh Hóa',
+  'Nghệ An',
+  'Hà Tĩnh',
+  'Quảng Trị',
+  'Huế',
+  'Đà Nẵng',
+  'Quảng Ngãi',
+  'Gia Lai',
+  'Khánh Hòa',
+  'Đắk Lắk',
+  'Lâm Đồng',
+  'Đồng Nai',
   'TP. Hồ Chí Minh',
-  'Cần Thơ',
+  'Tây Ninh',
+  'Đồng Tháp',
+  'Vĩnh Long',
   'An Giang',
-  'Kiên Giang',
-]
+  'Cần Thơ',
+  'Cà Mau',
+];
 
 const POST_REACTIONS = [
   { type: 'like', emoji: '👍', label: 'Thích' },
@@ -122,11 +139,14 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
   }
   return items.map((item) => {
     if (String(item.id) === parentId) {
+      // Tìm thấy parent → thêm trực tiếp vào replies, không đệ quy (tránh tìm lại parentId trong replies của chính nó)
+      const alreadyExists = (item.replies || []).some((r) => String(r.id) === commentId)
       return {
         ...item,
-        replies: appendCommentOnce(item.replies || [], comment),
+        replies: alreadyExists ? item.replies || [] : [...(item.replies || []), comment],
       }
     }
+    // Chưa tìm thấy → tìm tiếp trong replies của item này
     return {
       ...item,
       replies: item.replies ? appendCommentOnce(item.replies, comment) : [],
@@ -134,7 +154,7 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
   })
 }
 
-const removeCommentById = (items: FeedComment[], commentId: number | string) =>
+const removeCommentById = (items: FeedComment[], commentId: number | string): FeedComment[] =>
   items
     .filter((item) => String(item.id) !== String(commentId))
     .map((item) => ({ ...item, replies: item.replies ? removeCommentById(item.replies, commentId) : [] }))
@@ -261,9 +281,8 @@ export default function FeedPage() {
     setIsModalOpen(false)
   }
 
-  const handleAuthExpired = useCallback((error: unknown, fallbackMessage = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.') => {
+  const handleAuthExpired = useCallback((error: unknown, _fallbackMessage = 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.') => {
     if (!isAuthExpiredError(error)) return false
-    setErrorText(fallbackMessage)
     clearAuth()
     navigate('/auth/login?reason=session-expired')
     return true
@@ -681,10 +700,10 @@ export default function FeedPage() {
       prev.map((item) =>
         String(item.id) === String(post.id)
           ? {
-              ...item,
-              viewerReaction: nextReaction,
-              reactionCount: Math.max(0, Number(item.reactionCount || 0) + reactionDelta),
-            }
+            ...item,
+            viewerReaction: nextReaction,
+            reactionCount: Math.max(0, Number(item.reactionCount || 0) + reactionDelta),
+          }
           : item
       )
     )
@@ -1234,9 +1253,10 @@ export default function FeedPage() {
     const file = event.target.files?.[0]
     if (!file || !token) return
 
-    const maxBytes = 15 * 1024 * 1024
+    const isVideo = file.type.startsWith('video/')
+    const maxBytes = isVideo ? 100 * 1024 * 1024 : 15 * 1024 * 1024
     if (file.size > maxBytes) {
-      setErrorText('Media quá lớn. Vui lòng chọn tệp nhỏ hơn 15MB.')
+      setErrorText(isVideo ? 'Video quá lớn. Vui lòng chọn tệp nhỏ hơn 100MB.' : 'Ảnh quá lớn. Vui lòng chọn tệp nhỏ hơn 15MB.')
       event.target.value = ''
       return
     }
@@ -1244,7 +1264,7 @@ export default function FeedPage() {
     setUploadingMedia(true)
     setErrorText('')
     try {
-      const uploadFile = await compressImageFile(file)
+      const uploadFile = isVideo ? file : await compressImageFile(file)
       const base64Data = await fileToBase64(uploadFile)
       const uploaded = await api.uploadPostMediaBase64(token, {
         fileName: uploadFile.name,
@@ -1373,9 +1393,9 @@ export default function FeedPage() {
                 Báo cáo
               </button>
               {Number(comment.userId) === Number(me?.id) ||
-              Number(post.authorId) === Number(me?.id) ||
-              me?.role === 'admin' ||
-              me?.role === 'moderator' ? (
+                Number(post.authorId) === Number(me?.id) ||
+                me?.role === 'admin' ||
+                me?.role === 'moderator' ? (
                 <button type="button" onClick={() => void handleDeleteComment(post, comment)} disabled={busyCommentId === comment.id}>
                   Xóa
                 </button>
@@ -1564,259 +1584,274 @@ export default function FeedPage() {
 
               return (
                 <article key={`${post.id}-${post.createdAt}`} className={styles.postCard}>
-                <div className={styles.postHead}>
-                  <div className={styles.authorInfo}>
-                    <div className={styles.avatarBadge}>{(post.authorName[0] || 'U').toUpperCase()}</div>
-                    <div>
-                      <Link to={`/profile/${post.authorId}`} className={styles.authorNameLink}>
-                        <p className={styles.authorName}>{post.authorName}</p>
-                      </Link>
-                      <p className={styles.postMeta}>
-                        <time dateTime={post.createdAt} title={formatExactTime(post.createdAt)}>
-                          {formatTime(post.createdAt)}
-                        </time>{' '}
-                        <Dot size={12} /> {post.visibility === 'public' ? 'Công khai' : 'Riêng tư'}
-                      </p>
+                  <div className={styles.postHead}>
+                    <div className={styles.authorInfo}>
+                      <div className={styles.avatarBadge}>{(post.authorName[0] || 'U').toUpperCase()}</div>
+                      <div>
+                        <Link to={`/profile/${post.authorId}`} className={styles.authorNameLink}>
+                          <p className={styles.authorName}>{post.authorName}</p>
+                        </Link>
+                        <p className={styles.postMeta}>
+                          <time dateTime={post.createdAt} title={formatExactTime(post.createdAt)}>
+                            {formatTime(post.createdAt)}
+                          </time>{' '}
+                          <Dot size={12} /> {post.visibility === 'public' ? 'Công khai' : 'Riêng tư'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className={styles.postHeadActions} data-post-menu-root="true">
+                      <button
+                        type="button"
+                        className={styles.iconBtn}
+                        aria-label="Tùy chọn bài viết"
+                        aria-expanded={activePostMenuId === post.id}
+                        onClick={() => setActivePostMenuId((prev) => (prev === post.id ? null : post.id))}
+                      >
+                        <Ellipsis size={16} />
+                      </button>
+                      {activePostMenuId === post.id ? (
+                        <div className={styles.postMenu} role="menu">
+                          <button type="button" onClick={() => void handleCopyPostId(post.id)}>
+                            Sao chép ID bài viết (#{post.id})
+                          </button>
+                          <button type="button" onClick={() => void handleToggleSave(post.id)}>
+                            {savedPostIds.has(post.id) ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleCopyLink(post.id)
+                              setActivePostMenuId(null)
+                            }}
+                          >
+                            Sao chép liên kết
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleShare(post)
+                              setActivePostMenuId(null)
+                            }}
+                          >
+                            Chia sẻ ngay
+                          </button>
+                          {postIsManageable ? (
+                            <>
+                              <button type="button" onClick={() => handleStartEditPost(post)}>
+                                Chỉnh sửa bài viết
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.postMenuDanger}
+                                onClick={() => void handleDeletePost(post)}
+                              >
+                                Xóa bài viết
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button type="button" onClick={() => handleHidePost(post.id)}>
+                                Ẩn bài viết
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.postMenuDanger}
+                                onClick={() => void handleReportPost(post)}
+                              >
+                                Báo cáo bài viết
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-                  <div className={styles.postHeadActions} data-post-menu-root="true">
-                    <button
-                      type="button"
-                      className={styles.iconBtn}
-                      aria-label="Tùy chọn bài viết"
-                      aria-expanded={activePostMenuId === post.id}
-                      onClick={() => setActivePostMenuId((prev) => (prev === post.id ? null : post.id))}
-                    >
-                      <Ellipsis size={16} />
+
+                  {post.sharedPost ? (
+                    <p className={styles.sharedByLine}>
+                      {post.authorName} đã chia sẻ bài viết
+                    </p>
+                  ) : null}
+
+                  {post.content ? <p className={styles.postContent}>{post.content}</p> : null}
+
+                  {post.mediaUrl ? (
+                    isVideoMediaUrl(post.mediaUrl) ? (
+                      <video
+                        src={post.mediaUrl}
+                        className={styles.postMedia}
+                        controls
+                        preload="metadata"
+                      />
+                    ) : (
+                      <img
+                        src={post.mediaUrl}
+                        alt="Post media"
+                        className={styles.postMedia}
+                        loading="lazy"
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    )
+                  ) : null}
+
+                  {post.sharedPost ? (
+                    <Link to={post.sharedPost.unavailable ? '#' : `/posts/${post.sharedPost.id}`} className={styles.sharedPostEmbed}>
+                      {post.sharedPost.unavailable ? (
+                        <p className={styles.sharedUnavailable}>Bài viết gốc không còn khả dụng</p>
+                      ) : (
+                        <>
+                          <div className={styles.sharedPostAuthor}>
+                            {post.sharedPost.authorAvatar ? (
+                              <img src={post.sharedPost.authorAvatar} alt={post.sharedPost.authorName || 'Tác giả'} />
+                            ) : (
+                              <span>{(post.sharedPost.authorName?.[0] || 'U').toUpperCase()}</span>
+                            )}
+                            <b>{post.sharedPost.authorName || 'Người dùng ZChat'}</b>
+                          </div>
+                          {post.sharedPost.content ? <p>{post.sharedPost.content}</p> : null}
+                          {post.sharedPost.mediaUrl ? (
+                            isVideoMediaUrl(post.sharedPost.mediaUrl) ? (
+                              <video src={post.sharedPost.mediaUrl} controls preload="metadata" style={{ width: '100%', borderRadius: 8, marginTop: 6 }} />
+                            ) : (
+                              <img src={post.sharedPost.mediaUrl} alt="Shared post media" />
+                            )
+                          ) : null}
+                          <small>
+                            {Number(post.sharedPost.reactionCount || 0)} cảm xúc • {Number(post.sharedPost.commentCount || 0)} bình luận
+                          </small>
+                        </>
+                      )}
+                    </Link>
+                  ) : null}
+
+                  <div className={styles.postStats}>
+                    <button type="button" onClick={() => void handleOpenReactionViewers(post)}>
+                      {post.reactionCount} lượt cảm xúc
                     </button>
-                    {activePostMenuId === post.id ? (
-                      <div className={styles.postMenu} role="menu">
-                        <button type="button" onClick={() => void handleCopyPostId(post.id)}>
-                          Sao chép ID bài viết (#{post.id})
-                        </button>
-                        <button type="button" onClick={() => void handleToggleSave(post.id)}>
-                          {savedPostIds.has(post.id) ? 'Bỏ lưu bài viết' : 'Lưu bài viết'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleCopyLink(post.id)
-                            setActivePostMenuId(null)
-                          }}
-                        >
-                          Sao chép liên kết
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleShare(post)
-                            setActivePostMenuId(null)
-                          }}
-                        >
-                          Chia sẻ ngay
-                        </button>
-                        {postIsManageable ? (
+                    <button type="button" onClick={() => handleToggleComments(post.id)} disabled={isGuestView}>
+                      {post.commentCount} bình luận
+                    </button>
+                  </div>
+
+                  <div className={styles.postActions}>
+                    <div className={styles.reactionActionWrap}>
+                      <button
+                        type="button"
+                        className={`${styles.actionBtn} ${post.viewerReaction ? styles.actionBtnActive : ''}`}
+                        onClick={() => setOpenReactionPostId((current) => (current === post.id ? null : post.id))}
+                        disabled={isGuestView}
+                      >
+                        {post.viewerReaction ? (
                           <>
-                            <button type="button" onClick={() => handleStartEditPost(post)}>
-                              Chỉnh sửa bài viết
-                            </button>
-                            <button
-                              type="button"
-                              className={styles.postMenuDanger}
-                              onClick={() => void handleDeletePost(post)}
-                            >
-                              Xóa bài viết
-                            </button>
+                            <span className={styles.reactionActionEmoji}>{getPostReactionMeta(post.viewerReaction).emoji}</span>
+                            {getPostReactionMeta(post.viewerReaction).label}
                           </>
                         ) : (
                           <>
-                            <button type="button" onClick={() => handleHidePost(post.id)}>
-                              Ẩn bài viết
-                            </button>
-                            <button
-                              type="button"
-                              className={styles.postMenuDanger}
-                              onClick={() => void handleReportPost(post)}
-                            >
-                              Báo cáo bài viết
-                            </button>
+                            <Heart size={16} /> Thả cảm xúc
                           </>
                         )}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                {post.sharedPost ? (
-                  <p className={styles.sharedByLine}>
-                    {post.authorName} đã chia sẻ bài viết
-                  </p>
-                ) : null}
-
-                {post.content ? <p className={styles.postContent}>{post.content}</p> : null}
-
-                {post.mediaUrl ? (
-                  <img
-                    src={post.mediaUrl}
-                    alt="Post media"
-                    className={styles.postMedia}
-                    loading="lazy"
-                    onError={(event) => {
-                      event.currentTarget.style.display = 'none'
-                    }}
-                  />
-                ) : null}
-
-                {post.sharedPost ? (
-                  <Link to={post.sharedPost.unavailable ? '#' : `/posts/${post.sharedPost.id}`} className={styles.sharedPostEmbed}>
-                    {post.sharedPost.unavailable ? (
-                      <p className={styles.sharedUnavailable}>Bài viết gốc không còn khả dụng</p>
-                    ) : (
-                      <>
-                        <div className={styles.sharedPostAuthor}>
-                          {post.sharedPost.authorAvatar ? (
-                            <img src={post.sharedPost.authorAvatar} alt={post.sharedPost.authorName || 'Tác giả'} />
-                          ) : (
-                            <span>{(post.sharedPost.authorName?.[0] || 'U').toUpperCase()}</span>
-                          )}
-                          <b>{post.sharedPost.authorName || 'Người dùng ZChat'}</b>
+                      </button>
+                      {openReactionPostId === post.id ? (
+                        <div className={styles.postReactionPicker}>
+                          {POST_REACTIONS.map((reaction) => (
+                            <button
+                              key={reaction.type}
+                              type="button"
+                              className={post.viewerReaction === reaction.type ? styles.postReactionActive : ''}
+                              title={reaction.label}
+                              aria-label={reaction.label}
+                              onClick={() => void handlePostReaction(post, reaction.type)}
+                            >
+                              {reaction.emoji}
+                            </button>
+                          ))}
                         </div>
-                        {post.sharedPost.content ? <p>{post.sharedPost.content}</p> : null}
-                        {post.sharedPost.mediaUrl ? <img src={post.sharedPost.mediaUrl} alt="Shared post media" /> : null}
-                        <small>
-                          {Number(post.sharedPost.reactionCount || 0)} cảm xúc • {Number(post.sharedPost.commentCount || 0)} bình luận
-                        </small>
-                      </>
-                    )}
-                  </Link>
-                ) : null}
-
-                <div className={styles.postStats}>
-                  <button type="button" onClick={() => void handleOpenReactionViewers(post)}>
-                    {post.reactionCount} lượt cảm xúc
-                  </button>
-                  <button type="button" onClick={() => handleToggleComments(post.id)} disabled={isGuestView}>
-                    {post.commentCount} bình luận
-                  </button>
-                </div>
-
-                <div className={styles.postActions}>
-                  <div className={styles.reactionActionWrap}>
+                      ) : null}
+                    </div>
                     <button
                       type="button"
-                      className={`${styles.actionBtn} ${post.viewerReaction ? styles.actionBtnActive : ''}`}
-                      onClick={() => setOpenReactionPostId((current) => (current === post.id ? null : post.id))}
+                      className={styles.actionBtn}
+                      onClick={() => handleToggleComments(post.id)}
                       disabled={isGuestView}
                     >
-                      {post.viewerReaction ? (
-                        <>
-                          <span className={styles.reactionActionEmoji}>{getPostReactionMeta(post.viewerReaction).emoji}</span>
-                          {getPostReactionMeta(post.viewerReaction).label}
-                        </>
-                      ) : (
-                        <>
-                          <Heart size={16} /> Thả cảm xúc
-                        </>
-                      )}
+                      <MessageCircle size={16} /> {expandedComments[post.id] ? 'Ẩn bình luận' : 'Bình luận'}
                     </button>
-                    {openReactionPostId === post.id ? (
-                      <div className={styles.postReactionPicker}>
-                        {POST_REACTIONS.map((reaction) => (
-                          <button
-                            key={reaction.type}
-                            type="button"
-                            className={post.viewerReaction === reaction.type ? styles.postReactionActive : ''}
-                            title={reaction.label}
-                            aria-label={reaction.label}
-                            onClick={() => void handlePostReaction(post, reaction.type)}
-                          >
-                            {reaction.emoji}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={() => handleShare(post)}
+                      disabled={isGuestView}
+                    >
+                      <Share2 size={16} /> Chia sẻ
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className={styles.actionBtn}
-                    onClick={() => handleToggleComments(post.id)}
-                    disabled={isGuestView}
-                  >
-                    <MessageCircle size={16} /> {expandedComments[post.id] ? 'Ẩn bình luận' : 'Bình luận'}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.actionBtn}
-                    onClick={() => handleShare(post)}
-                    disabled={isGuestView}
-                  >
-                    <Share2 size={16} /> Chia sẻ
-                  </button>
-                </div>
 
-                {!isGuestView ? (
-                  <div className={styles.commentBar}>
-                    <input
-                      value={commentInputs[post.id] || ''}
-                      onChange={(event) =>
-                        setCommentInputs((prev) => ({ ...prev, [post.id]: event.target.value }))
-                      }
-                      placeholder={commentImageDrafts[post.id] ? 'Thêm chú thích cho ảnh...' : 'Viết bình luận nhanh...'}
-                    />
-                    <label className={styles.commentImageBtn}>
-                      Ảnh
-                      <input type="file" accept="image/*" onChange={(event) => handleCommentImageSelected(post.id, event)} />
-                    </label>
-                    <button type="button" onClick={() => handleAddComment(post.id)} disabled={isCommenting[post.id]}>
-                      {isCommenting[post.id] ? 'Đang gửi...' : 'Gửi'}
-                    </button>
-                    {commentImageDrafts[post.id] ? (
-                      <button
-                        type="button"
-                        className={styles.commentImagePreviewBtn}
-                        onClick={() => {
-                          const current = commentImageDrafts[post.id]
-                          if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
-                          setCommentImageDrafts((prev) => ({ ...prev, [post.id]: null }))
-                        }}
-                      >
-                        <img src={commentImageDrafts[post.id]?.previewUrl} alt="Comment preview" />
-                        X
+                  {!isGuestView ? (
+                    <div className={styles.commentBar}>
+                      <input
+                        value={commentInputs[post.id] || ''}
+                        onChange={(event) =>
+                          setCommentInputs((prev) => ({ ...prev, [post.id]: event.target.value }))
+                        }
+                        placeholder={commentImageDrafts[post.id] ? 'Thêm chú thích cho ảnh...' : 'Viết bình luận nhanh...'}
+                      />
+                      <label className={styles.commentImageBtn}>
+                        Ảnh
+                        <input type="file" accept="image/*" onChange={(event) => handleCommentImageSelected(post.id, event)} />
+                      </label>
+                      <button type="button" onClick={() => handleAddComment(post.id)} disabled={isCommenting[post.id]}>
+                        {isCommenting[post.id] ? 'Đang gửi...' : 'Gửi'}
                       </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className={styles.guestPostHint}>
-                    Đăng nhập để bình luận và chia sẻ bài viết này.
-                  </div>
-                )}
+                      {commentImageDrafts[post.id] ? (
+                        <button
+                          type="button"
+                          className={styles.commentImagePreviewBtn}
+                          onClick={() => {
+                            const current = commentImageDrafts[post.id]
+                            if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl)
+                            setCommentImageDrafts((prev) => ({ ...prev, [post.id]: null }))
+                          }}
+                        >
+                          <img src={commentImageDrafts[post.id]?.previewUrl} alt="Comment preview" />
+                          X
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className={styles.guestPostHint}>
+                      Đăng nhập để bình luận và chia sẻ bài viết này.
+                    </div>
+                  )}
 
-                {expandedComments[post.id] ? (
-                  <div className={`${styles.commentsList} ${styles.commentsListOpen}`}>
-                    {loadingComments[post.id] ? <p className={styles.commentState}>Đang tải bình luận...</p> : null}
-                    {postComments.map((comment) => renderCommentItem(post, comment))}
-                    {!loadingComments[post.id] && postComments.length === 0 ? (
-                      <p className={styles.commentState}>Chưa có bình luận nào.</p>
-                    ) : null}
-                    {!loadingComments[post.id] && hasMoreComments ? (
-                      <button
-                        type="button"
-                        className={styles.showMoreCommentsBtn}
-                        onClick={() => handleLoadMoreComments(post.id)}
-                        disabled={loadingMoreComments[post.id]}
-                      >
-                        {loadingMoreComments[post.id]
-                          ? 'Đang tải thêm...'
-                          : hiddenCount > 0
-                            ? `Xem thêm ${hiddenCount} cmt`
-                            : 'Xem thêm cmt'}
+                  {expandedComments[post.id] ? (
+                    <div className={`${styles.commentsList} ${styles.commentsListOpen}`}>
+                      {loadingComments[post.id] ? <p className={styles.commentState}>Đang tải bình luận...</p> : null}
+                      {postComments.map((comment) => renderCommentItem(post, comment))}
+                      {!loadingComments[post.id] && postComments.length === 0 ? (
+                        <p className={styles.commentState}>Chưa có bình luận nào.</p>
+                      ) : null}
+                      {!loadingComments[post.id] && hasMoreComments ? (
+                        <button
+                          type="button"
+                          className={styles.showMoreCommentsBtn}
+                          onClick={() => handleLoadMoreComments(post.id)}
+                          disabled={loadingMoreComments[post.id]}
+                        >
+                          {loadingMoreComments[post.id]
+                            ? 'Đang tải thêm...'
+                            : hiddenCount > 0
+                              ? `Xem thêm ${hiddenCount} cmt`
+                              : 'Xem thêm cmt'}
+                        </button>
+                      ) : null}
+                      <button type="button" className={styles.viewDetailBtn} onClick={() => navigate(`/posts/${post.id}`)}>
+                        Xem chi tiết bình luận
                       </button>
-                    ) : null}
-                    <button type="button" className={styles.viewDetailBtn} onClick={() => navigate(`/posts/${post.id}`)}>
-                      Xem chi tiết bình luận
-                    </button>
-                  </div>
-                ) : null}
+                    </div>
+                  ) : null}
                 </article>
               )
             })}

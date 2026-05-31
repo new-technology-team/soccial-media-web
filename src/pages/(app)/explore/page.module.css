@@ -279,6 +279,19 @@
   gap: 0.21rem;
 }
 
+.postStatLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.21rem;
+  color: #5e6a72;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.postStatLink:hover {
+  color: #1a73e8;
+}
+
 .empty {
   margin: 0;
   border: 1px dashed rgba(117, 119, 120, 0.4);

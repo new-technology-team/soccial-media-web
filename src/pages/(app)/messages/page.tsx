@@ -39,7 +39,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import styles from './page.module.css'
-import { ApiError, api } from '@/api/client'
+import { ApiError, api, resolveApiAssetUrl } from '@/api/client'
 import {
   ActiveCallWindow,
   CallHistoryMessage,
@@ -246,6 +246,7 @@ export default function MessagesPage() {
     setMessages,
     appendMessage,
     upsertMessage,
+    updateUserAvatar,
   } = useChatStore()
   const [message, setMessage] = useState('')
   const [callStatus, setCallStatus] = useState<string | null>(null)
@@ -837,13 +838,13 @@ export default function MessagesPage() {
       refreshConversations().catch(() => undefined)
     })
 
-    socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage | null }) => {
+    socket.on('message:updated', (payload: { conversationId: string; message: ChatMessage | null; unpinnedMessageId?: string }) => {
       if (!payload?.message) return
       upsertMessage(String(payload.conversationId), normalizeIncomingMessageForViewer(payload.message, user?.id))
       refreshConversations().catch(() => undefined)
     })
 
-    socket.on('message:deleted', (payload: { conversationId: string; messageId?: string }) => {
+    socket.on('message:deleted', (payload: { conversationId: string; messageId?: string; unpinnedMessageId?: string }) => {
       if (!payload?.messageId) return
       const convId = String(payload.conversationId)
       const msgId = String(payload.messageId)
@@ -869,6 +870,12 @@ export default function MessagesPage() {
 
     socket.on('presence:updated', () => {
       refreshConversations().catch(() => undefined)
+    })
+
+    socket.on('user:avatar-updated', (payload: { userId?: number; avatarUrl?: string }) => {
+      if (!payload?.userId) return
+      const nextAvatar = resolveApiAssetUrl(payload.avatarUrl) ?? payload.avatarUrl ?? null
+      updateUserAvatar(Number(payload.userId), nextAvatar)
     })
 
     socket.on('message:seen', () => {
@@ -1103,6 +1110,7 @@ export default function MessagesPage() {
       socket.off('conversation:nickname')
       socket.off('conversation:members')
       socket.off('presence:updated')
+      socket.off('user:avatar-updated')
       socket.off('notification:new', handleSocketNotification)
       socket.off('call:offer')
       socket.off('call:answer')
@@ -1119,7 +1127,7 @@ export default function MessagesPage() {
       remoteTypingTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
       remoteTypingTimeoutsRef.current.clear()
     }
-  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, upsertMessage, user?.id])
+  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, updateUserAvatar, upsertMessage, user?.id])
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
@@ -1368,6 +1376,7 @@ export default function MessagesPage() {
       name: member.fullName,
       online: Boolean(member.online),
       lastActiveAt: member.lastActiveAt || null,
+      avatarUrl: member.avatarUrl || null,
     }
   }, [selectedConversation, user?.id])
 

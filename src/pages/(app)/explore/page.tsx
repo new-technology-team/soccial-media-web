@@ -10,6 +10,9 @@ import type { FeedPost } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
 
+const isVideoMediaUrl = (url: string) =>
+  /\.(mp4|webm|ogg|mov|m4v|avi|mkv)(\?.*)?$/i.test(url) || url.includes('/video/')
+
 type UserResult = { userId: number; displayName: string; avatarUrl: string | null }
 
 export default function ExplorePage() {
@@ -203,15 +206,15 @@ export default function ExplorePage() {
         <section className={styles.postsCol}>
           <div className={styles.sectionHead}>
             <h2>Bài viết nổi bật</h2>
-            <Link to="/feed">Xem tất cả</Link>
+            <Link to={debouncedQuery ? `/feed?q=${encodeURIComponent(debouncedQuery)}` : '/feed'}>Xem tất cả</Link>
           </div>
 
           {topPosts.map((post, idx) => (
-            <article key={post.id} className={`${styles.postCard} ${idx === 0 ? styles.postFeatured : ''}`}>
+            <article key={post.id} className={`${styles.postCard} ${idx === 0 ? styles.postFeatured : ''}`} onClick={() => navigate(`/posts/${post.id}`)} style={{ cursor: 'pointer' }}>
               <div className={styles.postHead}>
                 <div className={styles.avatar}>{(post.authorName[0] || 'U').toUpperCase()}</div>
                 <div>
-                  <Link to={`/profile/${post.authorId}`}>
+                  <Link to={`/profile/${post.authorId}`} onClick={(e) => e.stopPropagation()}>
                     <strong>{post.authorName}</strong>
                   </Link>
                   <small>{new Date(post.createdAt).toLocaleString('vi-VN')}</small>
@@ -220,21 +223,31 @@ export default function ExplorePage() {
 
               <p className={styles.postContent}>{post.content}</p>
               {post.mediaUrl ? (
-                <img
-                  src={post.mediaUrl}
-                  alt="Post media"
-                  className={styles.postMedia}
-                  loading="lazy"
-                  onError={(event) => {
-                    event.currentTarget.style.display = 'none'
-                  }}
-                />
+                isVideoMediaUrl(post.mediaUrl) ? (
+                  <video
+                    src={post.mediaUrl}
+                    className={styles.postMedia}
+                    controls
+                    preload="metadata"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <img
+                    src={post.mediaUrl}
+                    alt="Post media"
+                    className={styles.postMedia}
+                    loading="lazy"
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none'
+                    }}
+                  />
+                )
               ) : null}
 
               <div className={styles.postStats}>
-                <span><Heart size={14} /> {post.reactionCount}</span>
-                <span><MessageCircle size={14} /> {post.commentCount}</span>
-                <span><Share2 size={14} /> Chia sẻ</span>
+                <Link to={`/posts/${post.id}`} onClick={(e) => e.stopPropagation()} className={styles.postStatLink}><Heart size={14} /> {post.reactionCount}</Link>
+                <Link to={`/posts/${post.id}`} onClick={(e) => e.stopPropagation()} className={styles.postStatLink}><MessageCircle size={14} /> {post.commentCount}</Link>
+                <Link to={`/posts/${post.id}`} onClick={(e) => e.stopPropagation()} className={styles.postStatLink}><Share2 size={14} /> Tương tác</Link>
               </div>
             </article>
           ))}

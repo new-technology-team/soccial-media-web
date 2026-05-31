@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { normalizeFeedComment, normalizeFeedPost } from '@/api/client'
+import { normalizeFeedComment, normalizeFeedPost, resolveApiAssetUrl } from '@/api/client'
 import { connectSocket } from '@/services/socket'
 import type { FeedComment, FeedPost, User } from '@/types'
 
@@ -138,7 +138,7 @@ export function useSocialRealtime({ token, user, setPosts, setCommentLists, setC
     }
 
     const onAvatarUpdated = (payload: { userId?: number | string; avatarUrl?: string }) => {
-      const avatarUrl = payload?.avatarUrl?.startsWith('/uploads/') ? `/backend${payload.avatarUrl}` : payload?.avatarUrl || null
+      const avatarUrl = resolveApiAssetUrl(payload?.avatarUrl) ?? payload?.avatarUrl ?? null
       setPosts((prev) =>
         prev.map((item) => ({
           ...item,

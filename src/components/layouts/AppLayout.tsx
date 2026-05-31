@@ -6,6 +6,7 @@ import { useCallStore } from '@/contexts/call-store'
 import { useChatStore } from '@/contexts/chat-store'
 import { callSession } from '@/services/call-session'
 import { ActiveCallWindow, IncomingCallModal, MinimizedCallPill, OutgoingCallModal } from '@/components/call'
+import { resolveApiAssetUrl } from '@/api/client'
 import { connectSocket, getSocket } from '@/services/socket'
 import { toast } from '@/hooks/use-toast'
 import styles from './app-layout.module.css'
@@ -88,7 +89,7 @@ export default function AppLayout({
 
     const onAvatarUpdated = (payload: { userId?: number; avatarUrl?: string; user?: typeof user }) => {
       if (!payload?.userId) return
-      const nextAvatar = payload.avatarUrl?.startsWith('/uploads/') ? `/backend${payload.avatarUrl}` : payload.avatarUrl
+      const nextAvatar = resolveApiAssetUrl(payload.avatarUrl) ?? payload.avatarUrl ?? null
       updateUserAvatar(Number(payload.userId), nextAvatar || null)
       if (Number(payload.userId) !== Number(user.id) || !refreshToken) return
       setAuth({
