@@ -384,3 +384,95 @@
   font-size: 0.84rem;
   color: #66757e;
 }
+
+.viewerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(15, 23, 42, 0.34);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.viewerDialog {
+  width: min(420px, 100%);
+  max-height: min(520px, calc(100vh - 2rem));
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.viewerHeader {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(171, 173, 174, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.viewerHeader h3 {
+  margin: 0;
+  color: #22313a;
+  font-size: 1rem;
+}
+
+.viewerHeader p {
+  margin: 0.2rem 0 0;
+  color: #66757e;
+  font-size: 0.82rem;
+}
+
+.viewerHeader button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.viewerList {
+  overflow: auto;
+  padding: 0.45rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.viewerItem {
+  border-radius: 10px;
+  padding: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: #22313a;
+  text-decoration: none;
+}
+
+.viewerItem:hover {
+  background: #f4f7fb;
+}
+
+.viewerAvatar {
+  width: 38px !important;
+  height: 38px !important;
+}
+
+.viewerItem strong,
+.viewerItem small {
+  display: block;
+}
+
+.viewerItem small {
+  margin-top: 0.1rem;
+  color: #66757e;
+  font-size: 0.78rem;
+}

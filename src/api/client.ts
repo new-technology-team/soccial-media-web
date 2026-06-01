@@ -582,6 +582,14 @@ export const api = {
       token
     ).then((res) => ({ ...res, comment: normalizeFeedComment(res.comment) })),
 
+  listCommentReactions: (commentId: number | string) =>
+    request<{ reactions: PostReactionViewer[] }>(`/social/comments/${commentId}/reactions`, { method: 'GET' }).then((res) => ({
+      reactions: (res.reactions || []).map((item) => ({
+        ...item,
+        avatarUrl: resolveApiAssetUrl(item.avatarUrl),
+      })),
+    })),
+
   listConversations: (token: string) =>
     request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token).then((data) => ({
       conversations: (data.conversations || []).map(normalizeConversation),

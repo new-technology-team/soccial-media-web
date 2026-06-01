@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Heart } from 'lucide-react'
+import { ArrowLeft, Heart, X } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { api, resolveApiAssetUrl } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import { connectSocket } from '@/services/socket'
 import { normalizeFeedComment } from '@/api/client'
-import type { FeedComment, FeedPost } from '@/types'
+import type { FeedComment, FeedPost, PostReactionViewer } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
 
@@ -66,6 +66,9 @@ export default function PostDetailPage() {
   const [replyingToCommentIds, setReplyingToCommentIds] = useState<Record<string, boolean>>({})
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({})
   const [busyCommentId, setBusyCommentId] = useState<string | null>(null)
+  const [commentReactionViewers, setCommentReactionViewers] = useState<Record<string, PostReactionViewer[]>>({})
+  const [reactionViewerComment, setReactionViewerComment] = useState<FeedComment | null>(null)
+  const [reactionViewerLoading, setReactionViewerLoading] = useState(false)
   const reactionPickerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -132,6 +135,13 @@ export default function PostDetailPage() {
     }
     const onCommentReaction = (payload: { postId?: number | string; commentId?: number | string; actorId?: number | string; reaction?: string | null; reactionCount?: number }) => {
       if (!isThisPost(payload?.postId)) return
+      if (payload?.commentId) {
+        setCommentReactionViewers((prev) => {
+          const next = { ...prev }
+          delete next[String(payload.commentId)]
+          return next
+        })
+      }
       setComments((prev) => {
         const update = (items: FeedComment[]): FeedComment[] =>
           items.map((comment) => {
@@ -261,6 +271,22 @@ export default function PostDetailPage() {
     }
   }
 
+  const handleOpenCommentReactionViewers = async (comment: FeedComment) => {
+    const key = String(comment.id)
+    setReactionViewerComment(comment)
+    if (commentReactionViewers[key]) return
+    setReactionViewerLoading(true)
+    try {
+      const response = await api.listCommentReactions(comment.id)
+      setCommentReactionViewers((prev) => ({ ...prev, [key]: response.reactions }))
+    } catch (error) {
+      console.error('Không thể tải danh sách người thích bình luận', error)
+      setCommentReactionViewers((prev) => ({ ...prev, [key]: [] }))
+    } finally {
+      setReactionViewerLoading(false)
+    }
+  }
+
   const renderComment = (comment: FeedComment, depth = 0): React.ReactNode => {
     const key = String(comment.id)
     const showReplyForm = replyingToCommentIds[key]
@@ -288,6 +314,15 @@ export default function PostDetailPage() {
             >
               {comment.viewerReaction ? 'Đã thích' : 'Thích'}{comment.reactionCount ? ` · ${comment.reactionCount}` : ''}
             </button>
+            {comment.reactionCount ? (
+              <button
+                type="button"
+                className={styles.replyBtn}
+                onClick={() => void handleOpenCommentReactionViewers(comment)}
+              >
+                Xem lượt thích
+              </button>
+            ) : null}
             {token ? (
               <button
                 type="button"
@@ -454,6 +489,40 @@ export default function PostDetailPage() {
           </div>
         </section>
       </div>
+
+      {reactionViewerComment ? (
+        <div className={styles.viewerBackdrop} role="presentation" onClick={() => setReactionViewerComment(null)}>
+          <section className={styles.viewerDialog} role="dialog" aria-label="Người thích bình luận" onClick={(event) => event.stopPropagation()}>
+            <header className={styles.viewerHeader}>
+              <div>
+                <h3>Người thích bình luận</h3>
+                <p>{reactionViewerComment.reactionCount} lượt thích</p>
+              </div>
+              <button type="button" onClick={() => setReactionViewerComment(null)} aria-label="Đóng">
+                <X size={17} />
+              </button>
+            </header>
+            <div className={styles.viewerList}>
+              {reactionViewerLoading ? <p className={styles.emptyText}>Đang tải...</p> : null}
+              {!reactionViewerLoading && (commentReactionViewers[String(reactionViewerComment.id)] || []).map((viewer) => (
+                <Link key={`${viewer.userId}-${viewer.createdAt || viewer.reaction}`} to={`/profile/${viewer.userId}`} className={styles.viewerItem} onClick={() => setReactionViewerComment(null)}>
+                  <Avatar className={styles.viewerAvatar}>
+                    <AvatarImage src={viewer.avatarUrl || ''} />
+                    <AvatarFallback>{viewer.fullName?.[0] || 'U'}</AvatarFallback>
+                  </Avatar>
+                  <span>
+                    <strong>{viewer.fullName}</strong>
+                    <small>{viewer.reaction === 'like' ? 'Đã thích' : viewer.reaction}</small>
+                  </span>
+                </Link>
+              ))}
+              {!reactionViewerLoading && (commentReactionViewers[String(reactionViewerComment.id)] || []).length === 0 ? (
+                <p className={styles.emptyText}>Chưa có lượt thích.</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }
