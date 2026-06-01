@@ -34,7 +34,7 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
   })
 }
 
-const removeCommentById = (items: FeedComment[], commentId: number | string | undefined) =>
+const removeCommentById = (items: FeedComment[], commentId: number | string | undefined): FeedComment[] =>
   items
     .filter((item) => !sameId(item.id, commentId))
     .map((item) => ({ ...item, replies: item.replies ? removeCommentById(item.replies, commentId) : [] }))

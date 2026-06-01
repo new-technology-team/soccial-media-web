@@ -179,8 +179,30 @@ const sanitizeRoomName = (input: string): string =>
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '') || `zchat-${Date.now()}`
 
+// Fallback (cố định theo hội thoại) khi server không cấp phát được phòng — vẫn hội tụ về 1 phòng.
 const buildJitsiRoomId = (conversationId: string): string =>
-  sanitizeRoomName(`zchat-${conversationId}-${Date.now()}`)
+  sanitizeRoomName(`zchat-${conversationId}`)
+
+// Lấy phòng Jitsi của phiên gọi từ server (tái dùng nếu cuộc gọi đang diễn ra). Có timeout fallback.
+const acquireCallRoom = (socket: { emit: (ev: string, data: unknown, ack?: (resp: unknown) => void) => void }, conversationId: string): Promise<string> =>
+  new Promise((resolve) => {
+    let done = false
+    const finish = (roomId: string) => {
+      if (done) return
+      done = true
+      resolve(roomId || buildJitsiRoomId(conversationId))
+    }
+    const timer = window.setTimeout(() => finish(''), 4000)
+    try {
+      socket.emit('call:room:acquire', { conversationId }, (resp: unknown) => {
+        window.clearTimeout(timer)
+        finish(String((resp as { roomId?: string })?.roomId || ''))
+      })
+    } catch {
+      window.clearTimeout(timer)
+      finish('')
+    }
+  })
 
 const resolveJitsiUrl = (roomId: string, displayName?: string): string => {
   const hash = [
@@ -1056,7 +1078,7 @@ export default function MessagesPage() {
         try {
           const pc = peersRef.current.get(fromUserId) || await buildPeerConnection(fromUserId, state.activeCall.type, incomingConversationId)
           if (pc) {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: payload.offer.sdp }))
+            await pc.setRemoteDescription({ type: 'offer', sdp: payload.offer.sdp })
             await flushPendingCandidates(fromUserId)
             const answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
@@ -1153,10 +1175,10 @@ export default function MessagesPage() {
 
       const peer = peersRef.current.get(fromUserId)
       if (peer && payload.answer) {
-        await peer.setRemoteDescription(new RTCSessionDescription({
+        await peer.setRemoteDescription({
           type: (payload.answer.type as RTCSdpType) || 'answer',
           sdp: payload.answer.sdp,
-        }))
+        })
         await flushPendingCandidates(fromUserId)
       }
       const answeredAt = Number(payload?.answeredAt || 0) || Date.now()
@@ -3133,9 +3155,11 @@ export default function MessagesPage() {
     setGlobalCallErrorMessage(null)
     callLoggedRef.current = false
     lastCallTypeRef.current = callType
-    // roomId Jitsi đính kèm mọi offer để peer là mobile (chỉ hiểu Jitsi) có thể vào cùng phòng.
-    const callRoomId = buildJitsiRoomId(selectedConversationId)
+    // roomId Jitsi do server cấp phát (tái dùng phòng phiên đang diễn ra); đính kèm mọi offer để peer
+    // là mobile (chỉ hiểu Jitsi) vào đúng phòng. callSessionId tách riêng để lịch sử từng cuộc còn phân biệt.
+    const callRoomId = await acquireCallRoom(socket, selectedConversationId)
     callRoomIdRef.current = callRoomId
+    const callSessionId = `${selectedConversationId}-${Date.now()}`
 
     try {
       await ensureLocalStream(callType)
@@ -3187,7 +3211,7 @@ export default function MessagesPage() {
       callType,
       mode: callMode,
       conversationId: selectedConversationId,
-      callSessionId: callRoomId,
+      callSessionId,
       startedAt,
       answeredAt: null,
       withName,
@@ -3216,7 +3240,7 @@ export default function MessagesPage() {
       conversationId: selectedConversationId,
       callType,
       mode: callMode,
-      micMuted,
+      micMuted: mutedMic,
       cameraOff: mutedCam || callType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     
@@ -3310,10 +3334,10 @@ export default function MessagesPage() {
     try {
       const pc = (await buildPeerConnection(call.fromUserId, effectiveType, activeConversationId)) || undefined
       if (!pc) return
-      await pc.setRemoteDescription(new RTCSessionDescription({
+      await pc.setRemoteDescription({
         type: (call.offer.type as RTCSdpType) || 'offer',
         sdp: call.offer.sdp,
-      }))
+      })
       await flushPendingCandidates(call.fromUserId)
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
@@ -3372,7 +3396,7 @@ export default function MessagesPage() {
       conversationId: activeConversationId,
       callType: effectiveType,
       mode: isGroup ? 'group' : 'private',
-      micMuted,
+      micMuted: mutedMic,
       cameraOff: mutedCam || effectiveType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     socket.emit(isGroup ? 'group_call_joined' : 'call_joined', {
@@ -3471,7 +3495,7 @@ export default function MessagesPage() {
       conversationId,
       callType,
       mode: 'group',
-      micMuted,
+      micMuted: mutedMic,
       cameraOff: mutedCam || callType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     socket.emit('group_call_joined', { conversationId, callType })

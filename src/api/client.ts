@@ -278,6 +278,7 @@ const refreshAccessToken = async () => {
       const data = await response.json().catch(() => ({})) as Partial<AuthPayload>
       if (!response.ok || !data.accessToken || !data.refreshToken || !data.user) {
         auth.clearAuth()
+        sessionStorage.setItem('auth_cleared_reason', 'session-expired')
         return null
       }
 
@@ -924,7 +925,13 @@ export const api = {
       answeredAt?: string | number | null
       endedAt?: string | number | null
       durationSec?: number
-      participantStatuses?: CallHistoryItem['participantStatuses']
+      participantStatuses?: Array<{
+        userId: number
+        joinedAt?: string | number | null
+        leftAt?: string | number | null
+        durationSec?: number
+        role?: 'caller' | 'receiver' | 'member'
+      }>
       withName?: string
     }
   ) =>
