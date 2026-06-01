@@ -7,6 +7,7 @@ import { ApiError, api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
 import { toast } from '@/hooks/use-toast'
+import { connectSocket } from '@/services/socket'
 import type { FeedPost, User } from '@/types'
 import styles from './moderation-workspace.module.css'
 
@@ -294,6 +295,37 @@ export default function ModeratorReportWorkspace({
   }, [loadReports])
 
   useEffect(() => {
+    if (!token || !user?.id || !canAccess) return
+    const socket = connectSocket(token, user.id)
+
+    const upsertReport = (rawReport?: ReportRecord) => {
+      if (!rawReport) return
+      const normalized = normalizeReport(rawReport)
+      setReports((prev) => {
+        const exists = prev.some((item) => item.reportId === normalized.reportId)
+        if (!exists) return [normalized, ...prev]
+        return prev.map((item) => (item.reportId === normalized.reportId ? { ...item, ...normalized } : item))
+      })
+      setSelectedReport((prev) => (prev && prev.reportId === normalized.reportId ? { ...prev, ...normalized } : prev))
+      setActionReport((prev) => (prev && prev.reportId === normalized.reportId ? { ...prev, ...normalized } : prev))
+    }
+
+    const handleReportEvent = (payload: { report?: ReportRecord }) => upsertReport(payload?.report)
+
+    socket.on('report:created', handleReportEvent)
+    socket.on('report:updated', handleReportEvent)
+    socket.on('report:assigned', handleReportEvent)
+    socket.on('report:queueUpdated', handleReportEvent)
+
+    return () => {
+      socket.off('report:created', handleReportEvent)
+      socket.off('report:updated', handleReportEvent)
+      socket.off('report:assigned', handleReportEvent)
+      socket.off('report:queueUpdated', handleReportEvent)
+    }
+  }, [canAccess, token, user?.id])
+
+  useEffect(() => {
     if (initialReportId) {
       void openDetail(initialReportId)
     }
@@ -507,7 +539,7 @@ export default function ModeratorReportWorkspace({
           <div className={styles.summaryCard}><span>Chờ xử lý</span><strong>{summary.pending}</strong></div>
           <div className={styles.summaryCard}><span>Đang xem xét</span><strong>{summary.reviewing}</strong></div>
           <div className={styles.summaryCard}><span>Đã xử lý</span><strong>{summary.resolved}</strong></div>
-          <div className={styles.summaryCard}><span>Critical</span><strong>{summary.critical}</strong></div>
+          <div className={styles.summaryCard}><span>Nghiêm trọng</span><strong>{summary.critical}</strong></div>
         </div>
       </header>
 
@@ -516,7 +548,7 @@ export default function ModeratorReportWorkspace({
           className={styles.searchBox}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Tìm báo cáo, nội dung, người report, target..."
+          placeholder="Tìm báo cáo, nội dung, người báo cáo, đối tượng..."
           aria-label="Tìm kiếm báo cáo"
         />
         <select
@@ -553,20 +585,20 @@ export default function ModeratorReportWorkspace({
           title="Lọc theo mức độ"
         >
           <option value="all">Tất cả mức độ</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
+          <option value="critical">Nghiêm trọng</option>
+          <option value="high">Cao</option>
+          <option value="medium">Trung bình</option>
+          <option value="low">Thấp</option>
         </select>
         {defaultMode === 'history' ? (
           <>
-            <select className={styles.select} value={historyModerator} onChange={(event) => setHistoryModerator(event.target.value)} aria-label="Lọc theo moderator" title="Lọc theo moderator">
-              <option value="all">Tất cả moderator</option>
+            <select className={styles.select} value={historyModerator} onChange={(event) => setHistoryModerator(event.target.value)} aria-label="Lọc theo kiểm duyệt viên" title="Lọc theo kiểm duyệt viên">
+              <option value="all">Tất cả kiểm duyệt viên</option>
               {moderatorOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
             </select>
             <input className={styles.input} type="date" value={historyDateFrom} onChange={(event) => setHistoryDateFrom(event.target.value)} aria-label="Từ ngày" title="Từ ngày" />
             <input className={styles.input} type="date" value={historyDateTo} onChange={(event) => setHistoryDateTo(event.target.value)} aria-label="Đến ngày" title="Đến ngày" />
-            <button type="button" className={styles.exportButton} onClick={exportCsv}>Export CSV</button>
+            <button type="button" className={styles.exportButton} onClick={exportCsv}>Xuất CSV</button>
           </>
         ) : null}
       </section>
@@ -581,7 +613,7 @@ export default function ModeratorReportWorkspace({
           aria-label="Sắp xếp báo cáo"
           title="Sắp xếp báo cáo"
         >
-          <option value="priority">Priority</option>
+          <option value="priority">Ưu tiên</option>
           <option value="newest">Newest</option>
         </select>
       </section>
@@ -712,8 +744,8 @@ export default function ModeratorReportWorkspace({
               <div className={styles.metaCard}><span>Thời gian gửi</span><b>{formatTime(selectedReport.createdAt)}</b></div>
               <div className={styles.metaCard}><span>Người xem xét</span><b>{selectedReport.reviewerLabel}</b></div>
               <div className={styles.metaCard}><span>Người xử lý</span><b>{selectedReport.assigneeLabel}</b></div>
-              <div className={styles.metaCard}><span>AI confidence</span><b>{selectedReport.aiScore}%</b><div className={styles.muted}>Severity: {selectedReport.severity.toUpperCase()}</div></div>
-              <div className={styles.metaCard}><span>Moderation history</span><b>{selectedReport.status}</b><div className={styles.muted}>Updated: {formatTime(selectedReport.updatedAt)}</div></div>
+              <div className={styles.metaCard}><span>Độ tin cậy AI</span><b>{selectedReport.aiScore}%</b><div className={styles.muted}>Mức độ: {selectedReport.severity.toUpperCase()}</div></div>
+              <div className={styles.metaCard}><span>Lịch sử kiểm duyệt</span><b>{selectedReport.status}</b><div className={styles.muted}>Cập nhật: {formatTime(selectedReport.updatedAt)}</div></div>
             </div>
 
             {selectedReport.mediaUrl ? (
@@ -765,7 +797,7 @@ export default function ModeratorReportWorkspace({
 
             {actionType !== 'none' ? (
               <div className={styles.confirmWarning}>
-                This action can change or remove reported content. Review the preview and confirm intentionally.
+                Hành động này có thể thay đổi hoặc gỡ nội dung bị báo cáo. Hãy xem kỹ phần xem trước trước khi xác nhận.
               </div>
             ) : null}
 

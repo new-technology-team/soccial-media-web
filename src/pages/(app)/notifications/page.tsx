@@ -128,9 +128,24 @@ export default function NotificationsPage() {
       }
       document.title = `(${notifications.filter((item) => !item.is_read).length + 1}) ZChat`
     }
+    const onNotificationUpdated = (payload: NotificationItem) => {
+      setNotifications((prev) => prev.map((item) => item.id === payload.id ? { ...item, ...payload } : item))
+    }
+    const onNotificationDeleted = (payload: { id?: number | string }) => {
+      setNotifications((prev) => prev.filter((item) => String(item.id) !== String(payload?.id)))
+    }
+    const onAllRead = () => {
+      setNotifications((prev) => prev.map((item) => ({ ...item, is_read: 1 })))
+    }
     socket.on('notification:new', onNotification)
+    socket.on('notification:updated', onNotificationUpdated)
+    socket.on('notification:deleted', onNotificationDeleted)
+    socket.on('notification:all-read', onAllRead)
     return () => {
       socket.off('notification:new', onNotification)
+      socket.off('notification:updated', onNotificationUpdated)
+      socket.off('notification:deleted', onNotificationDeleted)
+      socket.off('notification:all-read', onAllRead)
     }
   }, [notifications, soundOn, token, user?.id])
 

@@ -172,11 +172,11 @@ export function MiniBars({ values, labels }: { values: number[]; labels?: string
   const normalized = values.map((value) => (Number.isFinite(Number(value)) ? Number(value) : 0))
   const max = Math.max(...normalized, 1)
   const aria = normalized
-    .map((value, index) => `${labels?.[index] || `Bar ${index + 1}`}: ${value.toLocaleString('vi-VN')}`)
+    .map((value, index) => `${labels?.[index] || `Cột ${index + 1}`}: ${value.toLocaleString('vi-VN')}`)
     .join(', ')
 
   return (
-    <div className={styles.chart} role="img" aria-label={`Chart values: ${aria}`}>
+    <div className={styles.chart} role="img" aria-label={`Giá trị biểu đồ: ${aria}`}>
       {normalized.map((value, index) => (
         <span
           key={`${labels?.[index] || 'bar'}-${index}`}
@@ -199,7 +199,24 @@ export function SeverityBadge({ value }: { value: number }) {
 
 export function StatusBadge({ value, label }: { value?: string; label?: string }) {
   const key = String(value || '').toLowerCase()
-  return <span className={`${styles.badge} ${styles[key] || ''}`}>{label || value || 'Không rõ'}</span>
+  const statusLabel: Record<string, string> = {
+    active: 'Đang hoạt động',
+    warning: 'Đã cảnh cáo',
+    restricted: 'Bị hạn chế',
+    temp_locked: 'Tạm khóa',
+    locked: 'Đã khóa',
+    hidden: 'Đã ẩn',
+    deleted: 'Đã xóa',
+    pending: 'Chờ xử lý',
+    in_review: 'Đang xem xét',
+    resolved: 'Đã xử lý',
+    rejected: 'Đã từ chối',
+    published: 'Đã đăng',
+    admin: 'Quản trị viên',
+    moderator: 'Kiểm duyệt viên',
+    user: 'Người dùng',
+  }
+  return <span className={`${styles.badge} ${styles[key] || ''}`}>{label || statusLabel[key] || value || 'Không rõ'}</span>
 }
 
 export function UserCell({ user, onClick }: { user: User; onClick?: () => void }) {
@@ -208,7 +225,7 @@ export function UserCell({ user, onClick }: { user: User; onClick?: () => void }
     <button type="button" className={`${styles.ghost} ${styles.nameCell}`} onClick={onClick}>
       <span className={styles.avatar}>{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : initials}</span>
       <span>
-        <strong>{user.fullName || `User #${user.id}`}</strong>
+        <strong>{user.fullName || `Người dùng #${user.id}`}</strong>
         <br />
         <span className={styles.muted}>{user.email || user.phone || `ID ${user.id}`}</span>
       </span>
@@ -234,7 +251,7 @@ export function UserDrawer({ user, onClose }: { user: User | null; onClose: () =
       <aside className={styles.drawer}>
         <div className={styles.drawerHeader}>
           <div>
-            <p className={styles.eyebrow}>User detail</p>
+            <p className={styles.eyebrow}>Chi tiết người dùng</p>
             <h2 className={styles.panelTitle}>Hồ sơ vận hành</h2>
           </div>
           <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Đóng">
@@ -247,15 +264,15 @@ export function UserDrawer({ user, onClose }: { user: User | null; onClose: () =
             <h3 className={styles.panelTitle}>{user.fullName}</h3>
             <div className={styles.inline}>
               <StatusBadge value={user.accountStatus} />
-              <StatusBadge value={user.role} label={user.role} />
+              <StatusBadge value={user.role} label={user.role === 'admin' ? 'Quản trị viên' : user.role === 'moderator' ? 'Kiểm duyệt viên' : 'Người dùng'} />
             </div>
           </div>
         </div>
         <Panel title="Thông tin tài khoản">
           <div className={styles.profileList}>
             <span>Email: <b>{user.email || 'Chưa cập nhật'}</b></span>
-            <span>Phone: <b>{user.phone || 'Chưa cập nhật'}</b></span>
-            <span>Device/IP: <b>Web · 127.0.0.1</b></span>
+            <span>Số điện thoại: <b>{user.phone || 'Chưa cập nhật'}</b></span>
+            <span>Thiết bị/IP: <b>Web · 127.0.0.1</b></span>
             <span>Cảnh cáo: <b>{user.warningCount || 0}</b></span>
             <span>Lý do hạn chế: <b>{user.restrictionReason || 'Không có'}</b></span>
           </div>
@@ -315,7 +332,7 @@ export function ConfirmAction({
       <aside className={styles.drawer}>
         <div className={styles.drawerHeader}>
           <div>
-            <p className={styles.eyebrow}>Safe action</p>
+            <p className={styles.eyebrow}>Hành động cần xác nhận</p>
             <h2 className={styles.panelTitle}>{title}</h2>
             <p className={styles.panelText}>{description}</p>
           </div>
@@ -326,7 +343,7 @@ export function ConfirmAction({
         <div className={styles.dangerZone}>
           <div className={styles.inline}>
             <AlertTriangle size={18} />
-            <strong>Hành động này sẽ được ghi vào audit log.</strong>
+            <strong>Hành động này sẽ được ghi vào nhật ký kiểm duyệt.</strong>
           </div>
           {requireText ? (
             <label className={styles.profileList}>
@@ -364,7 +381,7 @@ export function CsvButton({ filename, rows }: { filename: string; rows: Array<Re
 
   return (
     <button type="button" className={styles.secondary} onClick={exportCsv}>
-      <Download size={15} /> Export CSV
+      <Download size={15} /> Xuất CSV
     </button>
   )
 }

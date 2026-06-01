@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { useParams } from 'react-router-dom'
-import { Heart } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Heart } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { api, resolveApiAssetUrl } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
@@ -54,6 +53,7 @@ const replaceCommentById = (items: FeedComment[], nextComment: FeedComment): Fee
 
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const postId = String(params.id || '').trim()
   const token = useAuthStore((state) => state.accessToken)
   const me = useAuthStore((state) => state.user)
@@ -277,7 +277,7 @@ export default function PostDetailPage() {
             <Link to={`/profile/${comment.userId}`}>{comment.authorName}</Link>
           </p>
           {comment.content ? <p className={styles.commentText}>{comment.content}</p> : null}
-          {comment.imageUrl ? <img src={comment.imageUrl} alt="Comment attachment" className={styles.commentImage} loading="lazy" /> : null}
+          {comment.imageUrl ? <img src={comment.imageUrl} alt="Ảnh trong bình luận" className={styles.commentImage} loading="lazy" /> : null}
           <div className={styles.commentActions}>
             <p className={styles.commentTime}>{new Date(comment.createdAt).toLocaleString('vi-VN')}</p>
             <button
@@ -334,6 +334,10 @@ export default function PostDetailPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         <div className={styles.header}>
+          <button type="button" className={styles.backButton} onClick={() => navigate(-1)}>
+            <ArrowLeft size={16} />
+            Quay lại
+          </button>
           <h1>Chi tiết bài viết</h1>
           <p>Xem nội dung đầy đủ và toàn bộ bình luận theo thời gian thực.</p>
         </div>

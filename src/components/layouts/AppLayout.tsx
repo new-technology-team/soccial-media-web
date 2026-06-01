@@ -9,6 +9,7 @@ import { ActiveCallWindow, IncomingCallModal, MinimizedCallPill, OutgoingCallMod
 import { resolveApiAssetUrl } from '@/api/client'
 import { connectSocket, getSocket } from '@/services/socket'
 import { toast } from '@/hooks/use-toast'
+import type { User } from '@/types'
 import styles from './app-layout.module.css'
 
 export default function AppLayout({
@@ -121,7 +122,7 @@ export default function AppLayout({
       navigate('/auth/login?reason=session-expired', { replace: true })
     }
 
-    const onAvatarUpdated = (payload: { userId?: number; avatarUrl?: string; user?: typeof user }) => {
+    const onAvatarUpdated = (payload: { userId?: number; avatarUrl?: string; user?: User }) => {
       if (!payload?.userId) return
       const nextAvatar = resolveApiAssetUrl(payload.avatarUrl) ?? payload.avatarUrl ?? null
       updateUserAvatar(Number(payload.userId), nextAvatar || null)
@@ -137,11 +138,31 @@ export default function AppLayout({
       })
     }
 
+    const onUserUpdated = (payload: { userId?: number | string; user?: User; action?: string }) => {
+      if (!payload?.user || Number(payload.userId || payload.user.id) !== Number(user.id) || !refreshToken) return
+      setAuth({
+        accessToken: token,
+        refreshToken,
+        user: {
+          ...user,
+          ...payload.user,
+        },
+      })
+      if (payload.action && !['updated'].includes(payload.action)) {
+        toast({
+          title: 'Tài khoản đã được cập nhật',
+          description: 'Trạng thái tài khoản của bạn vừa được đồng bộ từ hệ thống kiểm duyệt.',
+        })
+      }
+    }
+
     socket.on('call:offer', onOffer)
     socket.on('call:incoming', onOffer)
     socket.on('call:ended', onEnd)
     socket.on('auth:revoked', onAuthRevoked)
     socket.on('user:avatar-updated', onAvatarUpdated)
+    socket.on('user:updated', onUserUpdated)
+    socket.on('user:moderation-updated', onUserUpdated)
 
     return () => {
       socket.off('call:offer', onOffer)
@@ -149,6 +170,8 @@ export default function AppLayout({
       socket.off('call:ended', onEnd)
       socket.off('auth:revoked', onAuthRevoked)
       socket.off('user:avatar-updated', onAvatarUpdated)
+      socket.off('user:updated', onUserUpdated)
+      socket.off('user:moderation-updated', onUserUpdated)
     }
   }, [clearAuth, navigate, refreshToken, setAuth, token, updateUserAvatar, user])
 

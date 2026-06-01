@@ -17,6 +17,29 @@
   padding: 1rem;
 }
 
+.backButton {
+  border: 1px solid rgba(171, 173, 174, 0.28);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #22313a;
+  min-height: 34px;
+  padding: 0 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 0.65rem;
+}
+
+.backButton:hover {
+  border-color: rgba(0, 82, 206, 0.34);
+  color: #0052ce;
+  background: #f8fbff;
+}
+
 .header h1 {
   margin: 0;
   font-size: clamp(1.45rem, 2.6vw, 2rem);
