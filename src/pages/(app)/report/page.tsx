@@ -57,7 +57,7 @@ export default function ReportPage() {
 
       await api.submitReport(token, {
         targetType: formData.targetType as 'post' | 'comment' | 'user' | 'message',
-        targetId: Number(formData.targetId),
+        targetId: formData.targetId.trim(),
         reason: formData.reportType,
         details: `${formData.reason}\n${formData.details}\n${formData.evidence}`.trim(),
       })

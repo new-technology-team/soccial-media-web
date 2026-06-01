@@ -401,10 +401,10 @@ export default function ModeratorReportWorkspace({
       }
 
       if (actionType === 'hide_post') {
-        await api.moderatePost(token, Number(report.targetId), { status: 'hidden', resolutionNote: statusNote })
+        await api.moderatePost(token, report.targetId, { status: 'hidden', resolutionNote: statusNote })
         toast({ title: `Đã ẩn bài viết #${report.targetId}`, description: 'Hành động kiểm duyệt đã được ghi nhận.' })
       } else if (actionType === 'delete_post') {
-        await api.moderatePost(token, Number(report.targetId), { status: 'deleted', resolutionNote: statusNote })
+        await api.moderatePost(token, report.targetId, { status: 'deleted', resolutionNote: statusNote })
         toast({ title: `Đã xóa bài viết #${report.targetId}`, description: 'Bài viết vi phạm đã được gỡ khỏi hệ thống.' })
       } else if (actionType === 'delete_comment') {
         try {

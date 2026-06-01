@@ -1049,7 +1049,7 @@ export const api = {
 
   moderatePost: (
     token: string,
-    postId: number,
+    postId: number | string,
     payload: { status: 'published' | 'hidden' | 'deleted'; resolutionNote?: string }
   ) =>
     request<{ message: string; post: FeedPost }>(
