@@ -269,6 +269,15 @@
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
 }
 
+.activeWindowEmbedded {
+  position: absolute;
+  inset: 72px 1rem 92px;
+  width: auto;
+  height: auto;
+  transform: none;
+  z-index: 24;
+}
+
 .topBar {
   padding: 1rem clamp(1rem, 3vw, 2rem);
   display: flex;
@@ -681,6 +690,10 @@
     height: auto;
     transform: none;
     grid-template-rows: auto 1fr auto;
+  }
+
+  .activeWindowEmbedded {
+    inset: 64px 0.65rem 84px;
   }
 
   .videoStage {

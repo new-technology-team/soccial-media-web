@@ -73,9 +73,39 @@ export function MessageThread({
   onLoadOlderMessages,
   onScroll,
 }: MessageThreadProps) {
+  const endedGroupCallSessionIds = new Set(
+    virtualSlice.items
+      .filter((item) => {
+        if (item.type !== 'call-history') return false
+        const meta = (item.meta || {}) as Record<string, unknown>
+        return Boolean(meta.callSessionId && isTerminalGroupCallStatus(meta.status))
+      })
+      .map((item) => String(((item.meta || {}) as Record<string, unknown>).callSessionId))
+  )
+  const displayItems = (() => {
+    const activeCalls: ChatMessage[] = []
+    const rest: ChatMessage[] = []
+    for (const item of virtualSlice.items) {
+      if (item.type !== 'call-history') {
+        rest.push(item)
+        continue
+      }
+      const meta = (item.meta || {}) as Record<string, unknown>
+      const callSessionId = String(meta.callSessionId || '')
+      const isActiveGroupCall = meta.mode === 'group' && meta.status === 'active'
+      if (isActiveGroupCall && callSessionId && endedGroupCallSessionIds.has(callSessionId)) continue
+      if (isActiveGroupCall) {
+        activeCalls.push(item)
+        continue
+      }
+      rest.push(item)
+    }
+    return [...rest, ...activeCalls]
+  })()
+
   return (
     <div
-      className={cn(styles.messagesWrap, virtualSlice.items.length === 0 && styles.messagesWrapEmpty)}
+      className={cn(styles.messagesWrap, displayItems.length === 0 && styles.messagesWrapEmpty)}
       ref={messagesWrapRef}
       onScroll={(event) => {
         const element = event.currentTarget
@@ -90,7 +120,7 @@ export function MessageThread({
         <p className={styles.virtualHint}>Đang hiển thị các tin nhắn mới nhất. Cuộn lên để tải thêm lịch sử.</p>
       ) : null}
 
-      {virtualSlice.items.map((msg, index) => {
+      {displayItems.map((msg, index) => {
         if (msg.type === 'call-history') {
           const meta = (msg.meta || {}) as Record<string, unknown>
           const callSessionId = String(meta.callSessionId || '')
@@ -98,7 +128,6 @@ export function MessageThread({
             const itemMeta = (item.meta || {}) as Record<string, unknown>
             return item.type === 'call-history' && itemMeta.callSessionId === callSessionId && isTerminalGroupCallStatus(itemMeta.status)
           }))
-          if (meta.mode === 'group' && meta.status === 'active' && hasEndedMessage) return null
           const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage
           return (
             <CallHistoryMessage
@@ -117,8 +146,8 @@ export function MessageThread({
         const sender = selectedConversation?.members.find((member) => member.userId === msg.senderId) || null
         const senderName = sender?.fullName || msg.senderName || `Người dùng #${msg.senderId}`
         const readLabel = mine ? getMessageReadLabel(msg) : null
-        const previousMessage = virtualSlice.items[index - 1]
-        const nextMessage = virtualSlice.items[index + 1]
+        const previousMessage = displayItems[index - 1]
+        const nextMessage = displayItems[index + 1]
         const groupedWithPrevious = Boolean(previousMessage && previousMessage.type !== 'call-history' && previousMessage.senderId === msg.senderId)
         const groupedWithNext = Boolean(nextMessage && nextMessage.type !== 'call-history' && nextMessage.senderId === msg.senderId)
         const isGroupConversation = selectedConversation?.type === 'group'

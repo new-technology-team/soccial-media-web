@@ -272,7 +272,7 @@ export function CallControls({ callType, mutedMic, mutedCam, mutedSpeaker = fals
         {mutedSpeaker ? <VolumeX size={20} /> : <Volume2 size={20} />}
         <small>{mutedSpeaker ? 'Bật loa' : 'Tắt loa'}</small>
       </button>
-      {callType === 'video' && supportsScreenShare ? (
+      {callType === 'video' && supportsScreenShare && onToggleScreenShare ? (
         <button type="button" className={cn(styles.controlButton, screenSharing && styles.controlButtonActive)} onClick={onToggleScreenShare}>
           {screenSharing ? <MonitorOff size={20} /> : <MonitorUp size={20} />}
           <small>{screenSharing ? 'Dừng chia sẻ' : 'Chia sẻ màn hình'}</small>
@@ -327,6 +327,7 @@ type ActiveProps = {
   onAddMembers?: () => void
   onMinimize: () => void
   onEnd: () => void
+  embedded?: boolean
 }
 
 export function ActiveCallWindow(props: ActiveProps) {
@@ -336,7 +337,7 @@ export function ActiveCallWindow(props: ActiveProps) {
   const remoteHasVideo = Boolean(remote?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled))
   const reconnecting = props.state === 'connecting'
   return (
-    <section className={styles.activeWindow} aria-label={mode === 'group' ? 'Cuộc gọi nhóm đang diễn ra' : 'Cuộc gọi đang diễn ra'}>
+    <section className={cn(styles.activeWindow, props.embedded && styles.activeWindowEmbedded)} aria-label={mode === 'group' ? 'Cuộc gọi nhóm đang diễn ra' : 'Cuộc gọi đang diễn ra'}>
       <header className={styles.topBar}>
         <div className={styles.topTitle}>
           <Avatar name={props.name} avatarUrl={props.avatarUrl} className={styles.miniAvatar} />

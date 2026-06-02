@@ -41,6 +41,7 @@ import {
 import styles from './page.module.css'
 import { ApiError, api, resolveApiAssetUrl, type CallHistoryItem } from '@/api/client'
 import {
+  ActiveCallWindow,
   CallHistoryMessage,
   CallSettingsPanel,
   IncomingCallModal,
@@ -4923,6 +4924,29 @@ export default function MessagesPage() {
                 </button>
               </div>
             </div>
+          ) : null}
+
+          {activeCall && callAnswered && !callMinimized ? (
+            <ActiveCallWindow
+              embedded
+              name={activeCall.withName}
+              avatarUrl={activeCall.avatarUrl}
+              callType={activeCall.type}
+              mode={activeCall.mode}
+              state={callState === 'idle' ? 'connected' : callState}
+              duration={formattedCallTime}
+              participants={callParticipantProfiles}
+              localStream={localStreamState}
+              remoteStreams={remoteStreams}
+              mutedMic={mutedMic}
+              mutedCam={mutedCam}
+              cameraAvailable={cameraAvailable}
+              onToggleMic={handleToggleMic}
+              onToggleCamera={handleToggleCamera}
+              onAddMembers={activeCall.mode === 'group' ? handleAddMembers : undefined}
+              onMinimize={() => setCallMinimized(true)}
+              onEnd={handleEndCall}
+            />
           ) : null}
 
           {false && activeCall ? (

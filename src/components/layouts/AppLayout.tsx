@@ -374,7 +374,7 @@ export default function AppLayout({
     return () => window.clearInterval(id)
   }, [activeCall, callAnswered])
 
-  // Keep answered calls docked when minimized; otherwise show a compact floating call window.
+  // Messages renders the active call inside its chat panel; other pages use the minimized pill.
   const onMessagesPage = pathname.startsWith('/messages')
   const shouldDockActiveCall = Boolean(activeCall && callAnswered && (callMinimized || !onMessagesPage))
 
@@ -420,8 +420,8 @@ export default function AppLayout({
         />
       ) : null}
 
-      {/* ActiveCallWindow — full view only inside the messages workspace */}
-      {activeCall && callAnswered && !shouldDockActiveCall ? (
+      {/* ActiveCallWindow is owned by MessagesPage while inside the messages workspace. */}
+      {activeCall && callAnswered && !shouldDockActiveCall && !onMessagesPage ? (
         <ActiveCallWindow
           name={activeCall.withName}
           avatarUrl={activeCall.avatarUrl}
