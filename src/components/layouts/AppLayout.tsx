@@ -461,7 +461,10 @@ export default function AppLayout({
               : undefined
           }
           onOpen={() => {
-            if (!onMessagesPage) navigate('/messages')
+            const target = activeCall.conversationId
+              ? `/messages?conversation=${encodeURIComponent(activeCall.conversationId)}`
+              : '/messages'
+            if (!onMessagesPage) navigate(target)
             useCallStore.getState().setCallMinimized(false)
           }}
           onEnd={handleEndCallGlobal}

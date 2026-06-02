@@ -2038,6 +2038,67 @@
   background: #cfd8e3;
 }
 
+.jitsiCallWindow {
+  position: fixed;
+  inset: 0.75rem;
+  z-index: 96;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  background: #0f172a;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+}
+
+.jitsiCallHeader {
+  min-height: 64px;
+  padding: 0.7rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.96);
+}
+
+.jitsiCallHeader div {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.jitsiCallHeader strong,
+.jitsiCallHeader span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jitsiCallHeader span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.84rem;
+}
+
+.jitsiCallHeader button {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #ef4444;
+  cursor: pointer;
+}
+
+.jitsiCallFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #020617;
+}
+
 .callOverlay {
   position: absolute;
   inset: 0;

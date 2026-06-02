@@ -309,6 +309,8 @@ export default function MessagesPage() {
   } = useChatStore()
   const [message, setMessage] = useState('')
   const [callStatus, setCallStatus] = useState<string | null>(null)
+  const [jitsiCallUrl, setJitsiCallUrl] = useState<string | null>(null)
+  const [activeGroupCallSessionIds, setActiveGroupCallSessionIds] = useState<Set<string>>(() => new Set())
   const [callState, setCallState] = useState<CallState>(() => useCallStore.getState().callState)
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null)
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(() => useCallStore.getState().activeCall)
@@ -606,6 +608,45 @@ export default function MessagesPage() {
     }
   }, [messagesByConversation, selectedConversationId])
 
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket || !selectedConversationId) {
+      setActiveGroupCallSessionIds(new Set())
+      return
+    }
+    const sessionIds = Array.from(new Set(
+      virtualSlice.items
+        .filter((item) => {
+          if (item.type !== 'call-history') return false
+          const meta = (item.meta || {}) as Record<string, unknown>
+          return meta.mode === 'group' && meta.status === 'active' && meta.callSessionId
+        })
+        .map((item) => String(((item.meta || {}) as Record<string, unknown>).callSessionId))
+        .filter(Boolean)
+    ))
+    if (sessionIds.length === 0) {
+      setActiveGroupCallSessionIds(new Set())
+      return
+    }
+
+    let cancelled = false
+    Promise.all(sessionIds.map((callSessionId) => new Promise<string | null>((resolve) => {
+      socket.emit('call:room:status', { conversationId: selectedConversationId, callSessionId }, (resp: unknown) => {
+        const active = Boolean((resp as { active?: boolean })?.active)
+        resolve(active ? callSessionId : null)
+      })
+      window.setTimeout(() => resolve(null), 2500)
+    }))).then((activeIds) => {
+      if (cancelled) return
+      setActiveGroupCallSessionIds(new Set(activeIds.filter((id): id is string => Boolean(id))))
+    }).catch(() => {
+      if (!cancelled) setActiveGroupCallSessionIds(new Set())
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedConversationId, virtualSlice.items])
+
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
   const selectedConversationUiPrefs = useMemo<ConversationUiPrefs>(
     () => ({
@@ -617,6 +658,7 @@ export default function MessagesPage() {
   )
   const queryConversationId = searchParams.get('conversation') || ''
   const globalIncomingCall = useCallStore((state) => state.incomingCall)
+  const globalCallMinimized = useCallStore((state) => state.callMinimized)
   const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
   const acceptPending = useCallStore((state) => state.acceptPending)
   const setAcceptPending = useCallStore((state) => state.setAcceptPending)
@@ -1251,12 +1293,13 @@ export default function MessagesPage() {
         const roomId = String(payload?.roomId || callRoomIdRef.current || '')
         if (roomId) {
           stopRingtone()
-          if (activeCall?.mode !== 'group') logCall('completed')
+          const currentActiveCall = useCallStore.getState().activeCall || activeCall
+          if (currentActiveCall?.mode !== 'group') logCall('completed')
           const myName = user?.fullName || 'Bạn'
           closeCallResources()
-          window.open(resolveJitsiUrl(roomId, myName), '_blank', 'noopener')
-          setCallState('idle')
-          setCallStatus(null)
+          setJitsiCallUrl(resolveJitsiUrl(roomId, myName))
+          setCallState('connected')
+          setCallStatus('Đã kết nối cuộc gọi video')
           setActiveCall(null)
           setCallAnswered(false)
           setRingingStartedAt(null)
@@ -1417,7 +1460,8 @@ export default function MessagesPage() {
 
     // Người được gọi từ chối cuộc gọi.
     socket.on('call:reject', (payload) => {
-      if (activeCall?.mode === 'group') {
+      const currentActiveCall = useCallStore.getState().activeCall || activeCall
+      if (currentActiveCall?.mode === 'group' || payload?.mode === 'group') {
         const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
         if (fromUserId > 0) {
           setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
@@ -1563,6 +1607,10 @@ export default function MessagesPage() {
   // Call timer has been moved to AppLayout so it persists across navigation
 
   // Sync local call state → Zustand so AppLayout can render call windows across navigation
+  useEffect(() => {
+    setCallMinimized((current) => (current === globalCallMinimized ? current : globalCallMinimized))
+  }, [globalCallMinimized])
+
   useEffect(() => { setGlobalActiveCall(activeCall) }, [activeCall]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setGlobalCallAnswered(callAnswered) }, [callAnswered]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setGlobalCallState(callState) }, [callState]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -2604,6 +2652,7 @@ export default function MessagesPage() {
     setSpeakingUserIds([])
     setMutedCam(false)
     setMutedMic(false)
+    setJitsiCallUrl(null)
     useCallStore.getState().setScreenSharing(false)
     useCallStore.getState().setConnectionQuality('unknown')
     stopRingtone()
@@ -3513,17 +3562,28 @@ export default function MessagesPage() {
 
     // Liên thông: cuộc gọi đến từ mobile (Jitsi) → mở meet.jit.si cùng phòng, báo lại bằng useJitsi.
     if (call.useJitsi && call.roomId) {
+      const conv = conversations.find((c) => c.id === activeConversationId) || selectedConversation
+      const isGroup = call.mode === 'group' || conv?.type === 'group'
       socket.emit('call:answer', {
         targetUserId: call.fromUserId,
         conversationId: activeConversationId,
+        callType: 'video',
+        mode: isGroup ? 'group' : 'private',
         roomId: call.roomId,
         useJitsi: true,
         answeredAt,
       })
-      setCallState('idle')
-      setCallStatus(null)
-      window.open(resolveJitsiUrl(call.roomId, user?.fullName || 'Bạn'), '_blank', 'noopener')
-      toast({ title: 'Đang mở cuộc gọi video qua Jitsi...' })
+      socket.emit('call:join', {
+        conversationId: activeConversationId,
+        callType: 'video',
+        mode: isGroup ? 'group' : 'private',
+        roomId: call.roomId,
+        useJitsi: true,
+      })
+      setJitsiCallUrl(resolveJitsiUrl(call.roomId, user?.fullName || 'Bạn'))
+      setCallState('connected')
+      setCallStatus('Đã kết nối cuộc gọi video')
+      toast({ title: 'Đang mở cuộc gọi video...' })
       return
     }
 
@@ -3661,6 +3721,24 @@ export default function MessagesPage() {
     if (activeCall?.conversationId === conversationId && callAnswered) {
       toast({ title: 'Bạn đang ở trong cuộc gọi này.' })
       return
+    }
+    const callSessionId = String(meta.callSessionId || '')
+    if (callSessionId) {
+      const isActive = await new Promise<boolean>((resolve) => {
+        socket.emit('call:room:status', { conversationId, callSessionId }, (resp: unknown) => {
+          resolve(Boolean((resp as { active?: boolean })?.active))
+        })
+        window.setTimeout(() => resolve(false), 2500)
+      })
+      if (!isActive) {
+        setActiveGroupCallSessionIds((prev) => {
+          const next = new Set(prev)
+          next.delete(callSessionId)
+          return next
+        })
+        toast({ title: 'Cuộc gọi nhóm đã kết thúc.' })
+        return
+      }
     }
 
     const conv = conversations.find((item) => item.id === conversationId) || selectedConversation
@@ -4600,6 +4678,7 @@ export default function MessagesPage() {
               userId={user?.id}
               selectedConversation={selectedConversation}
               virtualSlice={virtualSlice}
+              activeGroupCallSessionIds={activeGroupCallSessionIds}
               messagesWrapRef={messagesWrapRef}
               loadingOlderMessages={loadingOlderMessages || loadingMessages}
               typingUserIds={typingUserIds}
@@ -4924,6 +5003,38 @@ export default function MessagesPage() {
                 </button>
               </div>
             </div>
+          ) : null}
+
+          {jitsiCallUrl ? (
+            <section className={styles.jitsiCallWindow} aria-label="Cuộc gọi video đang diễn ra">
+              <header className={styles.jitsiCallHeader}>
+                <div>
+                  <strong>Cuộc gọi video</strong>
+                  <span>{callStatus || 'Đang kết nối'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const socket = getSocket()
+                    const conversationId = activeCall?.conversationId || selectedConversationId
+                    if (socket && conversationId) socket.emit('call:leave', { conversationId, useJitsi: true })
+                    setJitsiCallUrl(null)
+                    setCallStatus(null)
+                    setCallState('idle')
+                  }}
+                  title="Kết thúc cuộc gọi"
+                  aria-label="Kết thúc cuộc gọi"
+                >
+                  <PhoneOff size={18} />
+                </button>
+              </header>
+              <iframe
+                className={styles.jitsiCallFrame}
+                src={jitsiCallUrl}
+                title="Cuộc gọi video"
+                allow="camera; microphone; fullscreen; display-capture; autoplay"
+              />
+            </section>
           ) : null}
 
           {activeCall && callAnswered && !callMinimized ? (

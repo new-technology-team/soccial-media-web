@@ -17,6 +17,7 @@ type MessageThreadProps = {
   userId?: number
   selectedConversation: Conversation | null
   virtualSlice: VirtualSlice
+  activeGroupCallSessionIds?: Set<string>
   messagesWrapRef: MutableRefObject<HTMLDivElement | null>
   loadingOlderMessages: boolean
   typingUserIds: Set<number>
@@ -59,6 +60,7 @@ export function MessageThread({
   userId,
   selectedConversation,
   virtualSlice,
+  activeGroupCallSessionIds,
   messagesWrapRef,
   loadingOlderMessages,
   typingUserIds,
@@ -93,8 +95,9 @@ export function MessageThread({
       const meta = (item.meta || {}) as Record<string, unknown>
       const callSessionId = String(meta.callSessionId || '')
       const isActiveGroupCall = meta.mode === 'group' && meta.status === 'active'
+      const isLiveGroupCall = isActiveGroupCall && Boolean(callSessionId && activeGroupCallSessionIds?.has(callSessionId))
       if (isActiveGroupCall && callSessionId && endedGroupCallSessionIds.has(callSessionId)) continue
-      if (isActiveGroupCall) {
+      if (isLiveGroupCall) {
         activeCalls.push(item)
         continue
       }
@@ -128,7 +131,7 @@ export function MessageThread({
             const itemMeta = (item.meta || {}) as Record<string, unknown>
             return item.type === 'call-history' && itemMeta.callSessionId === callSessionId && isTerminalGroupCallStatus(itemMeta.status)
           }))
-          const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage
+          const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage && Boolean(callSessionId && activeGroupCallSessionIds?.has(callSessionId))
           return (
             <CallHistoryMessage
               key={msg.id}
