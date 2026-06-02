@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
+  Reply,
 } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -377,12 +378,12 @@ export default function PostDetailPage() {
     const key = String(comment.id)
     const value = (replyInputs[key] || '').trim()
 
-    if (!token || !value || busyCommentId) return
+    if (!token || !value || busyCommentId || !postId) return
 
     setBusyCommentId(key)
 
     try {
-      const response = await api.addCommentReply(token, comment.id, value)
+      const response = await api.addComment(token, postId, value, null, comment.id)
 
       setComments((prev) => appendCommentOnce(prev, normalizeFeedComment(response.comment)))
       setPost((current) =>
@@ -468,6 +469,7 @@ export default function PostDetailPage() {
             {canReply ? (
               <button
                 type="button"
+                className={styles.replyActionBtn}
                 onClick={() =>
                   setReplyingToCommentIds((prev) => ({
                     ...prev,
@@ -475,6 +477,7 @@ export default function PostDetailPage() {
                   }))
                 }
               >
+                <Reply size={14} />
                 {showReplyForm ? 'Hủy' : 'Trả lời'}
               </button>
             ) : null}

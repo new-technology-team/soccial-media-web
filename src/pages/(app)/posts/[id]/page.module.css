@@ -962,20 +962,29 @@
   cursor: default;
 }
 
-.commentActions button {
+.replyActionBtn {
   border: 0;
   background: transparent;
   color: #3b82f6;
   font-size: 0.87rem;
   cursor: pointer;
-  padding: 0;
+  padding: 0.3rem 0.6rem;
   font-weight: 700;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 6px;
 }
 
-.commentActions button:hover {
+.replyActionBtn:hover {
   color: #2563eb;
-  text-decoration: underline;
+  background: rgba(59, 130, 246, 0.08);
+  text-decoration: none;
+}
+
+.replyActionBtn:active {
+  background: rgba(59, 130, 246, 0.15);
 }
 
 .commentTime {
