@@ -17,13 +17,6 @@ import { useAuthStore } from '@/contexts/auth-store'
 import { toast } from '@/hooks/use-toast'
 import type { User } from '@/types'
 
-const MODERATOR_PERMISSIONS = [
-  { key: 'manage_posts', label: 'Bài viết' },
-  { key: 'manage_reports', label: 'Báo cáo' },
-  { key: 'manage_comments', label: 'Bình luận' },
-  { key: 'manage_users', label: 'Người dùng' },
-]
-
 export default function AdminModeratorsPage() {
   const token = useAuthStore((state) => state.accessToken)
   const me = useAuthStore((state) => state.user)
@@ -68,21 +61,6 @@ export default function AdminModeratorsPage() {
     await loadModerators()
   }
 
-  const togglePermission = async (moderator: User, permission: string) => {
-    if (!token) return
-    const current = moderator.permissions?.length ? moderator.permissions : MODERATOR_PERMISSIONS.map((item) => item.key)
-    const next = current.includes(permission)
-      ? current.filter((item) => item !== permission)
-      : [...current, permission]
-    await api.updateModeratorPermissions(token, moderator.id, {
-      role: 'moderator',
-      accountStatus: moderator.accountStatus,
-      permissions: next,
-    })
-    toast({ title: `Đã cập nhật quyền "${moderator.fullName}"` })
-    await loadModerators()
-  }
-
   const deleteModerator = async () => {
     if (!token || !removeTarget) return
     await api.deleteModerator(token, removeTarget.id)
@@ -107,8 +85,7 @@ export default function AdminModeratorsPage() {
         <MetricCard label="SLA xử lý" value="92%" meta="đúng hạn" tone="success" />
       </section>
 
-      <Panel title="Danh sách kiểm duyệt viên" description="Quản lý quyền, khối lượng công việc và trạng thái để điều phối nhanh.">
-        <span id="permissions" aria-hidden="true" />
+      <Panel title="Danh sách kiểm duyệt viên" description="Quản lý khối lượng công việc và trạng thái để điều phối nhanh.">
         <div className={styles.toolbar}>
           <Search size={16} />
           <input className={styles.input} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm moderator" />
@@ -131,19 +108,6 @@ export default function AdminModeratorsPage() {
                 </div>
                 <div className={styles.inline}>
                   <StatusBadge value={item.accountStatus} />
-                  {MODERATOR_PERMISSIONS.map((permission) => {
-                    const active = item.permissions?.length ? item.permissions.includes(permission.key) : true
-                    return (
-                      <button
-                        key={permission.key}
-                        type="button"
-                        className={active ? styles.permissionChipActive : styles.permissionChip}
-                        onClick={() => void togglePermission(item, permission.key)}
-                      >
-                        {permission.label}
-                      </button>
-                    )
-                  })}
                 </div>
                 <div className={styles.activityList}>
                   <div className={styles.activityItem}><span>Reports handled</span><b>{24 + index * 7}</b></div>

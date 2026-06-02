@@ -168,6 +168,7 @@
 .field {
   display: grid;
   gap: 0.4rem;
+  min-width: 0;
 }
 
 .field label {
@@ -178,7 +179,9 @@
 
 .input,
 .textarea {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #fff;

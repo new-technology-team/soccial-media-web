@@ -41,12 +41,9 @@ import {
 import styles from './page.module.css'
 import { ApiError, api, resolveApiAssetUrl, type CallHistoryItem } from '@/api/client'
 import {
-  ActiveCallWindow,
   CallHistoryMessage,
   CallSettingsPanel,
   IncomingCallModal,
-  MinimizedCallPill,
-  OutgoingCallModal,
   type CallParticipant,
   type CallSettings,
   type CallState,
@@ -64,6 +61,7 @@ import {
 import { useAuthStore } from '@/contexts/auth-store'
 import { useChatStore } from '@/contexts/chat-store'
 import { useCallStore, type IncomingCallState, type ActiveCall } from '@/contexts/call-store'
+import { cn } from '@/utils'
 import { callSession, resetCallSession } from '@/services/call-session'
 import { toast } from '@/hooks/use-toast'
 import { connectSocket, getSocket } from '@/services/socket'
@@ -353,6 +351,10 @@ export default function MessagesPage() {
   const [pendingLockedConversationId, setPendingLockedConversationId] = useState<string | null>(null)
   const [pendingUnlockPassword, setPendingUnlockPassword] = useState('')
   const [pendingUnlockError, setPendingUnlockError] = useState<string | null>(null)
+  const [unlockedConversationIds, setUnlockedConversationIds] = useState<Set<string>>(() => new Set())
+  const [hiddenSearchUnlockedIds, setHiddenSearchUnlockedIds] = useState<Set<string>>(() => new Set())
+  const [lockedSearchUnlockedIds, setLockedSearchUnlockedIds] = useState<Set<string>>(() => new Set())
+  const previousSelectedConversationIdRef = useRef<string | null>(null)
   const [isDirectPeerBlocked, setIsDirectPeerBlocked] = useState(false)
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
   const [nicknameDialog, setNicknameDialog] = useState<NicknameDialogState | null>(null)
@@ -362,6 +364,7 @@ export default function MessagesPage() {
   const [muteDialogOpen, setMuteDialogOpen] = useState(false)
   const [autoDeleteDialogOpen, setAutoDeleteDialogOpen] = useState(false)
   const [lockDialogOpen, setLockDialogOpen] = useState(false)
+  const [hideDialogOpen, setHideDialogOpen] = useState(false)
   const [rightPanelSection, setRightPanelSection] = useState<'overview' | 'members' | 'manage'>('overview')
   const [groupName, setGroupName] = useState('')
   const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
@@ -431,8 +434,8 @@ export default function MessagesPage() {
   const longPressTimer = useRef<number | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const reactionPickerRef = useRef<HTMLDivElement | null>(null)
-  const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const localStreamRef = useRef<MediaStream | null>(useCallStore.getState().localStream)
+  const localVideoRef = useRef<HTMLVideoElement | null>(null)
   // Share Map reference with callSession so WebRTC state survives navigation
   const peersRef = useRef<Map<number, RTCPeerConnection>>(callSession.peers)
   const pendingCandidatesRef = useRef<Map<number, RTCIceCandidateInit[]>>(callSession.pendingCandidates)
@@ -654,13 +657,51 @@ export default function MessagesPage() {
     setConversations(await loadChatConversations(token))
   }, [token, setConversations])
 
+  const verifyHiddenConversationAccess = useCallback(
+    async (conversationId: string, hiddenPassword: string, options?: { syncConversation?: boolean }) => {
+      if (!token) throw new Error('Bạn cần đăng nhập để mở hội thoại ẩn.')
+      const syncConversation = options?.syncConversation !== false
+      try {
+        const result = await api.verifyHiddenConversation(token, conversationId, hiddenPassword)
+        if (syncConversation) {
+          setConversations((current) => current.map((item) => (item.id === conversationId ? result.conversation : item)))
+        }
+        return true
+      } catch (verifyError) {
+        try {
+          await api.updateConversationPreferences(token, conversationId, { hidden: false, hiddenPassword })
+          const restored = await api.updateConversationPreferences(token, conversationId, { hidden: true, hiddenPassword })
+          if (syncConversation) {
+            setConversations((current) => current.map((item) => (item.id === conversationId ? restored.conversation : item)))
+          }
+          return true
+        } catch {
+          throw verifyError
+        }
+      }
+    },
+    [setConversations, token]
+  )
+
+  const verifyLockedConversationAccess = useCallback(
+    async (conversationId: string, lockedPassword: string) => {
+      if (!token) throw new Error('Bạn cần đăng nhập để mở hội thoại khóa.')
+      await api.updateConversationPreferences(token, conversationId, { locked: false, lockedPassword })
+      await api.updateConversationPreferences(token, conversationId, { locked: true, lockedPassword })
+      return true
+    },
+    [token]
+  )
+
   const requestConversationAccess = useCallback(
     async (conversationId: string) => {
       if (!token) return false
       const targetConversation = conversations.find((item) => item.id === conversationId) || null
       if (!targetConversation) return false
 
-      if (targetConversation.isHidden || targetConversation.isLocked) {
+      const hiddenAllowed = !targetConversation.isHidden || hiddenSearchUnlockedIds.has(conversationId) || unlockedConversationIds.has(conversationId)
+      const lockedAllowed = !targetConversation.isLocked || lockedSearchUnlockedIds.has(conversationId) || unlockedConversationIds.has(conversationId)
+      if (!hiddenAllowed || !lockedAllowed) {
         setPendingLockedConversationId(conversationId)
         setPendingUnlockError(null)
         setPendingUnlockPassword('')
@@ -669,7 +710,7 @@ export default function MessagesPage() {
 
       return true
     },
-    [conversations, token]
+    [conversations, hiddenSearchUnlockedIds, lockedSearchUnlockedIds, token, unlockedConversationIds]
   )
 
   const handleOpenConversation = useCallback(
@@ -679,10 +720,18 @@ export default function MessagesPage() {
         if (!allowed) return
         routeOpenConversation(conversationId)
         markConversationRead(conversationId)
+        const openedConversation = conversations.find((item) => item.id === conversationId)
+        if (openedConversation?.isHidden) {
+          setSearchTerm('')
+          setHiddenSearchUnlockedIds(new Set())
+        }
+        if (openedConversation?.isLocked) {
+          setLockedSearchUnlockedIds(new Set())
+        }
         setMobileShowList(false)
       })()
     },
-    [markConversationRead, requestConversationAccess, routeOpenConversation]
+    [conversations, markConversationRead, requestConversationAccess, routeOpenConversation]
   )
 
   const handleUnlockPendingConversation = async () => {
@@ -708,11 +757,24 @@ export default function MessagesPage() {
 
     try {
       setPendingUnlockError(null)
-      await api.updateConversationPreferences(token, pendingLockedConversationId, {
-        hidden: false,
-        locked: false,
-        hiddenPassword: password,
-        lockedPassword: password,
+      const targetConversation = conversations.find((item) => item.id === pendingLockedConversationId) || null
+      if (!targetConversation) return
+
+      if (targetConversation.isHidden) {
+        await verifyHiddenConversationAccess(pendingLockedConversationId, password)
+        setHiddenSearchUnlockedIds((current) => {
+          const next = new Set(current)
+          next.add(pendingLockedConversationId)
+          return next
+        })
+      }
+      if (targetConversation.isLocked) {
+        await verifyLockedConversationAccess(pendingLockedConversationId, password)
+      }
+      setUnlockedConversationIds((current) => {
+        const next = new Set(current)
+        next.add(pendingLockedConversationId)
+        return next
       })
       await refreshConversations()
       routeOpenConversation(pendingLockedConversationId)
@@ -732,6 +794,26 @@ export default function MessagesPage() {
       // Ignore transient notification reload issues.
     }
   }, [token])
+
+  useEffect(() => {
+    const previousId = previousSelectedConversationIdRef.current
+    if (previousId && previousId !== selectedConversationId) {
+      setUnlockedConversationIds((current) => {
+        if (!current.has(previousId)) return current
+        const next = new Set(current)
+        next.delete(previousId)
+        return next
+      })
+      setHiddenSearchUnlockedIds((current) => {
+        if (!current.has(previousId)) return current
+        const next = new Set(current)
+        next.delete(previousId)
+        return next
+      })
+      setSearchTerm('')
+    }
+    previousSelectedConversationIdRef.current = selectedConversationId
+  }, [selectedConversationId])
 
   const reloadCallHistory = useCallback(async () => {
     if (!token) return
@@ -1516,6 +1598,49 @@ export default function MessagesPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
 
+  useEffect(() => {
+    if (!token) return
+    const password = searchTerm.trim()
+    if (!password) {
+      setHiddenSearchUnlockedIds(new Set())
+      setLockedSearchUnlockedIds(new Set())
+      return
+    }
+
+    const hiddenConversations = conversations.filter((conversation) => conversation.isHidden)
+    const lockedConversations = conversations.filter((conversation) => conversation.isLocked)
+    if (hiddenConversations.length === 0 && lockedConversations.length === 0) return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      Promise.all([
+        Promise.all(
+          hiddenConversations.map((conversation) =>
+            verifyHiddenConversationAccess(conversation.id, password, { syncConversation: false })
+              .then(() => conversation.id)
+              .catch(() => null)
+          )
+        ),
+        Promise.all(
+          lockedConversations.map((conversation) =>
+            verifyLockedConversationAccess(conversation.id, password)
+              .then(() => conversation.id)
+              .catch(() => null)
+          )
+        ),
+      ]).then(([hiddenMatchedIds, lockedMatchedIds]) => {
+        if (cancelled) return
+        setHiddenSearchUnlockedIds(new Set(hiddenMatchedIds.filter((id): id is string => Boolean(id))))
+        setLockedSearchUnlockedIds(new Set(lockedMatchedIds.filter((id): id is string => Boolean(id))))
+      })
+    }, 260)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [conversations, searchTerm, token, verifyHiddenConversationAccess, verifyLockedConversationAccess])
+
   const selectedConversationMembers = useMemo(
     () => new Map((selectedConversation?.members || []).map((member) => [member.userId, member])),
     [selectedConversation]
@@ -1563,7 +1688,7 @@ export default function MessagesPage() {
           .filter((member) => readByIds.has(Number(member.userId)))
           .map((member) => member.fullName)
         if (selectedConversation.type === 'direct') return names.length ? '✓✓ Seen' : message.status === 'delivered' ? '✓✓ Delivered' : '✓ Sent'
-        if (names.length > 0) return `✓✓ Seen by ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
+        if (names.length > 0) return names.length === 1 ? '✓✓ Seen' : `✓✓ Seen by ${names.length}`
       }
 
       const sentAt = new Date(message.createdAt).getTime()
@@ -1589,17 +1714,21 @@ export default function MessagesPage() {
 
   const filteredConversations = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
-    const items = !q
-      ? conversations
-      : conversations.filter((conversation) =>
-          getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
-        )
+    const items = conversations.filter((conversation) => {
+      const name = getConversationDisplayName(conversation, user?.id).toLowerCase()
+      const searchable = [name, conversation.name || '', conversation.id].join(' ').toLowerCase()
+      if (conversation.isHidden && !q) return false
+      if (conversation.isHidden) return hiddenSearchUnlockedIds.has(conversation.id)
+      if (conversation.isLocked && lockedSearchUnlockedIds.has(conversation.id)) return true
+      if (!q) return true
+      return searchable.includes(q)
+    })
 
     return [...items].sort((a, b) => {
       if (Boolean(a.isPinned) !== Boolean(b.isPinned)) return Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned))
       return getConversationActivityTime(b) - getConversationActivityTime(a)
     })
-  }, [conversations, searchTerm, user?.id])
+  }, [conversations, hiddenSearchUnlockedIds, lockedSearchUnlockedIds, searchTerm, user?.id])
 
   const callTargetId = useMemo(() => {
     if (!selectedConversation || !user?.id) return null
@@ -1949,7 +2078,8 @@ export default function MessagesPage() {
   }) => {
     if (!token || !selectedConversation) return
     try {
-      await api.updateConversationPreferences(token, selectedConversation.id, payload)
+      const response = await api.updateConversationPreferences(token, selectedConversation.id, payload)
+      setConversations(conversations.map((item) => (item.id === selectedConversation.id ? response.conversation : item)))
       if (payload.backgroundUrl !== undefined || payload.themeColor !== undefined) {
         updateLocalConversationUiPrefs(selectedConversation.id, {
           ...(payload.backgroundUrl !== undefined ? { backgroundUrl: payload.backgroundUrl } : {}),
@@ -2047,14 +2177,16 @@ export default function MessagesPage() {
 
   const handleOpenHideConversation = () => {
     if (!selectedConversation) return
-    setConfirmModal({
-      title: 'Ẩn hội thoại?',
-      description: 'Hội thoại sẽ bị ẩn khỏi danh sách trò chuyện của bạn.',
-      confirmLabel: 'Ẩn',
-      destructive: false,
-      onConfirm: async () => {
-        await handleUpdateConversationPreferences({ hidden: true })
-      },
+    setHideDialogOpen(true)
+  }
+
+  const handleSubmitHideConversation = async (pin: string) => {
+    if (!pin.trim()) {
+      throw new Error('Vui lòng nhập mã để ẩn hội thoại.')
+    }
+    await handleUpdateConversationPreferences({
+      hidden: true,
+      hiddenPassword: pin.trim(),
     })
   }
 
@@ -2225,10 +2357,6 @@ export default function MessagesPage() {
     localStreamRef.current = stream
     callSession.localStream = stream
     setLocalStreamState(stream ? new MediaStream(stream.getTracks()) : null)
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream
-      localVideoRef.current.play().catch(() => undefined)
-    }
   }
 
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
@@ -2531,9 +2659,14 @@ export default function MessagesPage() {
     }
   }
 
-  const handleOpenNotificationConversation = (conversationId: string | null | undefined) => {
-    if (!conversationId) return
-    handleOpenConversation(String(conversationId))
+  const handleOpenNotificationConversation = (conversationId: string | null | undefined, notificationId?: number | string) => {
+    if (notificationId !== undefined) {
+      setNotifications((current) => current.map((item) => String(item.id) === String(notificationId) ? { ...item, is_read: 1 } : item))
+      if (token) api.readNotification(token, notificationId).catch(() => undefined)
+    }
+    if (conversationId) {
+      handleOpenConversation(String(conversationId))
+    }
     setShowNotificationsDrawer(false)
   }
 
@@ -4040,6 +4173,16 @@ export default function MessagesPage() {
     const secs = seconds % 60
     return mins ? `${mins} phút ${secs}s` : `${secs}s`
   }
+  const formatRelativeTime = (value: string) => {
+    const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000))
+    if (diffSeconds < 60) return 'Vừa xong'
+    const diffMinutes = Math.floor(diffSeconds / 60)
+    if (diffMinutes < 60) return `${diffMinutes} phút trước`
+    const diffHours = Math.floor(diffMinutes / 60)
+    if (diffHours < 24) return `${diffHours} giờ trước`
+    const diffDays = Math.floor(diffHours / 24)
+    return diffDays < 7 ? `${diffDays} ngày trước` : new Date(value).toLocaleDateString('vi-VN')
+  }
   return (
     <div className={styles.page}>
       <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''} ${!showDetailsPanelDesktop ? styles.layoutNarrow : ''}`}>
@@ -4061,12 +4204,14 @@ export default function MessagesPage() {
             setShowCreateGroupModal(false)
           }}
           onShowNotifications={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
             setShowCallHistoryDrawer(false)
             setShowNotificationsDrawer(true)
             setShowNewMessageModal(false)
             setShowCreateGroupModal(false)
           }}
           onShowCalls={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
             setShowCallHistoryDrawer(true)
             setShowNotificationsDrawer(false)
             setShowNewMessageModal(false)
@@ -4074,12 +4219,14 @@ export default function MessagesPage() {
             reloadCallHistory().catch(() => undefined)
           }}
           onShowNewMessage={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
             setShowCallHistoryDrawer(false)
             setShowNewMessageModal(true)
             setShowNotificationsDrawer(false)
             setShowCreateGroupModal(false)
           }}
           onShowCreateGroup={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
             setShowCallHistoryDrawer(false)
             setShowCreateGroupModal(true)
             setShowNotificationsDrawer(false)
@@ -4606,39 +4753,49 @@ export default function MessagesPage() {
 
           {showNotificationsDrawer ? (
             <div className={styles.overlayBackdrop}>
-              <div className={styles.overlayCard}>
-                <h3>Thông báo nâng cao</h3>
-                <div className={styles.overlayList}>
+              <div className={`${styles.overlayCard} ${styles.notificationsCenter}`}>
+                <div className={styles.notificationsHeader}>
+                  <h3>Thông báo <span>{notifications.length}</span></h3>
+                  <div className={styles.notificationsHeaderActions}>
+                    <button
+                      type="button"
+                      disabled={!notifications.some((item) => !item.is_read)}
+                      onClick={() => {
+                        setNotifications((current) => current.map((item) => ({ ...item, is_read: 1 })))
+                        if (token) api.readAllNotifications(token).catch(() => undefined)
+                      }}
+                    >
+                      Đánh dấu đã đọc
+                    </button>
+                    <button type="button" className={styles.notificationsCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
+                      ×
+                    </button>
+                  </div>
+                </div>
+                <div className={`${styles.overlayList} ${styles.notificationsList}`}>
                   {notifications.map((item) => {
                     const meta = parseNotificationMeta(item)
                     const conversationId = meta?.conversationId
                     const canAccept = item.type === 'friend-request' && !item.is_read && Boolean(meta?.requesterId || meta?.friendshipId)
+                    const isUnread = !item.is_read
+                    const senderName = item.title?.replace(/^new message:?/i, '').trim() || item.title || 'ZChat'
+                    const preview = item.body || 'Thông báo hệ thống'
                     return (
-                      <div key={item.id} className={styles.notifyCard}>
-                        <button
-                          type="button"
-                          className={styles.notifyMainBtn}
-                          onClick={() => handleOpenNotificationConversation(conversationId)}
-                        >
-                          <span className={styles.listEntryIdentity}>
-                            <span className={styles.listEntryAvatar}>{getAvatarInitial(item.title)}</span>
-                            <span className={styles.listEntryMeta}>
-                              <strong className={styles.listEntryTitle}>{item.title}</strong>
-                              <span className={styles.listEntrySubtitle}>{item.body || 'Thông báo hệ thống'}</span>
-                              <small className={styles.listEntrySubtitle}>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                      <div key={item.id} className={cn(styles.notifyCard, isUnread && styles.notifyCardUnread)}>
+                        <button type="button" className={styles.notifyMainBtn} onClick={() => handleOpenNotificationConversation(conversationId, item.id)}>
+                          <span className={styles.notifyAvatar}>{getAvatarInitial(senderName)}</span>
+                          <span className={styles.notifyContent}>
+                            <span className={styles.notifyTopLine}>
+                              <strong>{senderName}</strong>
+                              <small>{formatRelativeTime(item.created_at)}</small>
                             </span>
+                            <span className={styles.notifyPreview}>{preview}</span>
                           </span>
+                          {isUnread ? <span className={styles.notifyUnreadDot} aria-label="Chưa đọc" /> : null}
+                          <span className={styles.notifyArrow} aria-hidden="true">→</span>
                         </button>
-                        <div className={styles.notifyActions}>
-                          {conversationId ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenNotificationConversation(conversationId)}
-                            >
-                              Mở đoạn chat
-                            </button>
-                          ) : null}
-                          {canAccept ? (
+                        {canAccept ? (
+                          <div className={styles.notifyActions}>
                             <button
                               type="button"
                               className={styles.notifyAcceptBtn}
@@ -4649,16 +4806,13 @@ export default function MessagesPage() {
                             >
                               {busyActionId === `notif-${item.id}` ? 'Đang đồng ý...' : 'Đồng ý'}
                             </button>
-                          ) : null}
-                        </div>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}
                   {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
                 </div>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
-                  Đóng
-                </button>
               </div>
             </div>
           ) : null}
@@ -4737,7 +4891,7 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
-          {activeCall ? (
+          {false && activeCall ? (
             <div className={styles.callOverlay}>
               <div className={styles.callBackdropGlow} />
               <div className={styles.callTopBar}>
@@ -5004,17 +5158,7 @@ export default function MessagesPage() {
             onDecline={handleDeclineIncomingCall}
           />
         ) : null}
-        {/* OutgoingCallModal and ActiveCallWindow are rendered in AppLayout to persist across navigation */}
-        {activeCall && callMinimized ? (
-          <MinimizedCallPill
-            name={activeCall.withName}
-            avatarUrl={activeCall.avatarUrl}
-            duration={formattedCallTime}
-            participantCount={activeCall.mode === 'group' ? callParticipantProfiles.filter((item) => item.status === 'joined').length : undefined}
-            onOpen={() => setCallMinimized(false)}
-            onEnd={handleEndCall}
-          />
-        ) : null}
+        {/* OutgoingCallModal, ActiveCallWindow and MinimizedCallPill are rendered in AppLayout to persist across navigation. */}
         <AppDialog
           open={callSettingsOpen}
           onOpenChange={setCallSettingsOpen}
@@ -5114,6 +5258,21 @@ export default function MessagesPage() {
           onSubmit={(nextName) => handleUpdateGroupProfile({ name: nextName })}
         />
         <InputDialog
+          open={hideDialogOpen}
+          onOpenChange={setHideDialogOpen}
+          title="Ẩn hội thoại"
+          description="Nhập mã riêng để ẩn hội thoại khỏi danh sách. Bạn sẽ cần mã này để mở lại."
+          label="Mã ẩn"
+          placeholder="Nhập mã ẩn..."
+          hint="Mã này dùng để xác thực khi mở lại hội thoại ẩn."
+          inputType="password"
+          maxLength={32}
+          required
+          submitLabel="Ẩn"
+          validate={(value) => (!value.trim() ? 'Mã ẩn không được để trống.' : null)}
+          onSubmit={handleSubmitHideConversation}
+        />
+        <InputDialog
           open={lockDialogOpen}
           onOpenChange={setLockDialogOpen}
           title="Khóa hội thoại"
@@ -5121,6 +5280,7 @@ export default function MessagesPage() {
           label="Mã PIN"
           placeholder="Nhập mã PIN..."
           hint="Mã PIN tạm thời sẽ được dùng làm mật khẩu khóa hội thoại."
+          inputType="password"
           maxLength={12}
           required
           submitLabel="Khóa"

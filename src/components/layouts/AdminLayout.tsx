@@ -9,7 +9,6 @@ import {
   FileText,
   Flag,
   History,
-  KeyRound,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -38,7 +37,6 @@ const groups = [
     items: [
       { href: '/admin/users', label: 'Quản lý người dùng', icon: Users },
       { href: '/admin/moderators', label: 'Kiểm duyệt viên', icon: Shield },
-      { href: '/admin/moderators#permissions', label: 'Phân quyền', icon: KeyRound },
     ],
   },
   {

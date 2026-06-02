@@ -374,9 +374,9 @@ export default function AppLayout({
     return () => window.clearInterval(id)
   }, [activeCall, callAnswered])
 
-  // Only show global call windows when NOT on /messages (page.tsx handles its own IncomingCallModal there)
-  // OutgoingCallModal and ActiveCallWindow always show globally
+  // Messages owns the incoming modal; active calls dock outside the messages workspace.
   const onMessagesPage = pathname.startsWith('/messages')
+  const shouldDockActiveCall = Boolean(activeCall && callAnswered && (callMinimized || !onMessagesPage))
 
   const isCallError = isTerminalErrorState(callState)
 
@@ -420,8 +420,8 @@ export default function AppLayout({
         />
       ) : null}
 
-      {/* ActiveCallWindow — persists across navigation */}
-      {activeCall && callAnswered && !callMinimized ? (
+      {/* ActiveCallWindow — full view only inside the messages workspace */}
+      {activeCall && callAnswered && !shouldDockActiveCall ? (
         <ActiveCallWindow
           name={activeCall.withName}
           avatarUrl={activeCall.avatarUrl}
@@ -450,7 +450,7 @@ export default function AppLayout({
       ) : null}
 
       {/* Minimized call pill — persists across navigation */}
-      {activeCall && callMinimized ? (
+      {activeCall && (callMinimized || (callAnswered && !onMessagesPage)) ? (
         <MinimizedCallPill
           name={activeCall.withName}
           avatarUrl={activeCall.avatarUrl}
@@ -460,7 +460,10 @@ export default function AppLayout({
               ? callParticipants.filter((p) => p.status === 'joined').length || undefined
               : undefined
           }
-          onOpen={() => useCallStore.getState().setCallMinimized(false)}
+          onOpen={() => {
+            if (!onMessagesPage) navigate('/messages')
+            useCallStore.getState().setCallMinimized(false)
+          }}
           onEnd={handleEndCallGlobal}
         />
       ) : null}

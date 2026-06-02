@@ -14,6 +14,7 @@ type InputDialogProps = {
   hint?: string
   initialValue?: string
   maxLength?: number
+  inputType?: 'text' | 'password'
   required?: boolean
   identity?: {
     name: string
@@ -36,6 +37,7 @@ export function InputDialog({
   hint,
   initialValue = '',
   maxLength,
+  inputType = 'text',
   required,
   identity,
   submitLabel = 'Lưu',
@@ -102,6 +104,7 @@ export function InputDialog({
         <label htmlFor="app-input-dialog-control">{label}</label>
         <input
           id="app-input-dialog-control"
+          type={inputType}
           className={styles.input}
           value={value}
           maxLength={maxLength}

@@ -12,10 +12,8 @@ import {
   FolderOpen,
   Image,
   Link2,
-  LockKeyhole,
   LogOut,
   MessageSquareMore,
-  NotebookPen,
   PaintBucket,
   Pin,
   PinOff,
@@ -27,11 +25,10 @@ import {
   UserPen,
   UserPlus,
   UsersRound,
-  Vote,
   Wallpaper,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 
 import { getAvatarInitial, getGroupRoleLabel } from '@/services/messages/formatters'
 import type { ChatMessage, Conversation, FriendConnection } from '@/types'
@@ -92,10 +89,6 @@ export type SettingsSidebarProps = {
   loadingSharedContent: boolean
   onClose?: () => void
 }
-
-type ReminderItem = { id: string; title: string; dueAt: string }
-type PollItem = { id: string; question: string; options: Array<{ text: string; votes: number }> }
-type NoteItem = { id: string; text: string; createdAt: string }
 
 type AccordionSectionProps = {
   icon: ReactNode
@@ -339,36 +332,6 @@ function SharedMediaSection({ content, loading }: { content: SharedContent; load
   )
 }
 
-function useLocalConversationState<T>(conversationId: string, key: string, fallback: T) {
-  const storageKey = `zzchat:${conversationId}:${key}`
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === 'undefined') return fallback
-    try {
-      const raw = window.localStorage.getItem(storageKey)
-      return raw ? (JSON.parse(raw) as T) : fallback
-    } catch {
-      return fallback
-    }
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const raw = window.localStorage.getItem(storageKey)
-      setValue(raw ? (JSON.parse(raw) as T) : fallback)
-    } catch {
-      setValue(fallback)
-    }
-  }, [storageKey])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem(storageKey, JSON.stringify(value))
-  }, [storageKey, value])
-
-  return [value, setValue] as const
-}
-
 export function SettingsSidebar({
   conversation,
   myGroupRole,
@@ -420,15 +383,7 @@ export function SettingsSidebar({
   const [editingGroupName, setEditingGroupName] = useState(false)
   const [groupNameDraft, setGroupNameDraft] = useState('')
   const [savingGroupName, setSavingGroupName] = useState(false)
-  const [boardPanel, setBoardPanel] = useState<'reminders' | 'pinned' | 'polls' | 'notes' | null>(null)
-  const [reminderTitle, setReminderTitle] = useState('')
-  const [reminderDueAt, setReminderDueAt] = useState('')
-  const [pollQuestion, setPollQuestion] = useState('')
-  const [pollOptionsText, setPollOptionsText] = useState('')
-  const [noteDraft, setNoteDraft] = useState('')
-  const [reminders, setReminders] = useLocalConversationState<ReminderItem[]>(conversation.id, 'reminders', [])
-  const [polls, setPolls] = useLocalConversationState<PollItem[]>(conversation.id, 'polls', [])
-  const [notes, setNotes] = useLocalConversationState<NoteItem[]>(conversation.id, 'notes', [])
+  const [boardPanel, setBoardPanel] = useState<'pinned' | null>(null)
   const backgroundInputRef = useRef<HTMLInputElement | null>(null)
   const autoDeleteLabel = useMemo(() => {
     const current = conversation.autoDeleteAfterSeconds ?? null
@@ -477,52 +432,6 @@ export function SettingsSidebar({
     const onlineLabel = onlineMembers.length ? ` - ${onlineMembers.length} online` : ''
     return `${memberLabel}${onlineLabel}`
   }, [conversation.members.length, isGroup, onlineMembers.length, peer])
-
-  const addReminder = () => {
-    const title = reminderTitle.trim()
-    if (!title || !reminderDueAt) return
-    setReminders((prev) => [{ id: String(Date.now()), title, dueAt: reminderDueAt }, ...prev])
-    setReminderTitle('')
-    setReminderDueAt('')
-  }
-
-  const addPoll = () => {
-    const question = pollQuestion.trim()
-    const options = pollOptionsText
-      .split('\n')
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .slice(0, 6)
-    if (!question || options.length < 2) return
-    setPolls((prev) => [
-      { id: String(Date.now()), question, options: options.map((text) => ({ text, votes: 0 })) },
-      ...prev,
-    ])
-    setPollQuestion('')
-    setPollOptionsText('')
-  }
-
-  const votePoll = (pollId: string, optionIndex: number) => {
-    setPolls((prev) =>
-      prev.map((poll) =>
-        poll.id === pollId
-          ? {
-              ...poll,
-              options: poll.options.map((option, index) =>
-                index === optionIndex ? { ...option, votes: option.votes + 1 } : option
-              ),
-            }
-          : poll
-      )
-    )
-  }
-
-  const addNote = () => {
-    const text = noteDraft.trim()
-    if (!text) return
-    setNotes((prev) => [{ id: String(Date.now()), text, createdAt: new Date().toISOString() }, ...prev])
-    setNoteDraft('')
-  }
 
   return (
     <div className={styles.settingsSidebar}>
@@ -679,35 +588,11 @@ export function SettingsSidebar({
         {isGroup ? (
           <AccordionSection icon={<Blocks size={17} />} title="Bảng tin nhóm">
             <ActionRows rows={[
-              { icon: <CalendarClock size={16} />, label: `Nhắc hẹn (${reminders.length})`, onClick: () => setBoardPanel((value) => value === 'reminders' ? null : 'reminders') },
               { icon: <Pin size={16} />, label: `Tin nhắn đã ghim (${pinnedMessages.length})`, onClick: () => setBoardPanel((value) => value === 'pinned' ? null : 'pinned') },
-              { icon: <Vote size={16} />, label: `Bình chọn (${polls.length})`, onClick: () => setBoardPanel((value) => value === 'polls' ? null : 'polls') },
-              { icon: <NotebookPen size={16} />, label: `Ghi chú (${notes.length})`, onClick: () => setBoardPanel((value) => value === 'notes' ? null : 'notes') },
             ]} />
             {boardPanel ? (
               <GroupBoardPanel
-                active={boardPanel}
-                reminders={reminders}
-                reminderTitle={reminderTitle}
-                reminderDueAt={reminderDueAt}
-                setReminderTitle={setReminderTitle}
-                setReminderDueAt={setReminderDueAt}
-                addReminder={addReminder}
-                removeReminder={(id) => setReminders((prev) => prev.filter((item) => item.id !== id))}
                 pinnedMessages={pinnedMessages}
-                polls={polls}
-                pollQuestion={pollQuestion}
-                pollOptionsText={pollOptionsText}
-                setPollQuestion={setPollQuestion}
-                setPollOptionsText={setPollOptionsText}
-                addPoll={addPoll}
-                votePoll={votePoll}
-                removePoll={(id) => setPolls((prev) => prev.filter((item) => item.id !== id))}
-                notes={notes}
-                noteDraft={noteDraft}
-                setNoteDraft={setNoteDraft}
-                addNote={addNote}
-                removeNote={(id) => setNotes((prev) => prev.filter((item) => item.id !== id))}
               />
             ) : null}
           </AccordionSection>
@@ -806,7 +691,6 @@ export function SettingsSidebar({
               updatePreferences({ locked: false })
             }}
           />
-          <InfoRow icon={<LockKeyhole size={16} />} label="Mã hóa đầu cuối" value="Trạng thái chưa được API cung cấp" />
           <DangerActionButton icon={<Trash2 size={17} />} label="Xóa lịch sử chat phía bạn" description="Không ảnh hưởng người khác" onClick={() => void handleClearChatForMe()} />
           {isGroup ? (
             <>
@@ -866,129 +750,20 @@ function ActionRows({ rows }: { rows: Array<{ icon: ReactNode; label: string; on
 }
 
 function GroupBoardPanel({
-  active,
-  reminders,
-  reminderTitle,
-  reminderDueAt,
-  setReminderTitle,
-  setReminderDueAt,
-  addReminder,
-  removeReminder,
   pinnedMessages,
-  polls,
-  pollQuestion,
-  pollOptionsText,
-  setPollQuestion,
-  setPollOptionsText,
-  addPoll,
-  votePoll,
-  removePoll,
-  notes,
-  noteDraft,
-  setNoteDraft,
-  addNote,
-  removeNote,
 }: {
-  active: 'reminders' | 'pinned' | 'polls' | 'notes'
-  reminders: ReminderItem[]
-  reminderTitle: string
-  reminderDueAt: string
-  setReminderTitle: (value: string) => void
-  setReminderDueAt: (value: string) => void
-  addReminder: () => void
-  removeReminder: (id: string) => void
   pinnedMessages: ChatMessage[]
-  polls: PollItem[]
-  pollQuestion: string
-  pollOptionsText: string
-  setPollQuestion: (value: string) => void
-  setPollOptionsText: (value: string) => void
-  addPoll: () => void
-  votePoll: (pollId: string, optionIndex: number) => void
-  removePoll: (id: string) => void
-  notes: NoteItem[]
-  noteDraft: string
-  setNoteDraft: (value: string) => void
-  addNote: () => void
-  removeNote: (id: string) => void
 }) {
-  if (active === 'reminders') {
-    return (
-      <div className={styles.groupBoardPanel}>
-        <div className={styles.boardForm}>
-          <input value={reminderTitle} onChange={(event) => setReminderTitle(event.target.value)} placeholder="Tên nhắc hẹn" />
-          <input type="datetime-local" value={reminderDueAt} onChange={(event) => setReminderDueAt(event.target.value)} />
-          <button type="button" onClick={addReminder}>Thêm</button>
-        </div>
-        {reminders.length ? reminders.map((item) => (
-          <article key={item.id} className={styles.boardItem}>
-            <span>
-              <b>{item.title}</b>
-              <small>{new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.dueAt))}</small>
-            </span>
-            <button type="button" onClick={() => removeReminder(item.id)}>Xóa</button>
-          </article>
-        )) : <EmptySetting label="Chưa có nhắc hẹn trong nhóm." />}
-      </div>
-    )
-  }
-
-  if (active === 'pinned') {
-    return (
-      <div className={styles.groupBoardPanel}>
-        {pinnedMessages.length ? pinnedMessages.map((item) => (
-          <article key={item.id} className={styles.boardItem}>
-            <span>
-              <b>{item.senderName}</b>
-              <small>{item.text || item.fileName || item.type}</small>
-            </span>
-          </article>
-        )) : <EmptySetting label="Chưa có tin nhắn đã ghim trong dữ liệu đang tải." />}
-      </div>
-    )
-  }
-
-  if (active === 'polls') {
-    return (
-      <div className={styles.groupBoardPanel}>
-        <div className={styles.boardForm}>
-          <input value={pollQuestion} onChange={(event) => setPollQuestion(event.target.value)} placeholder="Câu hỏi bình chọn" />
-          <textarea value={pollOptionsText} onChange={(event) => setPollOptionsText(event.target.value)} placeholder="Mỗi lựa chọn một dòng" />
-          <button type="button" onClick={addPoll}>Tạo</button>
-        </div>
-        {polls.length ? polls.map((poll) => (
-          <article key={poll.id} className={styles.pollItem}>
-            <div className={styles.pollHeader}>
-              <b>{poll.question}</b>
-              <button type="button" onClick={() => removePoll(poll.id)}>Xóa</button>
-            </div>
-            {poll.options.map((option, index) => (
-              <button key={`${poll.id}-${option.text}`} type="button" onClick={() => votePoll(poll.id, index)}>
-                <span>{option.text}</span>
-                <small>{option.votes} phiếu</small>
-              </button>
-            ))}
-          </article>
-        )) : <EmptySetting label="Chưa có bình chọn nào." />}
-      </div>
-    )
-  }
-
   return (
     <div className={styles.groupBoardPanel}>
-      <div className={styles.boardForm}>
-        <textarea value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} placeholder="Viết ghi chú nhóm" />
-        <button type="button" onClick={addNote}>Lưu</button>
-      </div>
-      {notes.length ? notes.map((item) => (
+      {pinnedMessages.length ? pinnedMessages.map((item) => (
         <article key={item.id} className={styles.boardItem}>
           <span>
-            <b>{item.text}</b>
-            <small>{new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.createdAt))}</small>
+            <b>{item.senderName}</b>
+            <small>{item.text || item.fileName || item.type}</small>
           </span>
-          <button type="button" onClick={() => removeNote(item.id)}>Xóa</button>
         </article>
-      )) : <EmptySetting label="Chưa có ghi chú nhóm." />}
+      )) : <EmptySetting label="Chưa có tin nhắn đã ghim trong dữ liệu đang tải." />}
     </div>
   )
 }

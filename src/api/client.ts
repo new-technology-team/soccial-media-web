@@ -703,6 +703,13 @@ export const api = {
       token
     ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
 
+  verifyHiddenConversation: (token: string, conversationId: string, hiddenPassword: string) =>
+    request<{ ok: boolean; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/hidden/verify`,
+      { method: 'POST', body: JSON.stringify({ hiddenPassword }) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
   updateConversationNickname: (token: string, conversationId: string, userId: number, nickname: string | null) =>
     request<{ message: string; conversation: Conversation }>(
       `/chat/conversations/${conversationId}/members/${userId}/nickname`,
