@@ -4,11 +4,11 @@
 }
 
 .hero {
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   background: #ffffff;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
-  padding: 20px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  padding: 16px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -17,7 +17,7 @@
 
 .eyebrow {
   margin: 0 0 4px;
-  color: #0f766e;
+  color: #2563eb;
   font-size: 12px;
   line-height: 16px;
   font-weight: 700;
@@ -68,16 +68,16 @@
 .drawer,
 .empty,
 .dangerZone {
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 
 .card {
   position: relative;
-  padding: 16px;
-  min-height: 128px;
+  padding: 14px;
+  min-height: 112px;
   display: grid;
   align-content: space-between;
   gap: 12px;
@@ -110,7 +110,7 @@
 }
 
 .panel {
-  padding: 16px;
+  padding: 14px;
 }
 
 .panelHeader {
@@ -176,7 +176,7 @@
 .danger:focus-visible,
 .iconButton:focus-visible,
 .menuItem:focus-visible {
-  outline: 2px solid rgba(14, 165, 233, 0.55);
+  outline: 2px solid rgba(37, 99, 235, 0.32);
   outline-offset: 2px;
 }
 
@@ -197,7 +197,10 @@
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .button:hover,
@@ -209,9 +212,9 @@
 }
 
 .button {
-  background: #0f766e;
+  background: #2563eb;
   color: #ffffff;
-  box-shadow: 0 10px 20px rgba(15, 118, 110, 0.18);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
 }
 
 .secondary {
@@ -228,7 +231,7 @@
 .danger {
   background: #dc2626;
   color: #ffffff;
-  box-shadow: 0 10px 20px rgba(220, 38, 38, 0.16);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.16);
 }
 
 .iconButton {
@@ -393,7 +396,7 @@
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 12px;
   background: #ffffff;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
   padding: 6px;
 }
 

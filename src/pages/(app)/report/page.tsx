@@ -32,7 +32,7 @@ export default function ReportPage() {
     { value: 'harassment', label: 'Quấy rối hoặc bắt nạt' },
     { value: 'hate_speech', label: 'Nội dung thù hận' },
     { value: 'misinformation', label: 'Thông tin sai lệch' },
-    { value: 'spam', label: 'Spam' },
+    { value: 'spam', label: 'Spam hoặc quảng cáo' },
     { value: 'explicit', label: 'Nội dung nhạy cảm' },
     { value: 'copyright', label: 'Vi phạm bản quyền' },
     { value: 'impersonation', label: 'Mạo danh' },
@@ -79,7 +79,7 @@ export default function ReportPage() {
             <div className="flex justify-center mb-4">
               <CheckCircle className="w-12 h-12 text-green-600" />
             </div>
-            <h2 className="text-xl font-bold mb-2">Da gui bao cao</h2>
+            <h2 className="text-xl font-bold mb-2">Đã gửi báo cáo</h2>
             <p className="text-muted-foreground mb-6">
               Cảm ơn bạn đã đóng góp để giữ môi trường cộng đồng an toàn. Đội ngũ kiểm duyệt sẽ xử lý sớm.
             </p>

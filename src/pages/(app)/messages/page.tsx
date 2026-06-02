@@ -144,16 +144,24 @@ const MESSAGE_REACTION_ICONS: Array<{ type: string; label: string; emoji: string
   { type: 'angry', label: 'Tức giận', emoji: '😡' },
 ]
 
+const TURN_URLS = String(import.meta.env.VITE_TURN_URLS || import.meta.env.VITE_TURN_URL || '')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean)
+
 const RTC_CONFIG: RTCConfiguration = {
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    ...(import.meta.env.VITE_TURN_URL
+    ...(TURN_URLS.length
       ? [
         {
-          urls: import.meta.env.VITE_TURN_URL,
-          username: import.meta.env.VITE_TURN_USERNAME,
-          credential: import.meta.env.VITE_TURN_CREDENTIAL,
+          urls: TURN_URLS,
+          username: import.meta.env.VITE_TURN_USERNAME || undefined,
+          credential: import.meta.env.VITE_TURN_CREDENTIAL || undefined,
         },
       ]
       : []),
