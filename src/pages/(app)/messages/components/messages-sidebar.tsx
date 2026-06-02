@@ -40,13 +40,7 @@ export function MessagesSidebar({
   onShowNewMessage,
   onShowCreateGroup,
 }: MessagesSidebarProps) {
-  const q = searchTerm.trim().toLowerCase()
-  const visibleConversations = conversations.filter((conv) => {
-    const name = getConversationDisplayName(conv, userId).toLowerCase()
-    const searchable = [name, conv.name || '', String(conv.id)].join(' ').toLowerCase()
-    if (!q) return !conv.isHidden
-    return searchable.includes(q)
-  })
+  const visibleConversations = conversations
 
   return (
     <>

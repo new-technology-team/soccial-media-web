@@ -51,6 +51,12 @@ function ReactionIcon({ type, size = 15 }: { type: string | null | undefined; si
   )
 }
 
+function getCallHistoryTime(message: ChatMessage, meta: Record<string, unknown>) {
+  const raw = meta.endedAt || meta.startedAt || message.createdAt
+  const time = raw ? new Date(String(raw)).getTime() : 0
+  return Number.isFinite(time) ? time : 0
+}
+
 export function MessageThread({
   userId,
   selectedConversation,
@@ -90,10 +96,15 @@ export function MessageThread({
         if (msg.type === 'call-history') {
           const meta = (msg.meta || {}) as Record<string, unknown>
           const callSessionId = String(meta.callSessionId || '')
+          const activeMessageTime = getCallHistoryTime(msg, meta)
           const hasEndedMessage = Boolean(callSessionId && virtualSlice.items.some((item) => {
             const itemMeta = (item.meta || {}) as Record<string, unknown>
             return item.type === 'call-history' && itemMeta.callSessionId === callSessionId && itemMeta.status && itemMeta.status !== 'active'
-          }))
+          })) || virtualSlice.items.some((item) => {
+            if (item.type !== 'call-history' || item.conversationId !== msg.conversationId) return false
+            const itemMeta = (item.meta || {}) as Record<string, unknown>
+            return Boolean(itemMeta.status && itemMeta.status !== 'active' && getCallHistoryTime(item, itemMeta) >= activeMessageTime)
+          })
           const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage
           return (
             <CallHistoryMessage

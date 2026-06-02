@@ -73,6 +73,7 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
   ...conversation,
   id: String(conversation.id),
   pinnedMessageIds: (conversation.pinnedMessageIds || []).map((item) => String(item)),
+  pinnedMessages: (conversation.pinnedMessages || []).map(normalizeChatMessage),
   avatarUrl: resolveApiAssetUrl(conversation.avatarUrl),
   backgroundUrl: resolveApiAssetUrl(conversation.backgroundUrl),
   lastMessage: conversation.lastMessage

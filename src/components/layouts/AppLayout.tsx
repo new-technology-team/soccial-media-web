@@ -374,9 +374,9 @@ export default function AppLayout({
     return () => window.clearInterval(id)
   }, [activeCall, callAnswered])
 
-  // Messages owns the incoming modal; active calls dock outside the messages workspace.
+  // Keep answered calls docked so the user can keep chatting and switching conversations.
   const onMessagesPage = pathname.startsWith('/messages')
-  const shouldDockActiveCall = Boolean(activeCall && callAnswered && (callMinimized || !onMessagesPage))
+  const shouldDockActiveCall = Boolean(activeCall && callAnswered)
 
   const isCallError = isTerminalErrorState(callState)
 

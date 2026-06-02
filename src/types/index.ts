@@ -97,6 +97,7 @@ export interface Conversation {
     viewerReaction?: string | null
   } | null
   pinnedMessageIds?: string[]
+  pinnedMessages?: ChatMessage[]
   role?: string
   groupOwner?: number
   onlineCount?: number

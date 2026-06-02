@@ -1939,9 +1939,32 @@ export default function MessagesPage() {
   const pinnedMessageIds = useMemo(() => new Set((selectedConversation?.pinnedMessageIds || []).map((item) => String(item))), [selectedConversation])
   const pinnedMessages = useMemo(() => {
     if (!selectedConversationId || pinnedMessageIds.size === 0) return []
-    return (messagesByConversation[selectedConversationId] || []).filter((item) => pinnedMessageIds.has(item.id))
-  }, [messagesByConversation, pinnedMessageIds, selectedConversationId])
+    const byId = new Map<string, ChatMessage>()
+    for (const item of selectedConversation?.pinnedMessages || []) {
+      if (pinnedMessageIds.has(item.id)) byId.set(item.id, item)
+    }
+    for (const item of messagesByConversation[selectedConversationId] || []) {
+      if (pinnedMessageIds.has(item.id)) byId.set(item.id, item)
+    }
+    return (selectedConversation?.pinnedMessageIds || [])
+      .map((messageId) => byId.get(String(messageId)))
+      .filter((item): item is ChatMessage => Boolean(item))
+  }, [messagesByConversation, pinnedMessageIds, selectedConversation, selectedConversationId])
   const pinnedMessageMap = useMemo(() => new Map(pinnedMessages.map((item) => [item.id, item])), [pinnedMessages])
+
+  const getPinnedMessagePreview = useCallback((item: ChatMessage | null | undefined) => {
+    if (!item) return 'Đang tải nội dung tin nhắn đã ghim'
+    if (item.isDeleted || (item.meta && (item.meta as Record<string, unknown>).recalled)) return 'Tin nhắn đã được thu hồi'
+    if (item.text?.trim()) return item.text.trim()
+    if (item.fileName?.trim()) return item.fileName.trim()
+    if (item.type === 'image') return 'Ảnh'
+    if (item.type === 'video') return 'Video'
+    if (item.type === 'audio') return 'Tin nhắn âm thanh'
+    if (item.type === 'file') return 'Tệp đính kèm'
+    if (item.type === 'sticker') return 'Sticker'
+    if (item.type === 'call-history') return 'Lịch sử cuộc gọi'
+    return 'Tin nhắn đã ghim'
+  }, [])
 
   const jumpToMessage = useCallback(async (messageId: string) => {
     const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(messageId) : messageId.replace(/"/g, '\\"')
@@ -3329,8 +3352,8 @@ export default function MessagesPage() {
     setJoinedCallUserIds(previewInitialParticipants)
     const presenceResults = await Promise.all(callTargets.map((targetUserId) => checkUserPresence(targetUserId)))
     const onlineCallTargets = presenceResults.filter((item) => item.online).map((item) => item.userId)
-    // roomId Jitsi do server cấp phát (tái dùng phòng phiên đang diễn ra); đính kèm mọi offer để peer
-    // là mobile (chỉ hiểu Jitsi) vào đúng phòng. callSessionId tách riêng để lịch sử từng cuộc còn phân biệt.
+    // roomId Jitsi do server cấp phát (tái dùng phòng phiên đang diễn ra); dùng luôn làm
+    // callSessionId cho tin active và lịch sử kết thúc để nút tham gia được dọn đúng phiên.
     const callRoomId = await acquireCallRoom(socket, selectedConversationId)
     callRoomIdRef.current = callRoomId
 
@@ -3384,7 +3407,7 @@ export default function MessagesPage() {
       callType,
       mode: callMode,
       conversationId: selectedConversationId,
-      callSessionId,
+      callSessionId: callMode === 'group' ? callRoomId : callSessionId,
       startedAt,
       answeredAt: null,
       withName,
@@ -4480,16 +4503,9 @@ export default function MessagesPage() {
             <div className={styles.pinnedQuickList}>
               {selectedConversation.pinnedMessageIds.map((messageId) => {
                 const item = pinnedMessageMap.get(String(messageId))
-                if (!item) {
-                  return (
-                    <button key={String(messageId)} type="button" onClick={() => void jumpToMessage(String(messageId))}>
-                      {`Tin nhắn đã ghim #${String(messageId).slice(-6)}`}
-                    </button>
-                  )
-                }
                 return (
                   <button key={String(messageId)} type="button" onClick={() => void jumpToMessage(String(messageId))}>
-                  {item.text || item.fileName || (item.type === 'image' ? 'Ảnh' : 'Tin nhắn đã ghim')}
+                    {getPinnedMessagePreview(item)}
                   </button>
                 )
               })} {false && (
