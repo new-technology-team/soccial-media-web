@@ -18,10 +18,10 @@ import { toast } from '@/hooks/use-toast'
 import type { User } from '@/types'
 
 const MODERATOR_PERMISSIONS = [
-  { key: 'manage_posts', label: 'Posts' },
-  { key: 'manage_reports', label: 'Reports' },
-  { key: 'manage_comments', label: 'Comments' },
-  { key: 'manage_users', label: 'Users' },
+  { key: 'manage_posts', label: 'Bài viết' },
+  { key: 'manage_reports', label: 'Báo cáo' },
+  { key: 'manage_comments', label: 'Bình luận' },
+  { key: 'manage_users', label: 'Người dùng' },
 ]
 
 export default function AdminModeratorsPage() {
@@ -107,7 +107,8 @@ export default function AdminModeratorsPage() {
         <MetricCard label="SLA xử lý" value="92%" meta="đúng hạn" tone="success" />
       </section>
 
-      <Panel title="Moderator roster" description="Card tập trung vào quyền, workload và trạng thái để điều phối nhanh.">
+      <Panel title="Danh sách kiểm duyệt viên" description="Quản lý quyền, khối lượng công việc và trạng thái để điều phối nhanh.">
+        <span id="permissions" aria-hidden="true" />
         <div className={styles.toolbar}>
           <Search size={16} />
           <input className={styles.input} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm moderator" />
