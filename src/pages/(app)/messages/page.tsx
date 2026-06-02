@@ -1329,6 +1329,19 @@ export default function MessagesPage() {
       setCallStatus('Đã kết nối')
     })
 
+    socket.on('call:answered', (payload) => {
+      const answeredByUserId = Number(payload?.answeredByUserId || payload?.fromUserId || 0)
+      if (answeredByUserId && answeredByUserId !== Number(user?.id || 0)) return
+      const st = useCallStore.getState()
+      clearIncomingCall()
+      setGlobalIncomingCall(null)
+      if (!st.activeCall) {
+        setCallState('idle')
+        setCallStatus(null)
+      }
+      stopRingtone()
+    })
+
     socket.on('call:join', (payload) => {
       const fromUserId = Number(payload?.fromUserId || 0)
       if (fromUserId > 0) {
@@ -1523,6 +1536,7 @@ export default function MessagesPage() {
       socket.off('notification:new', handleSocketNotification)
       socket.off('call:offer')
       socket.off('call:answer')
+      socket.off('call:answered')
       socket.off('call:join')
       socket.off('call:leave')
       socket.off('call:ice-candidate')

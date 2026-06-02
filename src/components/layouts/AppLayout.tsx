@@ -112,6 +112,15 @@ export default function AppLayout({
       isEndingCallRef.current = false
     }
 
+    const onAnswered = (payload?: { fromUserId?: number | string; answeredByUserId?: number | string }) => {
+      const answeredByUserId = Number(payload?.answeredByUserId || payload?.fromUserId || 0)
+      if (answeredByUserId && answeredByUserId !== Number(user.id || 0)) return
+      const { activeCall: currentCall, setIncomingCall, setAcceptPending, setCallState } = useCallStore.getState()
+      setIncomingCall(null)
+      setAcceptPending(false)
+      if (!currentCall) setCallState('idle')
+    }
+
     const onAuthRevoked = (payload: { reason?: string }) => {
       clearAuth()
       socket.disconnect()
@@ -159,6 +168,7 @@ export default function AppLayout({
 
     socket.on('call:offer', onOffer)
     socket.on('call:incoming', onOffer)
+    socket.on('call:answered', onAnswered)
     socket.on('call:ended', onEnd)
     socket.on('auth:revoked', onAuthRevoked)
     socket.on('user:avatar-updated', onAvatarUpdated)
@@ -168,6 +178,7 @@ export default function AppLayout({
     return () => {
       socket.off('call:offer', onOffer)
       socket.off('call:incoming', onOffer)
+      socket.off('call:answered', onAnswered)
       socket.off('call:ended', onEnd)
       socket.off('auth:revoked', onAuthRevoked)
       socket.off('user:avatar-updated', onAvatarUpdated)
