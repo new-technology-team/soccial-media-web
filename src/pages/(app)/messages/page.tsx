@@ -3803,11 +3803,19 @@ export default function MessagesPage() {
     isEndingCallRef.current = true
     
     const endingCall = activeCall
-    socket.emit('call:end', {
-      conversationId: endingCall?.conversationId || selectedConversationId,
-      callType: endingCall?.type,
-      mode: endingCall?.mode,
-    })
+    const conversationId = endingCall?.conversationId || selectedConversationId
+    if (endingCall?.mode === 'group') {
+      socket.emit('group_call_left', {
+        conversationId,
+        callType: endingCall.type,
+      })
+    } else {
+      socket.emit('call:end', {
+        conversationId,
+        callType: endingCall?.type,
+        mode: endingCall?.mode,
+      })
+    }
     
     const finalStatus = callAnswered ? 'completed' : 'no_answer'
     logCall(finalStatus)
