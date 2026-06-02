@@ -84,6 +84,15 @@ export function MessageThread({
       })
       .map((item) => String(((item.meta || {}) as Record<string, unknown>).callSessionId))
   )
+  const latestLiveActiveGroupCallMessageId = [...virtualSlice.items].reverse().find((item) => {
+    if (item.type !== 'call-history') return false
+    const meta = (item.meta || {}) as Record<string, unknown>
+    const callSessionId = String(meta.callSessionId || '')
+    return meta.mode === 'group'
+      && meta.status === 'active'
+      && Boolean(callSessionId && activeGroupCallSessionIds?.has(callSessionId))
+      && !endedGroupCallSessionIds.has(callSessionId)
+  })?.id
   const displayItems = (() => {
     const activeCalls: ChatMessage[] = []
     const rest: ChatMessage[] = []
@@ -95,7 +104,7 @@ export function MessageThread({
       const meta = (item.meta || {}) as Record<string, unknown>
       const callSessionId = String(meta.callSessionId || '')
       const isActiveGroupCall = meta.mode === 'group' && meta.status === 'active'
-      const isLiveGroupCall = isActiveGroupCall && Boolean(callSessionId && activeGroupCallSessionIds?.has(callSessionId))
+      const isLiveGroupCall = isActiveGroupCall && item.id === latestLiveActiveGroupCallMessageId
       if (isActiveGroupCall && callSessionId && endedGroupCallSessionIds.has(callSessionId)) continue
       if (isLiveGroupCall) {
         activeCalls.push(item)
@@ -131,7 +140,7 @@ export function MessageThread({
             const itemMeta = (item.meta || {}) as Record<string, unknown>
             return item.type === 'call-history' && itemMeta.callSessionId === callSessionId && isTerminalGroupCallStatus(itemMeta.status)
           }))
-          const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage && Boolean(callSessionId && activeGroupCallSessionIds?.has(callSessionId))
+          const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage && msg.id === latestLiveActiveGroupCallMessageId
           return (
             <CallHistoryMessage
               key={msg.id}

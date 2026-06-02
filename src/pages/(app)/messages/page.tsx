@@ -628,6 +628,8 @@ export default function MessagesPage() {
       setActiveGroupCallSessionIds(new Set())
       return
     }
+    setActiveGroupCallSessionIds(new Set(sessionIds))
+    if (!socket.connected) return
 
     let cancelled = false
     Promise.all(sessionIds.map((callSessionId) => new Promise<string | null>((resolve) => {
