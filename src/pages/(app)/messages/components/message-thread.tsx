@@ -57,6 +57,10 @@ function getCallHistoryTime(message: ChatMessage, meta: Record<string, unknown>)
   return Number.isFinite(time) ? time : 0
 }
 
+function isTerminalGroupCallStatus(status: unknown) {
+  return status === 'completed' || status === 'cancelled' || status === 'failed'
+}
+
 export function MessageThread({
   userId,
   selectedConversation,
@@ -99,11 +103,11 @@ export function MessageThread({
           const activeMessageTime = getCallHistoryTime(msg, meta)
           const hasEndedMessage = Boolean(callSessionId && virtualSlice.items.some((item) => {
             const itemMeta = (item.meta || {}) as Record<string, unknown>
-            return item.type === 'call-history' && itemMeta.callSessionId === callSessionId && itemMeta.status && itemMeta.status !== 'active'
+            return item.type === 'call-history' && itemMeta.callSessionId === callSessionId && isTerminalGroupCallStatus(itemMeta.status)
           })) || virtualSlice.items.some((item) => {
             if (item.type !== 'call-history' || item.conversationId !== msg.conversationId) return false
             const itemMeta = (item.meta || {}) as Record<string, unknown>
-            return Boolean(itemMeta.status && itemMeta.status !== 'active' && getCallHistoryTime(item, itemMeta) >= activeMessageTime)
+            return Boolean(isTerminalGroupCallStatus(itemMeta.status) && getCallHistoryTime(item, itemMeta) >= activeMessageTime)
           })
           const canJoinGroupCall = meta.mode === 'group' && meta.status === 'active' && !hasEndedMessage
           return (

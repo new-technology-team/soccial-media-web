@@ -253,12 +253,19 @@
 
 .activeWindow {
   position: fixed;
-  inset: 0;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(430px, calc(100vw - 2rem));
+  height: min(680px, calc(100dvh - 2rem));
   z-index: 78;
   display: grid;
   grid-template-rows: auto 1fr auto;
   background: #0f172a;
   color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
 }
 
 .topBar {
@@ -665,6 +672,11 @@
   }
 
   .activeWindow {
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    width: auto;
+    height: min(620px, calc(100dvh - 1.5rem));
     grid-template-rows: auto 1fr auto;
   }
 

@@ -79,7 +79,7 @@ export type SettingsSidebarProps = {
   handleUpdateGroupProfile: (payload: { name: string; avatarUrl?: string | null }) => void | Promise<void>
   handleBlockPeer: () => void | Promise<void>
   handleUnblockPeer: () => void | Promise<void>
-  handleOpenHideConversation: () => void
+  handleOpenHideConversation: (mode?: 'hide' | 'unhide') => void
   handleOpenLockConversation: () => void
   handleOpenAutoDeleteSettings: () => void
   handleOpenReportConversation: () => void
@@ -673,10 +673,10 @@ export function SettingsSidebar({
             description="Cần mật khẩu ẩn để mở lại"
             onChange={(checked) => {
               if (checked) {
-                handleOpenHideConversation()
+                handleOpenHideConversation('hide')
                 return
               }
-              updatePreferences({ hidden: false })
+              handleOpenHideConversation('unhide')
             }}
           />
           <ToggleSwitch

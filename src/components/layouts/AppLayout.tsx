@@ -374,9 +374,9 @@ export default function AppLayout({
     return () => window.clearInterval(id)
   }, [activeCall, callAnswered])
 
-  // Keep answered calls docked so the user can keep chatting and switching conversations.
+  // Keep answered calls docked when minimized; otherwise show a compact floating call window.
   const onMessagesPage = pathname.startsWith('/messages')
-  const shouldDockActiveCall = Boolean(activeCall && callAnswered)
+  const shouldDockActiveCall = Boolean(activeCall && callAnswered && (callMinimized || !onMessagesPage))
 
   const isCallError = isTerminalErrorState(callState)
 

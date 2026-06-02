@@ -365,6 +365,7 @@ export default function MessagesPage() {
   const [autoDeleteDialogOpen, setAutoDeleteDialogOpen] = useState(false)
   const [lockDialogOpen, setLockDialogOpen] = useState(false)
   const [hideDialogOpen, setHideDialogOpen] = useState(false)
+  const [hideDialogMode, setHideDialogMode] = useState<'hide' | 'unhide'>('hide')
   const [rightPanelSection, setRightPanelSection] = useState<'overview' | 'members' | 'manage'>('overview')
   const [groupName, setGroupName] = useState('')
   const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
@@ -1141,6 +1142,7 @@ export default function MessagesPage() {
         const jitsiIncoming: IncomingCallState = {
           fromUserId,
           callType: payload.callType || 'video',
+          mode: incomingConv?.type === 'group' ? 'group' : 'private',
           conversationId: incomingConversationId,
           roomId: String(payload.roomId),
           useJitsi: true,
@@ -1196,6 +1198,7 @@ export default function MessagesPage() {
       const incomingPayload: IncomingCallState = {
         fromUserId,
         callType: payload.callType || 'voice',
+        mode: incomingConv?.type === 'group' ? 'group' : 'private',
         conversationId: incomingConversationId,
         offer: payload.offer,
         roomId: payload.roomId ? String(payload.roomId) : undefined,
@@ -1412,7 +1415,16 @@ export default function MessagesPage() {
     })
 
     // Người được gọi từ chối cuộc gọi.
-    socket.on('call:reject', () => {
+    socket.on('call:reject', (payload) => {
+      if (activeCall?.mode === 'group') {
+        const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
+        if (fromUserId > 0) {
+          setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
+          setRemoteMediaState((prev) => { const next = { ...prev }; delete next[fromUserId]; return next })
+        }
+        setCallStatus('Một thành viên đã từ chối, cuộc gọi nhóm vẫn đang diễn ra')
+        return
+      }
       stopRingtone()
       closeCallResources()
       logCall('rejected')
@@ -2113,6 +2125,8 @@ export default function MessagesPage() {
       let successMessage = 'Đã cập nhật thiết lập hội thoại.'
       if (payload.hidden) {
         successMessage = 'Đã ẩn hội thoại.'
+      } else if (payload.hidden === false) {
+        successMessage = 'Đã bỏ ẩn hội thoại.'
       } else if (payload.locked === false) {
         setPendingLockedConversationId((current) => (current === selectedConversation.id ? null : current))
         successMessage = 'Đã mở khóa hội thoại.'
@@ -2198,17 +2212,18 @@ export default function MessagesPage() {
     }
   }
 
-  const handleOpenHideConversation = () => {
+  const handleOpenHideConversation = (mode: 'hide' | 'unhide' = 'hide') => {
     if (!selectedConversation) return
+    setHideDialogMode(mode)
     setHideDialogOpen(true)
   }
 
   const handleSubmitHideConversation = async (pin: string) => {
     if (!pin.trim()) {
-      throw new Error('Vui lòng nhập mã để ẩn hội thoại.')
+      throw new Error(hideDialogMode === 'unhide' ? 'Vui lòng nhập mã để bỏ ẩn hội thoại.' : 'Vui lòng nhập mã để ẩn hội thoại.')
     }
     await handleUpdateConversationPreferences({
-      hidden: true,
+      hidden: hideDialogMode !== 'unhide',
       hiddenPassword: pin.trim(),
     })
   }
@@ -3616,9 +3631,12 @@ export default function MessagesPage() {
 
     const activeConversationId = incomingCall.conversationId || selectedConversationId
     if (activeConversationId) {
-      socket.emit('call:leave', {
-        conversationId: activeConversationId,
-      })
+      const decliningGroupCall = incomingCall.mode === 'group'
+      if (!decliningGroupCall) {
+        socket.emit('call:leave', {
+          conversationId: activeConversationId,
+        })
+      }
       // Từ chối khác với kết thúc: báo riêng để người gọi hiển thị "Đã từ chối".
       socket.emit('call:reject', {
         targetUserId: incomingCall.fromUserId,
@@ -5276,16 +5294,16 @@ export default function MessagesPage() {
         <InputDialog
           open={hideDialogOpen}
           onOpenChange={setHideDialogOpen}
-          title="Ẩn hội thoại"
-          description="Nhập mã riêng để ẩn hội thoại khỏi danh sách. Bạn sẽ cần mã này để mở lại."
-          label="Mã ẩn"
+          title={hideDialogMode === 'unhide' ? 'Bỏ ẩn hội thoại' : 'Ẩn hội thoại'}
+          description={hideDialogMode === 'unhide' ? 'Nhập mã ẩn để đưa hội thoại trở lại danh sách.' : 'Nhập mã riêng để ẩn hội thoại khỏi danh sách. Bạn sẽ cần mã này để mở lại.'}
+          label={hideDialogMode === 'unhide' ? 'Mã xác nhận' : 'Mã ẩn'}
           placeholder="Nhập mã ẩn..."
-          hint="Mã này dùng để xác thực khi mở lại hội thoại ẩn."
+          hint={hideDialogMode === 'unhide' ? 'Mã phải trùng với mã đã dùng khi ẩn hội thoại.' : 'Mã này dùng để xác thực khi mở lại hội thoại ẩn.'}
           inputType="password"
           maxLength={32}
           required
-          submitLabel="Ẩn"
-          validate={(value) => (!value.trim() ? 'Mã ẩn không được để trống.' : null)}
+          submitLabel={hideDialogMode === 'unhide' ? 'Bỏ ẩn' : 'Ẩn'}
+          validate={(value) => (!value.trim() ? (hideDialogMode === 'unhide' ? 'Nhập mã để bỏ ẩn hội thoại.' : 'Mã ẩn không được để trống.') : null)}
           onSubmit={handleSubmitHideConversation}
         />
         <InputDialog
