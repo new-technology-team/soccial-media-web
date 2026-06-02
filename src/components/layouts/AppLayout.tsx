@@ -87,7 +87,8 @@ export default function AppLayout({
       })
     }
 
-    const onEnd = () => {
+    const onEnd = (payload?: { fromUserId?: number | string }) => {
+      if (Number(payload?.fromUserId || 0) === Number(user.id || 0)) return
       const {
         setIncomingCall, setActiveCall, setCallState, setCallAnswered, setCallMinimized,
         setCallSeconds, setCallParticipants, setLocalStream, setRemoteStreams,

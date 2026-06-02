@@ -1228,6 +1228,7 @@ export default function MessagesPage() {
     })
 
     const handleRemoteCallEnd = (payload: any) => {
+      if (Number(payload?.fromUserId || 0) === Number(user?.id || 0) && isEndingCallRef.current) return
       logCall(payload?.reason === 'disconnected' ? 'completed' : (callMetaRef.current?.answeredAt ? 'completed' : 'cancelled'))
       setCallState('ended')
       stopRingtone()
@@ -3143,9 +3144,6 @@ export default function MessagesPage() {
     }
 
     const activeCallTargets = [...callTargets]
-    const presenceResults = await Promise.all(callTargets.map((targetUserId) => checkUserPresence(targetUserId)))
-    const onlineCallTargets = presenceResults.filter((item) => item.online).map((item) => item.userId)
-
     if (isGroupCall && activeCallTargets.length + 1 > GROUP_CALL_MAX_PARTICIPANTS) {
       toast({ title: `Cuộc gọi nhóm chỉ hỗ trợ tối đa ${GROUP_CALL_MAX_PARTICIPANTS} người.`, variant: 'destructive' })
       return
@@ -3155,11 +3153,45 @@ export default function MessagesPage() {
     setGlobalCallErrorMessage(null)
     callLoggedRef.current = false
     lastCallTypeRef.current = callType
+    const previewStartedAt = Date.now()
+    const previewCallMode: 'private' | 'group' = isGroupCall ? 'group' : 'private'
+    const previewWithName = selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : `Người dùng #${callTargetId}`
+    const callSessionId = `${selectedConversationId}-${previewStartedAt}`
+    const previewInitialParticipants = user?.id ? [user.id] : []
+    callMetaRef.current = {
+      initiatorId: Number(user?.id || 0),
+      participantIds: [...previewInitialParticipants, ...activeCallTargets],
+      callType,
+      mode: previewCallMode,
+      conversationId: selectedConversationId,
+      callSessionId,
+      startedAt: previewStartedAt,
+      answeredAt: null,
+      withName: previewWithName,
+    }
+    setCallState(isGroupCall ? 'ringing' : 'calling')
+    startRingtone('outgoing')
+    setCallStatus(isGroupCall ? 'Đang gọi nhóm...' : 'Đang gọi...')
+    setCallAnswered(false)
+    setRingingStartedAt(previewStartedAt)
+    setCallSeconds(0)
+    setActiveCall({
+      type: callType,
+      withName: previewWithName,
+      startedAt: previewStartedAt,
+      mode: previewCallMode,
+      avatarUrl: selectedConversation?.avatarUrl || selectedConversation?.members.find((member) => member.userId === directPeer?.id)?.avatarUrl || null,
+      conversationId: selectedConversationId,
+      targetUserIds: [...activeCallTargets],
+    })
+    setCallMinimized(false)
+    setJoinedCallUserIds(previewInitialParticipants)
+    const presenceResults = await Promise.all(callTargets.map((targetUserId) => checkUserPresence(targetUserId)))
+    const onlineCallTargets = presenceResults.filter((item) => item.online).map((item) => item.userId)
     // roomId Jitsi do server cấp phát (tái dùng phòng phiên đang diễn ra); đính kèm mọi offer để peer
     // là mobile (chỉ hiểu Jitsi) vào đúng phòng. callSessionId tách riêng để lịch sử từng cuộc còn phân biệt.
     const callRoomId = await acquireCallRoom(socket, selectedConversationId)
     callRoomIdRef.current = callRoomId
-    const callSessionId = `${selectedConversationId}-${Date.now()}`
 
     try {
       await ensureLocalStream(callType)
