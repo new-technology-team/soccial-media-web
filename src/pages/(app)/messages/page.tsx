@@ -1250,7 +1250,7 @@ export default function MessagesPage() {
         const roomId = String(payload?.roomId || callRoomIdRef.current || '')
         if (roomId) {
           stopRingtone()
-          logCall('completed')
+          if (activeCall?.mode !== 'group') logCall('completed')
           const myName = user?.fullName || 'Bạn'
           closeCallResources()
           window.open(resolveJitsiUrl(roomId, myName), '_blank', 'noopener')
