@@ -90,6 +90,7 @@ const isInDateFilter = (item: NotificationItem, filter: ReadFilter) => {
 }
 
 export default function NotificationsPage() {
+  const navigate = useNavigate()
   const token = useAuthStore((state) => state.accessToken)
   const user = useAuthStore((state) => state.user)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])

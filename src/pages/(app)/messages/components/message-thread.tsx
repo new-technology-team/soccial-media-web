@@ -121,7 +121,7 @@ export function MessageThread({
       ref={messagesWrapRef}
       onScroll={(event) => {
         const element = event.currentTarget
-        if (element.scrollTop <= 24) {
+        if (!loadingOlderMessages && virtualSlice.startIndex > 0 && element.scrollTop <= 24) {
           onLoadOlderMessages().catch(() => undefined)
         }
         onScroll?.(event)

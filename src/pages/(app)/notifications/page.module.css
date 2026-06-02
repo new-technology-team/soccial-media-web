@@ -6,7 +6,7 @@
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   padding: 18px 0 12px;
@@ -45,13 +45,6 @@
   gap: 6px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.filterBtn:hover {
-  border-color: rgba(11, 95, 255, 0.3);
-  background: rgba(11, 95, 255, 0.04);
 }
 
 .headerActions button:first-child {
@@ -301,63 +294,5 @@
 
   .content span {
     white-space: normal;
-  }
-}
-
-@media (max-width: 720px) {
-  .page {
-    margin: 0.5rem auto 0.8rem;
-  }
-
-  .hero {
-    padding: 1rem;
-    border-radius: 16px;
-  }
-
-  .hero h1 {
-    font-size: 1.5rem;
-  }
-
-  .heroSub {
-    font-size: 0.9rem;
-  }
-
-  .filterRow {
-    gap: 0.5rem;
-  }
-
-  .filterBtn {
-    height: 36px;
-    padding: 0 0.8rem;
-    font-size: 0.85rem;
-  }
-
-  .mainPanel,
-  .sidePanel {
-    border-radius: 14px;
-    padding: 1rem;
-  }
-
-  .itemIconWrap {
-    width: 40px;
-    height: 40px;
-  }
-
-  .itemTypeIcon {
-    width: 18px;
-    height: 18px;
-  }
-
-  .item {
-    padding: 0.8rem;
-    gap: 0.6rem;
-  }
-
-  .statCard {
-    padding: 0.9rem;
-  }
-
-  .statValue {
-    font-size: 1.8rem;
   }
 }
