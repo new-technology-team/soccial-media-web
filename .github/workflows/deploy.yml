@@ -20,15 +20,27 @@ jobs:
           timeout: 60s
           command_timeout: 900s
           script: |
+            set -e
+
             cd ~/soccial-media-web
             git fetch origin
             git reset --hard origin/tongquockhanh2510
+
             npm install
+
             export VITE_API_BASE_URL="${{ secrets.VITE_API_BASE_URL }}"
             export VITE_SOCKET_URL="${{ secrets.VITE_SOCKET_URL }}"
+            export VITE_SOCKET_PATH="${{ secrets.VITE_SOCKET_PATH }}"
             export VITE_BACKEND_TARGET="${{ secrets.VITE_BACKEND_TARGET }}"
             export VITE_GOOGLE_CLIENT_ID="${{ secrets.VITE_GOOGLE_CLIENT_ID }}"
+            export VITE_TURN_URL="${{ secrets.VITE_TURN_URL }}"
+            export VITE_TURN_USERNAME="${{ secrets.VITE_TURN_USERNAME }}"
+            export VITE_TURN_CREDENTIAL="${{ secrets.VITE_TURN_CREDENTIAL }}"
+
             npm run build
+
             sudo rm -rf /usr/share/nginx/html/*
             sudo cp -r dist/* /usr/share/nginx/html/
+
+            sudo nginx -t
             sudo systemctl restart nginx

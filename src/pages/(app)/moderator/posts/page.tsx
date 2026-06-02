@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { AppDialog, DialogButton } from '@/components/dialogs'
 import { useAuthStore } from '@/contexts/auth-store'
+import { useSocialRealtime } from '@/hooks/use-social-realtime'
 import { toast } from '@/hooks/use-toast'
 import type { FeedPost } from '@/types'
 import styles from '../users/page.module.css'
@@ -35,6 +36,8 @@ export default function ModeratorPostsPage() {
     loadPosts().catch(() => undefined)
   }, [token])
 
+  useSocialRealtime({ token, user, setPosts })
+
   const filtered = useMemo(() => {
     const q = keyword.trim().toLowerCase()
     return posts.filter((post) => post.status !== 'deleted' && (!q || [post.content, post.authorName, post.id].join(' ').toLowerCase().includes(q)))
@@ -57,7 +60,6 @@ export default function ModeratorPostsPage() {
     })
     setAction(null)
     setReason('')
-    await loadPosts()
   }
 
   if (user?.role !== 'admin' && user?.role !== 'moderator') return <div className={styles.denied}>Bạn không có quyền truy cập.</div>

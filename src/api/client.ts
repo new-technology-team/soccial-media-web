@@ -17,6 +17,14 @@ export type CallHistoryItem = {
   conversationId: string
   initiatorId: number
   participantIds: number[]
+  callSessionId?: string
+  participantStatuses?: Array<{
+    userId: number
+    joinedAt: string | null
+    leftAt: string | null
+    durationSec: number
+    role: 'caller' | 'receiver' | 'member'
+  }>
   callType: 'voice' | 'video'
   mode: 'private' | 'group'
   status: 'completed' | 'missed' | 'rejected' | 'no_answer' | 'cancelled' | 'failed'
@@ -65,6 +73,7 @@ const normalizeConversation = (conversation: Conversation): Conversation => ({
   ...conversation,
   id: String(conversation.id),
   pinnedMessageIds: (conversation.pinnedMessageIds || []).map((item) => String(item)),
+  pinnedMessages: (conversation.pinnedMessages || []).map(normalizeChatMessage),
   avatarUrl: resolveApiAssetUrl(conversation.avatarUrl),
   backgroundUrl: resolveApiAssetUrl(conversation.backgroundUrl),
   lastMessage: conversation.lastMessage
@@ -103,6 +112,8 @@ export const normalizeFeedComment = (comment: FeedComment): FeedComment => ({
 
 export const normalizeFeedPost = (post: FeedPost): FeedPost => ({
   ...post,
+  createdAt: String((post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).createdAt || (post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).created_at || (post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).updatedAt || (post as FeedPost & { created_at?: string; updatedAt?: string; updated_at?: string }).updated_at || ''),
+  updatedAt: String((post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).updatedAt || (post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).updated_at || (post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).createdAt || (post as FeedPost & { updatedAt?: string; updated_at?: string; createdAt?: string; created_at?: string }).created_at || ''),
   mediaUrl: resolveApiAssetUrl(post.mediaUrl),
   authorAvatar: resolveApiAssetUrl(post.authorAvatar),
   sharedPost: post.sharedPost
@@ -268,6 +279,7 @@ const refreshAccessToken = async () => {
       const data = await response.json().catch(() => ({})) as Partial<AuthPayload>
       if (!response.ok || !data.accessToken || !data.refreshToken || !data.user) {
         auth.clearAuth()
+        sessionStorage.setItem('auth_cleared_reason', 'session-expired')
         return null
       }
 
@@ -558,6 +570,28 @@ export const api = {
   deleteComment: (token: string, commentId: number | string) =>
     request<{ message: string }>(`/social/comments/${commentId}`, { method: 'DELETE' }, token),
 
+  reactComment: (token: string, commentId: number | string, type = 'like') =>
+    request<{ message: string; comment: FeedComment }>(
+      `/social/comments/${commentId}/reaction`,
+      { method: 'POST', body: JSON.stringify({ type }) },
+      token
+    ).then((res) => ({ ...res, comment: normalizeFeedComment(res.comment) })),
+
+  unreactComment: (token: string, commentId: number | string) =>
+    request<{ message: string; comment: FeedComment }>(
+      `/social/comments/${commentId}/reaction`,
+      { method: 'DELETE' },
+      token
+    ).then((res) => ({ ...res, comment: normalizeFeedComment(res.comment) })),
+
+  listCommentReactions: (commentId: number | string) =>
+    request<{ reactions: PostReactionViewer[] }>(`/social/comments/${commentId}/reactions`, { method: 'GET' }).then((res) => ({
+      reactions: (res.reactions || []).map((item) => ({
+        ...item,
+        avatarUrl: resolveApiAssetUrl(item.avatarUrl),
+      })),
+    })),
+
   listConversations: (token: string) =>
     request<{ conversations: Conversation[] }>('/chat/conversations', { method: 'GET' }, token).then((data) => ({
       conversations: (data.conversations || []).map(normalizeConversation),
@@ -670,6 +704,13 @@ export const api = {
       token
     ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
 
+  verifyHiddenConversation: (token: string, conversationId: string, hiddenPassword: string) =>
+    request<{ ok: boolean; conversation: Conversation }>(
+      `/chat/conversations/${conversationId}/hidden/verify`,
+      { method: 'POST', body: JSON.stringify({ hiddenPassword }) },
+      token
+    ).then((data) => ({ ...data, conversation: normalizeConversation(data.conversation) })),
+
   updateConversationNickname: (token: string, conversationId: string, userId: number, nickname: string | null) =>
     request<{ message: string; conversation: Conversation }>(
       `/chat/conversations/${conversationId}/members/${userId}/nickname`,
@@ -751,7 +792,7 @@ export const api = {
     token: string,
     conversationId: string,
     payload: {
-      type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'sticker'
+      type: 'text' | 'image' | 'video' | 'audio' | 'file' | 'sticker' | 'call-history'
       text?: string
       mediaUrl?: string
       fileName?: string
@@ -869,6 +910,9 @@ export const api = {
   readNotification: (token: string, id: number | string) =>
     request<{ message: string }>(`/social/notifications/${id}/read`, { method: 'PATCH' }, token),
 
+  unreadNotification: (token: string, id: number | string) =>
+    request<{ message: string }>(`/social/notifications/${id}/unread`, { method: 'PATCH' }, token),
+
   readAllNotifications: (token: string) =>
     request<{ message: string }>('/social/notifications/read-all', { method: 'PATCH' }, token),
 
@@ -881,6 +925,7 @@ export const api = {
       conversationId: string
       initiatorId: number
       participantIds: number[]
+      callSessionId?: string
       callType: 'voice' | 'video'
       mode: 'private' | 'group'
       status: 'completed' | 'missed' | 'rejected' | 'no_answer' | 'cancelled' | 'failed'
@@ -888,6 +933,13 @@ export const api = {
       answeredAt?: string | number | null
       endedAt?: string | number | null
       durationSec?: number
+      participantStatuses?: Array<{
+        userId: number
+        joinedAt?: string | number | null
+        leftAt?: string | number | null
+        durationSec?: number
+        role?: 'caller' | 'receiver' | 'member'
+      }>
       withName?: string
     }
   ) =>
@@ -1020,7 +1072,7 @@ export const api = {
 
   moderatePost: (
     token: string,
-    postId: number,
+    postId: number | string,
     payload: { status: 'published' | 'hidden' | 'deleted'; resolutionNote?: string }
   ) =>
     request<{ message: string; post: FeedPost }>(

@@ -6,7 +6,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Rss, Settings } from 'lucide-react'
 import { useAuthStore } from '@/contexts/auth-store'
 import { api } from '@/api/client'
+import { ReportDialog } from '@/components/dialogs'
 import { useSocialRealtime } from '@/hooks/use-social-realtime'
+import { toast } from '@/hooks/use-toast'
 import ProfileTabs, { type ProfileTab } from '@/components/navigation/profile-tabs'
 import type { FeedPost, FriendConnection } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,6 +42,7 @@ export default function ProfilePage() {
   const [profileAvatarBroken, setProfileAvatarBroken] = useState(false)
   const [activeTab, setActiveTab] = useState<ProfileTab>('posts')
   const [mediaOnly, setMediaOnly] = useState(false)
+  const [reportAccountOpen, setReportAccountOpen] = useState(false)
 
   const isOwnProfile = Boolean(me?.id && String(me.id) === profileId)
 
@@ -204,6 +207,20 @@ export default function ProfilePage() {
     }
   }
 
+  const handleReportAccount = async (payload: { reason: string; details?: string }) => {
+    if (!token || isOwnProfile || !Number(profileId)) return
+    await api.submitReport(token, {
+      targetType: 'user',
+      targetId: profileId,
+      reason: payload.reason,
+      details: payload.details,
+    })
+    toast({
+      title: 'Đã gửi báo cáo tài khoản',
+      description: 'Đội ngũ kiểm duyệt sẽ xem xét tài khoản này và thông báo khi có cập nhật.',
+    })
+  }
+
   if (isLoadingProfile && !profileUser) {
     return (
       <div className={styles.page}>
@@ -287,6 +304,9 @@ export default function ProfilePage() {
                   {friendStatus === 'pending' ? 'Đã gửi lời mời' : 'Kết bạn'}
                 </button>
               )}
+              <button type="button" className={styles.reportBtn} onClick={() => setReportAccountOpen(true)}>
+                Báo cáo tài khoản
+              </button>
             </div>
           )}
         </header>
@@ -456,6 +476,12 @@ export default function ProfilePage() {
           </section>
         </div>
       </div>
+      <ReportDialog
+        open={reportAccountOpen}
+        onOpenChange={setReportAccountOpen}
+        title="Báo cáo tài khoản"
+        onSubmit={handleReportAccount}
+      />
     </div>
   )
 }

@@ -67,7 +67,8 @@ export function useConversationRouting({
         }
 
         if (!selectedConversationRef.current && conversations.length > 0) {
-          const firstConversation = conversations.find((item) => !item.isHidden) || conversations[0]
+          const firstConversation = conversations.find((item) => !item.isHidden)
+          if (!firstConversation) return
           if (firstConversation.isLocked) {
             onLockedConversation?.(firstConversation.id)
             return

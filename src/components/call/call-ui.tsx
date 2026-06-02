@@ -92,14 +92,16 @@ function AudioWave() {
 
 function StreamVideo({ stream, muted, className }: { stream?: MediaStream | null; muted?: boolean; className?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null)
+  const hasVideo = Boolean(stream?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled))
 
   useEffect(() => {
-    if (ref.current && stream) {
+    if (ref.current && stream && hasVideo) {
       ref.current.srcObject = stream
+      ref.current.play().catch(() => undefined)
     }
-  }, [stream])
+  }, [stream, hasVideo])
 
-  if (!stream) return null
+  if (!stream || !hasVideo) return null
   return <video ref={ref} className={className} autoPlay playsInline muted={muted} />
 }
 
@@ -270,7 +272,7 @@ export function CallControls({ callType, mutedMic, mutedCam, mutedSpeaker = fals
         {mutedSpeaker ? <VolumeX size={20} /> : <Volume2 size={20} />}
         <small>{mutedSpeaker ? 'Bật loa' : 'Tắt loa'}</small>
       </button>
-      {callType === 'video' && supportsScreenShare ? (
+      {callType === 'video' && supportsScreenShare && onToggleScreenShare ? (
         <button type="button" className={cn(styles.controlButton, screenSharing && styles.controlButtonActive)} onClick={onToggleScreenShare}>
           {screenSharing ? <MonitorOff size={20} /> : <MonitorUp size={20} />}
           <small>{screenSharing ? 'Dừng chia sẻ' : 'Chia sẻ màn hình'}</small>
@@ -325,15 +327,17 @@ type ActiveProps = {
   onAddMembers?: () => void
   onMinimize: () => void
   onEnd: () => void
+  embedded?: boolean
 }
 
 export function ActiveCallWindow(props: ActiveProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const mode = props.mode || 'private'
   const remote = props.remoteStreams?.[0]?.stream || null
+  const remoteHasVideo = Boolean(remote?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled))
   const reconnecting = props.state === 'connecting'
   return (
-    <section className={styles.activeWindow} aria-label={mode === 'group' ? 'Cuộc gọi nhóm đang diễn ra' : 'Cuộc gọi đang diễn ra'}>
+    <section className={cn(styles.activeWindow, props.embedded && styles.activeWindowEmbedded)} aria-label={mode === 'group' ? 'Cuộc gọi nhóm đang diễn ra' : 'Cuộc gọi đang diễn ra'}>
       <header className={styles.topBar}>
         <div className={styles.topTitle}>
           <Avatar name={props.name} avatarUrl={props.avatarUrl} className={styles.miniAvatar} />
@@ -360,9 +364,9 @@ export function ActiveCallWindow(props: ActiveProps) {
           <GroupCallGrid participants={props.participants} />
         ) : props.callType === 'video' ? (
           <div className={styles.videoStage}>
-            {remote ? <StreamVideo stream={remote} muted className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
+            {remote && remoteHasVideo ? <StreamVideo stream={remote} muted className={styles.remoteVideo} /> : <div className={styles.voiceStage}><Avatar name={props.name} avatarUrl={props.avatarUrl} /><AudioWave /></div>}
             <div className={styles.localPreview}>
-              <StreamVideo stream={props.localStream} muted className={styles.localVideo} />
+              {props.mutedCam ? <Avatar name="Bạn" className={styles.miniAvatar} /> : <StreamVideo stream={props.localStream} muted className={styles.localVideo} />}
             </div>
           </div>
         ) : (
@@ -408,7 +412,7 @@ export function GroupCallGrid({ participants }: { participants: CallParticipant[
 }
 
 export function GroupParticipantTile({ participant }: { participant: CallParticipant }) {
-  const showVideo = participant.stream && !participant.cameraOff
+  const showVideo = Boolean(participant.stream?.getVideoTracks().some((track) => track.readyState === 'live' && track.enabled)) && !participant.cameraOff
   const ringing = participant.status === 'ringing'
   return (
     <article className={cn(styles.tile, participant.speaking && styles.tileSpeaking, ringing && styles.tileRinging)}>
@@ -480,10 +484,15 @@ export function MinimizedCallPill({ name, avatarUrl, duration, participantCount,
   )
 }
 
-export function CallHistoryMessage({ text }: { text: string }) {
+export function CallHistoryMessage({ text, actionLabel, onAction }: { text: string; actionLabel?: string; onAction?: () => void }) {
   return (
     <p className={styles.history}>
       <Phone size={16} /> {text}
+      {actionLabel && onAction ? (
+        <button type="button" className={styles.historyAction} onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
     </p>
   )
 }

@@ -16,6 +16,7 @@ import {
 } from '@/components/admin/admin-ui'
 import { useAuthStore } from '@/contexts/auth-store'
 import { toast } from '@/hooks/use-toast'
+import { useUserRealtime } from '@/hooks/use-user-realtime'
 import type { User } from '@/types'
 
 const ACCOUNT_LABEL: Record<string, string> = {
@@ -69,6 +70,8 @@ export default function AdminUsersPage() {
     loadUsers().catch(() => undefined)
   }, [token])
 
+  useUserRealtime({ token, user: me, setUsers, setSelectedUser })
+
   const filtered = useMemo(() => {
     const q = keyword.trim().toLowerCase()
     return users.filter((item) => {
@@ -97,7 +100,6 @@ export default function AdminUsersPage() {
       })
     }
     setAction(null)
-    await loadUsers()
   }
 
   if (me?.role !== 'admin') return <div className={styles.empty}>Bạn không có quyền truy cập.</div>

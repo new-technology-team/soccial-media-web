@@ -1,6 +1,5 @@
 import { ArrowLeft, BrainCircuit, Info, Phone, Search, UserPlus, Video, Wand2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { cn } from '@/utils'
 import type { Conversation, FriendConnection } from '@/types'
 
@@ -94,54 +93,42 @@ export function ConversationHeader({
 
       <div className="flex items-center gap-1 sm:gap-2">
         <div className="hidden lg:flex items-center gap-1 mr-2 px-2 border-r border-slate-200 dark:border-slate-800">
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            type="button" 
-            className="p-2 rounded-full text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/30 disabled:opacity-50 transition-colors relative group"
+          <button            type="button" 
+            className="p-2 rounded-full text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/30 disabled:opacity-50 transition hover:scale-105 active:scale-95 relative group"
             onClick={handleSummarizeChat} 
             disabled={isSummarizing || !selectedConversationId} 
             title="Tóm tắt đoạn chat (AI)"
           >
             <Wand2 size={18} />
             {isSummarizing && <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-purple-500 animate-ping" />}
-          </motion.button>
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            type="button" 
-            className="p-2 rounded-full text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-50 transition-colors relative group"
+          </button>
+          <button            type="button" 
+            className="p-2 rounded-full text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-50 transition hover:scale-105 active:scale-95 relative group"
             onClick={handleAnalyzeSentiment} 
             disabled={isAnalyzingSentiment || !selectedConversationId} 
             title="Phân tích cảm xúc (AI)"
           >
             <BrainCircuit size={18} />
             {isAnalyzingSentiment && <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-indigo-500 animate-ping" />}
-          </motion.button>
+          </button>
         </div>
 
-        <motion.button 
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          type="button" 
-          className="p-2 rounded-full text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 transition-colors"
+        <button          type="button" 
+          className="p-2 rounded-full text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 transition hover:scale-105 active:scale-95"
           onClick={() => handleStartCall('video')} 
-          disabled={!callTargetId} 
+          disabled={!selectedConversationId || (selectedConversation?.members?.length || 0) <= 1} 
           title="Gọi video"
         >
           <Video size={18} />
-        </motion.button>
-        <motion.button 
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          type="button" 
-          className="p-2 rounded-full text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 transition-colors"
+        </button>
+        <button          type="button" 
+          className="p-2 rounded-full text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50 transition hover:scale-105 active:scale-95"
           onClick={() => handleStartCall('voice')} 
-          disabled={!callTargetId} 
+          disabled={!selectedConversationId || (selectedConversation?.members?.length || 0) <= 1} 
           title="Gọi thoại"
         >
           <Phone size={18} />
-        </motion.button>
+        </button>
         <button
           type="button"
           className={cn(
@@ -158,7 +145,7 @@ export function ConversationHeader({
         </button>
         <button
           type="button"
-          className="p-2 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors hidden sm:flex"
+          className="p-2 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition hover:scale-105 active:scale-95 hidden sm:flex"
           title="Thêm người vào cuộc trò chuyện"
           disabled={!selectedGroup || !canAddMembers}
           onClick={() => {
@@ -170,7 +157,7 @@ export function ConversationHeader({
         </button>
         <button
           type="button"
-          className="p-2 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+          className="p-2 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition hover:scale-105 active:scale-95"
           title="Xem chi tiết cuộc trò chuyện"
           disabled={!selectedConversation}
           onClick={() => {

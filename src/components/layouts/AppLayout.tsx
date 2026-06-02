@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 
 import { useAuthStore } from '@/contexts/auth-store'
 import { useCallStore } from '@/contexts/call-store'
 import { useChatStore } from '@/contexts/chat-store'
-import { callSession } from '@/services/call-session'
+import { callSession, resetCallSession } from '@/services/call-session'
 import { ActiveCallWindow, IncomingCallModal, MinimizedCallPill, OutgoingCallModal, RemoteAudioSink, isTerminalErrorState } from '@/components/call'
 import { resolveApiAssetUrl } from '@/api/client'
 import { connectSocket, getSocket } from '@/services/socket'
 import { toast } from '@/hooks/use-toast'
+import type { User } from '@/types'
 import styles from './app-layout.module.css'
 
 export default function AppLayout({
@@ -47,6 +48,7 @@ export default function AppLayout({
   const retryCallAction = useCallStore((s) => s.retryCallAction)
 
   const [mutedSpeaker, setMutedSpeaker] = useState(false)
+  const isEndingCallRef = useRef(false)
 
   const formattedCallTime = `${String(Math.floor(callSeconds / 60)).padStart(2, '0')}:${String(callSeconds % 60).padStart(2, '0')}`
 
@@ -70,10 +72,12 @@ export default function AppLayout({
       const hasSdp = Boolean(payload?.offer?.sdp)
       // Chấp nhận cả offer WebRTC (web) lẫn offer Jitsi từ mobile (chỉ có roomId).
       if (!hasSdp && !payload?.roomId) return
-      const { setIncomingCall } = useCallStore.getState()
+      const conversationId = payload.conversationId ? String(payload.conversationId) : null
+      const { activeCall: currentCall, callAnswered: answered, setIncomingCall } = useCallStore.getState()
+      if (answered && currentCall?.conversationId && conversationId === currentCall.conversationId) return
       setIncomingCall({
         fromUserId: Number(payload.fromUserId || 0),
-        conversationId: payload.conversationId ? String(payload.conversationId) : null,
+        conversationId,
         callType: payload.callType === 'video' ? 'video' : 'voice',
         offer: hasSdp ? payload.offer : undefined,
         roomId: payload?.roomId ? String(payload.roomId) : undefined,
@@ -83,9 +87,29 @@ export default function AppLayout({
       })
     }
 
-    const onEnd = () => {
-      const { setIncomingCall } = useCallStore.getState()
+    const onEnd = (payload?: { fromUserId?: number | string }) => {
+      if (Number(payload?.fromUserId || 0) === Number(user.id || 0)) return
+      const {
+        setIncomingCall, setActiveCall, setCallState, setCallAnswered, setCallMinimized,
+        setCallSeconds, setCallParticipants, setLocalStream, setRemoteStreams,
+        setMutedMic, setMutedCam, setScreenSharing, setConnectionQuality,
+      } = useCallStore.getState()
       setIncomingCall(null)
+      resetCallSession()
+      setLocalStream(null)
+      setRemoteStreams([])
+      setActiveCall(null)
+      setCallState('ended')
+      setCallAnswered(false)
+      setCallMinimized(false)
+      setCallSeconds(0)
+      setCallParticipants([])
+      setMutedMic(false)
+      setMutedCam(false)
+      setScreenSharing(false)
+      setConnectionQuality('unknown')
+      setMutedSpeaker(false)
+      isEndingCallRef.current = false
     }
 
     const onAuthRevoked = (payload: { reason?: string }) => {
@@ -99,7 +123,7 @@ export default function AppLayout({
       navigate('/auth/login?reason=session-expired', { replace: true })
     }
 
-    const onAvatarUpdated = (payload: { userId?: number; avatarUrl?: string; user?: typeof user }) => {
+    const onAvatarUpdated = (payload: { userId?: number; avatarUrl?: string; user?: User }) => {
       if (!payload?.userId) return
       const nextAvatar = resolveApiAssetUrl(payload.avatarUrl) ?? payload.avatarUrl ?? null
       updateUserAvatar(Number(payload.userId), nextAvatar || null)
@@ -115,16 +139,40 @@ export default function AppLayout({
       })
     }
 
+    const onUserUpdated = (payload: { userId?: number | string; user?: User; action?: string }) => {
+      if (!payload?.user || Number(payload.userId || payload.user.id) !== Number(user.id) || !refreshToken) return
+      setAuth({
+        accessToken: token,
+        refreshToken,
+        user: {
+          ...user,
+          ...payload.user,
+        },
+      })
+      if (payload.action && !['updated'].includes(payload.action)) {
+        toast({
+          title: 'Tài khoản đã được cập nhật',
+          description: 'Trạng thái tài khoản của bạn vừa được đồng bộ từ hệ thống kiểm duyệt.',
+        })
+      }
+    }
+
     socket.on('call:offer', onOffer)
-    socket.on('call:end', onEnd)
+    socket.on('call:incoming', onOffer)
+    socket.on('call:ended', onEnd)
     socket.on('auth:revoked', onAuthRevoked)
     socket.on('user:avatar-updated', onAvatarUpdated)
+    socket.on('user:updated', onUserUpdated)
+    socket.on('user:moderation-updated', onUserUpdated)
 
     return () => {
       socket.off('call:offer', onOffer)
-      socket.off('call:end', onEnd)
+      socket.off('call:incoming', onOffer)
+      socket.off('call:ended', onEnd)
       socket.off('auth:revoked', onAuthRevoked)
       socket.off('user:avatar-updated', onAvatarUpdated)
+      socket.off('user:updated', onUserUpdated)
+      socket.off('user:moderation-updated', onUserUpdated)
     }
   }, [clearAuth, navigate, refreshToken, setAuth, token, updateUserAvatar, user])
 
@@ -158,27 +206,78 @@ export default function AppLayout({
     getSocket()?.emit('participant_muted', { conversationId: activeCall?.conversationId, micMuted: next })
   }
 
-  const handleToggleCameraGlobal = () => {
+  const handleToggleCameraGlobal = async () => {
     const { mutedCam: current, setMutedCam, cameraAvailable: available } = useCallStore.getState()
     if (!available || activeCall?.type === 'voice') return
     const next = !current
-    useCallStore.getState().localStream?.getVideoTracks().forEach((t) => { t.enabled = !next })
+    let stream = useCallStore.getState().localStream
+    if (!stream) return
+
+    if (next) {
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = false
+        stream?.removeTrack(track)
+        track.stop()
+      })
+      callSession.peers.forEach((pc) => {
+        pc.getSenders()
+          .filter((sender) => sender.track?.kind === 'video')
+          .forEach((sender) => sender.replaceTrack(null).catch(() => undefined))
+      })
+    } else {
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        const [videoTrack] = videoStream.getVideoTracks()
+        if (!videoTrack) return
+        stream.addTrack(videoTrack)
+        callSession.peers.forEach((pc) => {
+          const sender = pc.getSenders().find((item) => item.track?.kind === 'video')
+          if (sender) sender.replaceTrack(videoTrack).catch(() => undefined)
+          else pc.addTrack(videoTrack, stream!)
+        })
+      } catch {
+        toast({ title: 'Không thể bật camera', variant: 'destructive' })
+        return
+      }
+    }
+
+    useCallStore.getState().setLocalStream(new MediaStream(stream.getTracks()))
+    callSession.localStream = stream
     setMutedCam(next)
     getSocket()?.emit(next ? 'participant_camera_off' : 'participant_camera_on', { conversationId: activeCall?.conversationId })
+    getSocket()?.emit('participant_updated', { conversationId: activeCall?.conversationId, cameraOff: next })
+    const socket = getSocket()
+    if (socket && activeCall?.conversationId) {
+      callSession.peers.forEach((pc, targetUserId) => {
+        pc.createOffer()
+          .then((offer) => pc.setLocalDescription(offer).then(() => offer))
+          .then((offer) => {
+            socket.emit('call:offer', {
+              targetUserId,
+              conversationId: activeCall.conversationId,
+              callType: activeCall.type,
+              offer: { type: offer.type, sdp: offer.sdp },
+              renegotiate: true,
+            })
+          })
+          .catch(() => undefined)
+      })
+    }
   }
 
   const handleEndCallGlobal = () => {
+    if (isEndingCallRef.current) return
+    isEndingCallRef.current = true
     const socket = getSocket()
     const conversationId = activeCall?.conversationId
-    if (socket && conversationId && activeCall?.targetUserIds?.length) {
-      activeCall.targetUserIds.forEach((targetUserId) => {
-        socket.emit('call:end', { targetUserId, conversationId })
-      })
+    if (socket && conversationId) {
+      if (activeCall?.mode === 'group') {
+        socket.emit('group_call_left', { conversationId, callType: activeCall.type })
+      } else {
+        socket.emit('call:end', { conversationId, callType: activeCall?.type, mode: activeCall?.mode })
+      }
     }
-    callSession.peers.forEach((p) => p.close())
-    callSession.peers.clear()
-    callSession.pendingCandidates.clear()
-    useCallStore.getState().localStream?.getTracks().forEach((t) => t.stop())
+    resetCallSession()
     const {
       setActiveCall, setCallState, setCallAnswered, setCallMinimized,
       setCallSeconds, setCallParticipants, setLocalStream, setRemoteStreams,
@@ -196,6 +295,9 @@ export default function AppLayout({
     setMutedCam(false)
     setMutedSpeaker(false)
     callSession.localStream = null
+    window.setTimeout(() => {
+      isEndingCallRef.current = false
+    }, 500)
   }
 
   // Chia sẻ màn hình: thay video track của mọi peer bằng luồng màn hình (tự chứa, dùng callSession).
@@ -276,9 +378,9 @@ export default function AppLayout({
     return () => window.clearInterval(id)
   }, [activeCall, callAnswered])
 
-  // Only show global call windows when NOT on /messages (page.tsx handles its own IncomingCallModal there)
-  // OutgoingCallModal and ActiveCallWindow always show globally
+  // Messages renders the active call inside its chat panel; other pages use the minimized pill.
   const onMessagesPage = pathname.startsWith('/messages')
+  const shouldDockActiveCall = Boolean(activeCall && callAnswered && (callMinimized || !onMessagesPage))
 
   const isCallError = isTerminalErrorState(callState)
 
@@ -322,8 +424,8 @@ export default function AppLayout({
         />
       ) : null}
 
-      {/* ActiveCallWindow — persists across navigation */}
-      {activeCall && callAnswered && !callMinimized ? (
+      {/* ActiveCallWindow is owned by MessagesPage while inside the messages workspace. */}
+      {activeCall && callAnswered && !shouldDockActiveCall && !onMessagesPage ? (
         <ActiveCallWindow
           name={activeCall.withName}
           avatarUrl={activeCall.avatarUrl}
@@ -352,7 +454,7 @@ export default function AppLayout({
       ) : null}
 
       {/* Minimized call pill — persists across navigation */}
-      {activeCall && callMinimized ? (
+      {activeCall && (callMinimized || (callAnswered && !onMessagesPage)) ? (
         <MinimizedCallPill
           name={activeCall.withName}
           avatarUrl={activeCall.avatarUrl}
@@ -362,7 +464,13 @@ export default function AppLayout({
               ? callParticipants.filter((p) => p.status === 'joined').length || undefined
               : undefined
           }
-          onOpen={() => useCallStore.getState().setCallMinimized(false)}
+          onOpen={() => {
+            const target = activeCall.conversationId
+              ? `/messages?conversation=${encodeURIComponent(activeCall.conversationId)}`
+              : '/messages'
+            if (!onMessagesPage) navigate(target)
+            useCallStore.getState().setCallMinimized(false)
+          }}
           onEnd={handleEndCallGlobal}
         />
       ) : null}

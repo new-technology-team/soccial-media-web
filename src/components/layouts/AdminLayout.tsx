@@ -8,9 +8,7 @@ import {
   Database,
   FileText,
   Flag,
-  Hash,
   History,
-  KeyRound,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -39,7 +37,6 @@ const groups = [
     items: [
       { href: '/admin/users', label: 'Quản lý người dùng', icon: Users },
       { href: '/admin/moderators', label: 'Kiểm duyệt viên', icon: Shield },
-      { href: '/admin/settings#roles', label: 'Phân quyền', icon: KeyRound },
     ],
   },
   {
@@ -48,7 +45,6 @@ const groups = [
       { href: '/admin/posts', label: 'Quản lý nội dung', icon: FileText },
       { href: '/admin/reports', label: 'Báo cáo', icon: Flag },
       { href: '/admin/posts?media=true', label: 'Media', icon: Database },
-      { href: '/admin/statistics#hashtags', label: 'Hashtag', icon: Hash },
     ],
   },
   {
@@ -62,7 +58,7 @@ const groups = [
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { pathname } = useLocation()
+  const { pathname, search, hash } = useLocation()
   const navigate = useNavigate()
   const clearAuth = useAuthStore((state) => state.clearAuth)
   const user = useAuthStore((state) => state.user)
@@ -70,9 +66,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const activeGroup = useMemo(() => {
-    const group = groups.find((section) => section.items.some((item) => pathname === item.href.split('?')[0].split('#')[0]))
+    const current = `${pathname}${search}${hash}`
+    const group = groups.find((section) =>
+      section.items.some((item) => {
+        const targetPath = item.href.split('?')[0].split('#')[0]
+        if (item.href.includes('#') || item.href.includes('?')) return current === item.href
+        return pathname === targetPath
+      })
+    )
     return group?.title
-  }, [pathname])
+  }, [hash, pathname, search])
 
   const handleLogout = () => {
     clearAuth()
@@ -116,7 +119,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   {group.items.map((item) => {
                     const Icon = item.icon
                     const targetPath = item.href.split('?')[0].split('#')[0]
-                    const active = pathname === targetPath
+                    const current = `${pathname}${search}${hash}`
+                    const active = item.href.includes('#') || item.href.includes('?')
+                      ? current === item.href
+                      : pathname === targetPath && !hash && !search
                     return (
                       <Link
                         key={item.href}

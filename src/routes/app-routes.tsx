@@ -27,6 +27,13 @@ import { renderAdminRoutes } from '@/routes/admin-routes'
 import { useAuthStore } from '@/contexts/auth-store'
 
 function AppLayoutRoute() {
+  const accessToken = useAuthStore((state) => state.accessToken)
+  if (!accessToken) {
+    const reason = sessionStorage.getItem('auth_cleared_reason')
+    sessionStorage.removeItem('auth_cleared_reason')
+    const loginPath = reason === 'session-expired' ? '/auth/login?reason=session-expired' : '/auth/login'
+    return <Navigate to={loginPath} replace />
+  }
   return (
     <AppLayout>
       <Outlet />

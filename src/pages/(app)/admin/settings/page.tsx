@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
-import { AlertTriangle, Lock, Save, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Lock, Save } from 'lucide-react'
 
 import { api } from '@/api/client'
 import { AdminPage, Panel, StatusBadge, adminStyles as styles } from '@/components/admin/admin-ui'
@@ -120,15 +120,6 @@ export default function AdminSettingsPage() {
           </div>
         </Panel>
       ))}
-
-      <section id="roles" className={styles.dangerZone}>
-        <div className={styles.inline}>
-          <ShieldCheck size={18} />
-          <strong>Phân quyền</strong>
-          <StatusBadge value="info" label="RBAC" />
-        </div>
-        <p className={styles.panelText}>Admin quản lý toàn hệ thống. Moderator chỉ xử lý báo cáo, bài viết và người dùng được phân công.</p>
-      </section>
 
       <section className={styles.dangerZone}>
         <div className={styles.inline}>

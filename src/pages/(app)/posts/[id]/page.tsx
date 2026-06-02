@@ -1,30 +1,16 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type React from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import {
-  ArrowLeft,
-  Clock3,
-  Copy,
-  Heart,
-  MessageCircle,
-  MoreHorizontal,
-  RefreshCw,
-  Send,
-  Share2,
-  ShieldCheck,
-  Sparkles,
-  UserRound,
-  Reply,
-} from 'lucide-react'
-
+import { ArrowLeft, Heart, X } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, normalizeFeedComment, resolveApiAssetUrl } from '@/api/client'
 import { useAuthStore } from '@/contexts/auth-store'
 import { connectSocket } from '@/services/socket'
-import type { FeedComment, FeedPost } from '@/types'
+import { normalizeFeedComment } from '@/api/client'
+import type { FeedComment, FeedPost, PostReactionViewer } from '@/types'
+import { Skeleton } from '@/components/ui/skeleton'
 import styles from './page.module.css'
 
 const POST_REACTIONS = [
@@ -107,20 +93,16 @@ const appendCommentOnce = (items: FeedComment[], comment: FeedComment): FeedComm
   })
 }
 
-const removeCommentById = (items: FeedComment[], commentId?: string | number): FeedComment[] => {
-  const id = String(commentId || '')
-
-  return items
-    .filter((item) => String(item.id) !== id)
-    .map((item) => ({
-      ...item,
-      replies: item.replies ? removeCommentById(item.replies, id) : [],
-    }))
-}
+const replaceCommentById = (items: FeedComment[], nextComment: FeedComment): FeedComment[] =>
+  items.map((item) => {
+    if (String(item.id) === String(nextComment.id)) return { ...nextComment, replies: nextComment.replies || item.replies || [] }
+    return { ...item, replies: item.replies ? replaceCommentById(item.replies, nextComment) : [] }
+  })
 
 export default function PostDetailPage() {
   const navigate = useNavigate()
   const params = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const postId = String(params.id || '').trim()
 
   const token = useAuthStore((state) => state.accessToken)
@@ -136,7 +118,10 @@ export default function PostDetailPage() {
   const [replyingToCommentIds, setReplyingToCommentIds] = useState<Record<string, boolean>>({})
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({})
   const [busyCommentId, setBusyCommentId] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [commentReactionViewers, setCommentReactionViewers] = useState<Record<string, PostReactionViewer[]>>({})
+  const [reactionViewerComment, setReactionViewerComment] = useState<FeedComment | null>(null)
+  const [reactionViewerLoading, setReactionViewerLoading] = useState(false)
+  const reactionPickerRef = useRef<HTMLDivElement>(null)
 
   const reactionPickerRef = useRef<HTMLDivElement>(null)
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -255,7 +240,30 @@ export default function PostDetailPage() {
           : current,
       )
     }
-
+    const onCommentReaction = (payload: { postId?: number | string; commentId?: number | string; actorId?: number | string; reaction?: string | null; reactionCount?: number }) => {
+      if (!isThisPost(payload?.postId)) return
+      if (payload?.commentId) {
+        setCommentReactionViewers((prev) => {
+          const next = { ...prev }
+          delete next[String(payload.commentId)]
+          return next
+        })
+      }
+      setComments((prev) => {
+        const update = (items: FeedComment[]): FeedComment[] =>
+          items.map((comment) => {
+            if (String(comment.id) === String(payload.commentId)) {
+              return {
+                ...comment,
+                reactionCount: Number(payload.reactionCount ?? comment.reactionCount),
+                viewerReaction: String(payload.actorId || '') === String(me.id) ? payload.reaction || null : comment.viewerReaction,
+              }
+            }
+            return { ...comment, replies: comment.replies ? update(comment.replies) : [] }
+          })
+        return update(prev)
+      })
+    }
     const onAvatarUpdated = (payload: { userId?: number | string; avatarUrl?: string }) => {
       const avatarUrl = resolveApiAssetUrl(payload?.avatarUrl) ?? payload?.avatarUrl ?? null
 
@@ -279,6 +287,7 @@ export default function PostDetailPage() {
     socket.on('post:reaction', onPostReaction)
     socket.on('comment:created', onCommentCreated)
     socket.on('comment:deleted', onCommentDeleted)
+    socket.on('comment:reaction', onCommentReaction)
     socket.on('user:avatar-updated', onAvatarUpdated)
 
     return () => {
@@ -287,6 +296,7 @@ export default function PostDetailPage() {
       socket.off('post:reaction', onPostReaction)
       socket.off('comment:created', onCommentCreated)
       socket.off('comment:deleted', onCommentDeleted)
+      socket.off('comment:reaction', onCommentReaction)
       socket.off('user:avatar-updated', onAvatarUpdated)
     }
   }, [me?.id, postId, token])
@@ -398,27 +408,35 @@ export default function PostDetailPage() {
     }
   }
 
-  const handleSharePost = async () => {
-    const url = window.location.href
-
+  const handleReactComment = async (comment: FeedComment) => {
+    if (!token) return
+    const key = String(comment.id)
+    setBusyCommentId(key)
     try {
-      if (navigator.share) {
-        await navigator.share({
-          title: 'ZChat - Chi tiết bài viết',
-          text: post?.content || 'Xem bài viết này trên ZChat',
-          url,
-        })
-        return
-      }
-
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-
-      window.setTimeout(() => {
-        setCopied(false)
-      }, 1600)
+      const response = comment.viewerReaction
+        ? await api.unreactComment(token, comment.id)
+        : await api.reactComment(token, comment.id, 'like')
+      setComments((prev) => replaceCommentById(prev, response.comment))
     } catch (error) {
-      console.error('Không thể chia sẻ bài viết', error)
+      console.error('Không thể cập nhật lượt thích bình luận', error)
+    } finally {
+      setBusyCommentId(null)
+    }
+  }
+
+  const handleOpenCommentReactionViewers = async (comment: FeedComment) => {
+    const key = String(comment.id)
+    setReactionViewerComment(comment)
+    if (commentReactionViewers[key]) return
+    setReactionViewerLoading(true)
+    try {
+      const response = await api.listCommentReactions(comment.id)
+      setCommentReactionViewers((prev) => ({ ...prev, [key]: response.reactions }))
+    } catch (error) {
+      console.error('Không thể tải danh sách người thích bình luận', error)
+      setCommentReactionViewers((prev) => ({ ...prev, [key]: [] }))
+    } finally {
+      setReactionViewerLoading(false)
     }
   }
 
@@ -437,36 +455,33 @@ export default function PostDetailPage() {
             <AvatarImage src={comment.authorAvatar || ''} />
             <AvatarFallback>{comment.authorName?.[0] || 'U'}</AvatarFallback>
           </Avatar>
-        </Link>
-
-        <div className={styles.commentContent}>
-          <div className={styles.commentBubble}>
-            <div className={styles.commentTop}>
-              <Link to={`/profile/${comment.userId}`} className={styles.commentAuthor}>
-                {comment.authorName || 'Người dùng'}
-              </Link>
-              <span>{getRelativeTime(comment.createdAt)}</span>
-            </div>
-
-            {comment.content ? <p className={styles.commentText}>{comment.content}</p> : null}
-
-            {comment.imageUrl ? (
-              <img
-                src={comment.imageUrl}
-                alt="Ảnh trong bình luận"
-                className={styles.commentImage}
-                loading="lazy"
-              />
-            ) : null}
-          </div>
-
+        </div>
+        <div className={styles.commentBody}>
+          <p className={styles.commentAuthor}>
+            <Link to={`/profile/${comment.userId}`}>{comment.authorName}</Link>
+          </p>
+          {comment.content ? <p className={styles.commentText}>{comment.content}</p> : null}
+          {comment.imageUrl ? <img src={comment.imageUrl} alt="Ảnh trong bình luận" className={styles.commentImage} loading="lazy" /> : null}
           <div className={styles.commentActions}>
-            <span title={formatDateTime(comment.createdAt)}>
-              <Clock3 size={13} />
-              {formatDateTime(comment.createdAt)}
-            </span>
-
-            {canReply ? (
+            <p className={styles.commentTime}>{new Date(comment.createdAt).toLocaleString('vi-VN')}</p>
+            <button
+              type="button"
+              className={`${styles.replyBtn} ${comment.viewerReaction ? styles.commentLiked : ''}`}
+              onClick={() => void handleReactComment(comment)}
+              disabled={busyCommentId === key}
+            >
+              {comment.viewerReaction ? 'Đã thích' : 'Thích'}{comment.reactionCount ? ` · ${comment.reactionCount}` : ''}
+            </button>
+            {comment.reactionCount ? (
+              <button
+                type="button"
+                className={styles.replyBtn}
+                onClick={() => void handleOpenCommentReactionViewers(comment)}
+              >
+                Xem lượt thích
+              </button>
+            ) : null}
+            {token ? (
               <button
                 type="button"
                 className={styles.replyActionBtn}
@@ -525,11 +540,17 @@ export default function PostDetailPage() {
     )
   }
 
-  if (loading) {
-    return (
-      <main className={styles.page}>
-        <div className={styles.backgroundBlurOne} />
-        <div className={styles.backgroundBlurTwo} />
+  return (
+    <div className={styles.page}>
+      <div className={styles.container}>
+        <div className={styles.header}>
+          <button type="button" className={styles.backButton} onClick={() => navigate(-1)}>
+            <ArrowLeft size={16} />
+            Quay lại
+          </button>
+          <h1>Chi tiết bài viết</h1>
+          <p>Xem nội dung đầy đủ và toàn bộ bình luận theo thời gian thực.</p>
+        </div>
 
         <div className={styles.container}>
           <div className={styles.pageHeader}>
@@ -909,6 +930,40 @@ export default function PostDetailPage() {
           </aside>
         </div>
       </div>
-    </main>
+
+      {reactionViewerComment ? (
+        <div className={styles.viewerBackdrop} role="presentation" onClick={() => setReactionViewerComment(null)}>
+          <section className={styles.viewerDialog} role="dialog" aria-label="Người thích bình luận" onClick={(event) => event.stopPropagation()}>
+            <header className={styles.viewerHeader}>
+              <div>
+                <h3>Người thích bình luận</h3>
+                <p>{reactionViewerComment.reactionCount} lượt thích</p>
+              </div>
+              <button type="button" onClick={() => setReactionViewerComment(null)} aria-label="Đóng">
+                <X size={17} />
+              </button>
+            </header>
+            <div className={styles.viewerList}>
+              {reactionViewerLoading ? <p className={styles.emptyText}>Đang tải...</p> : null}
+              {!reactionViewerLoading && (commentReactionViewers[String(reactionViewerComment.id)] || []).map((viewer) => (
+                <Link key={`${viewer.userId}-${viewer.createdAt || viewer.reaction}`} to={`/profile/${viewer.userId}`} className={styles.viewerItem} onClick={() => setReactionViewerComment(null)}>
+                  <Avatar className={styles.viewerAvatar}>
+                    <AvatarImage src={viewer.avatarUrl || ''} />
+                    <AvatarFallback>{viewer.fullName?.[0] || 'U'}</AvatarFallback>
+                  </Avatar>
+                  <span>
+                    <strong>{viewer.fullName}</strong>
+                    <small>{viewer.reaction === 'like' ? 'Đã thích' : viewer.reaction}</small>
+                  </span>
+                </Link>
+              ))}
+              {!reactionViewerLoading && (commentReactionViewers[String(reactionViewerComment.id)] || []).length === 0 ? (
+                <p className={styles.emptyText}>Chưa có lượt thích.</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </div>
   )
 }

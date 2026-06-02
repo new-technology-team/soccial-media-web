@@ -6,13 +6,14 @@
   height: 100vh;
   position: sticky;
   top: 0;
-  background: linear-gradient(180deg, #22c55e 0%, #16a34a 54%, #15803d 100%);
-  color: #ecfdf5;
+  background: #ffffff;
+  color: #0f172a;
   padding: 16px 10px;
   gap: 12px;
   overflow-y: auto;
   flex-shrink: 0;
-  box-shadow: 12px 0 32px rgba(21, 128, 61, 0.16);
+  border-right: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 
 .brand {
@@ -20,7 +21,7 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .brandIcon {
@@ -29,8 +30,8 @@
   border-radius: 12px;
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: #dcfce7;
+  color: #16a34a;
   font-size: 18px;
 }
 
@@ -39,7 +40,7 @@
   font-weight: 900;
   font-size: 13px;
   letter-spacing: 0.04em;
-  color: #fff;
+  color: #0f172a;
   text-transform: uppercase;
 }
 
@@ -60,11 +61,14 @@
   gap: 10px;
   padding: 0 12px;
   border-radius: 12px;
-  color: rgba(255, 255, 255, 0.82);
+  color: #475569;
   text-decoration: none;
   font-size: 14px;
   font-weight: 750;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .item svg,
@@ -73,16 +77,16 @@
 }
 
 .item:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: #f1f5f9;
+  color: #0f172a;
   transform: translateX(2px);
 }
 
 .item.active {
-  background: #fff;
-  color: #15803d;
+  background: #f0fdf4;
+  color: #16a34a;
   font-weight: 900;
-  box-shadow: 0 10px 22px rgba(20, 83, 45, 0.2);
+  box-shadow: none;
 }
 
 .logout {
@@ -91,10 +95,10 @@
   align-items: center;
   gap: 10px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: #ffffff;
+  color: #dc2626;
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
@@ -102,8 +106,8 @@
 }
 
 .logout:hover {
-  background: rgba(239, 68, 68, 0.22);
-  border-color: rgba(255, 255, 255, 0.42);
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 
 @media (max-width: 900px) {

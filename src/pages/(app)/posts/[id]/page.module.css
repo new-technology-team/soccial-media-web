@@ -228,6 +228,29 @@
   box-shadow: 0 8px 24px rgba(59, 130, 246, 0.1);
 }
 
+.backButton {
+  border: 1px solid rgba(171, 173, 174, 0.28);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #22313a;
+  min-height: 34px;
+  padding: 0 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 0.65rem;
+}
+
+.backButton:hover {
+  border-color: rgba(0, 82, 206, 0.34);
+  color: #0052ce;
+  background: #f8fbff;
+}
+
 .header h1 {
   margin: 0;
   font-size: clamp(1.5rem, 3vw, 2.1rem);
@@ -1362,6 +1385,180 @@
   text-decoration: underline;
 }
 
+.commentLiked {
+  color: #16a34a;
+  font-weight: 800;
+}
+
+.replyForm {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.replyInput {
+  flex: 1;
+  border: 1px solid rgba(171, 173, 174, 0.3);
+  border-radius: 20px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.84rem;
+  outline: none;
+}
+
+.replyInput:focus {
+  border-color: rgba(0, 82, 206, 0.5);
+}
+
+.replySubmit {
+  border: 0;
+  border-radius: 20px;
+  padding: 0.3rem 0.85rem;
+  background: #0052ce;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.replySubmit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.replyList {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
 .commentBody {
   min-width: 0;
+}
+
+.commentAuthor {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: #22313a;
+}
+
+.commentAuthor a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.commentAuthor a:hover {
+  text-decoration: underline;
+}
+
+.commentText {
+  margin: 0.2rem 0 0;
+  font-size: 0.88rem;
+  color: #2f3c45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.commentTime {
+  margin: 0.25rem 0 0;
+  font-size: 0.76rem;
+  color: #6d7a82;
+}
+
+.emptyText {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #66757e;
+}
+
+.viewerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(15, 23, 42, 0.34);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.viewerDialog {
+  width: min(420px, 100%);
+  max-height: min(520px, calc(100vh - 2rem));
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.viewerHeader {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(171, 173, 174, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.viewerHeader h3 {
+  margin: 0;
+  color: #22313a;
+  font-size: 1rem;
+}
+
+.viewerHeader p {
+  margin: 0.2rem 0 0;
+  color: #66757e;
+  font-size: 0.82rem;
+}
+
+.viewerHeader button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.viewerList {
+  overflow: auto;
+  padding: 0.45rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.viewerItem {
+  border-radius: 10px;
+  padding: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: #22313a;
+  text-decoration: none;
+}
+
+.viewerItem:hover {
+  background: #f4f7fb;
+}
+
+.viewerAvatar {
+  width: 38px !important;
+  height: 38px !important;
+}
+
+.viewerItem strong,
+.viewerItem small {
+  display: block;
+}
+
+.viewerItem small {
+  margin-top: 0.1rem;
+  color: #66757e;
+  font-size: 0.78rem;
 }

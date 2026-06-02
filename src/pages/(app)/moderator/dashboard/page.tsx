@@ -190,10 +190,10 @@ export default function ModeratorDashboard() {
       </header>
 
       <section className={styles.quickGrid} aria-label="Nhóm kiểm duyệt">
-        <QuickPanel icon={FileWarning} label="Bài viết bị báo cáo" count={typeCounts.post} pending={reports.filter((item) => item.type === 'post' && item.status === 'pending').length} severity="High" href="/moderator/posts" />
-        <QuickPanel icon={UserRoundX} label="Tài khoản bị báo cáo" count={typeCounts.user} pending={reports.filter((item) => item.type === 'user' && item.status === 'pending').length} severity="Medium" href="/moderator/users" />
-        <QuickPanel icon={MessageCircleWarning} label="Bình luận bị báo cáo" count={typeCounts.comment} pending={reports.filter((item) => item.type === 'comment' && item.status === 'pending').length} severity="Medium" href="/moderator/reports?type=comment" />
-        <QuickPanel icon={MessageSquareWarning} label="Tin nhắn bị báo cáo" count={typeCounts.message} pending={reports.filter((item) => item.type === 'message' && item.status === 'pending').length} severity="Critical" href="/moderator/reports?type=message" />
+        <QuickPanel icon={FileWarning} label="Bài viết bị báo cáo" count={typeCounts.post} pending={reports.filter((item) => item.type === 'post' && item.status === 'pending').length} severity="Cao" href="/moderator/posts" />
+        <QuickPanel icon={UserRoundX} label="Tài khoản bị báo cáo" count={typeCounts.user} pending={reports.filter((item) => item.type === 'user' && item.status === 'pending').length} severity="Trung bình" href="/moderator/users" />
+        <QuickPanel icon={MessageCircleWarning} label="Bình luận bị báo cáo" count={typeCounts.comment} pending={reports.filter((item) => item.type === 'comment' && item.status === 'pending').length} severity="Trung bình" href="/moderator/reports?type=comment" />
+        <QuickPanel icon={MessageSquareWarning} label="Tin nhắn bị báo cáo" count={typeCounts.message} pending={reports.filter((item) => item.type === 'message' && item.status === 'pending').length} severity="Nghiêm trọng" href="/moderator/reports?type=message" />
       </section>
 
       <section className={styles.mainGridSingle}>
@@ -214,14 +214,14 @@ function ProductivityMetric({ icon: Icon, label, value }: { icon: LucideIcon; la
 
 function QuickPanel({ icon: Icon, label, count, pending, severity, href }: { icon: LucideIcon; label: string; count: number; pending: number; severity: string; href: string }) {
   return (
-    <Link to={href} className={styles.quickPanel} aria-label={`${label}, ${pending} pending`}>
+    <Link to={href} className={styles.quickPanel} aria-label={`${label}, ${pending} báo cáo đang chờ`}>
       <div className={styles.quickHead}>
         <span><Icon size={20} /></span>
-        <b>{pending} pending</b>
+        <b>{pending} đang chờ</b>
       </div>
       <h2>{label}</h2>
       <div className={styles.quickMeta}>
-        <span>{count.toLocaleString('vi-VN')} total</span>
+        <span>{count.toLocaleString('vi-VN')} tổng cộng</span>
         <em>{severity}</em>
       </div>
       <strong>Mở danh sách</strong>
@@ -255,10 +255,10 @@ function ModerationQueue({ reports, filters, onFiltersChange }: { reports: Moder
         </select>
         <select value={filters.severity} onChange={(event) => update('severity', event.target.value as FilterState['severity'])} aria-label="Lọc theo mức độ">
           <option value="all">Tất cả mức độ</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
+          <option value="critical">Nghiêm trọng</option>
+          <option value="high">Cao</option>
+          <option value="medium">Trung bình</option>
+          <option value="low">Thấp</option>
         </select>
         <select value={filters.status} onChange={(event) => update('status', event.target.value as FilterState['status'])} aria-label="Lọc theo trạng thái">
           <option value="all">Tất cả trạng thái</option>
@@ -293,7 +293,7 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   return (
     <span className={cx(styles.severityBadge, styles[`severity_${severity}`])}>
       {severity === 'critical' ? <AlertTriangle size={13} /> : <ShieldCheck size={13} />}
-      {severity[0].toUpperCase() + severity.slice(1)}
+      {severity === 'critical' ? 'Nghiêm trọng' : severity === 'high' ? 'Cao' : severity === 'medium' ? 'Trung bình' : 'Thấp'}
     </span>
   )
 }
@@ -312,7 +312,7 @@ function ReportCard({ report }: { report: ModerationReport }) {
           <p>{report.reason}</p>
         </div>
         <div className={styles.priorityBox}>
-          <span>Priority</span>
+          <span>Ưu tiên</span>
           <strong>P{report.priority}</strong>
         </div>
       </div>

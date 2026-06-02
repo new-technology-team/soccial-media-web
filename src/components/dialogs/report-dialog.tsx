@@ -5,13 +5,13 @@ import { AppDialog, DialogButton } from './app-dialog'
 import styles from './dialogs.module.css'
 
 const REPORT_REASONS = [
-  'Spam',
-  'Harassment',
-  'Hate speech',
-  'Violence',
-  'Sexual content',
-  'Fake information',
-  'Scam',
+  'Spam hoặc quảng cáo',
+  'Quấy rối hoặc bắt nạt',
+  'Ngôn từ thù ghét',
+  'Bạo lực hoặc nguy hiểm',
+  'Nội dung nhạy cảm',
+  'Thông tin sai lệch',
+  'Lừa đảo',
 ]
 
 export function ReportDialog({

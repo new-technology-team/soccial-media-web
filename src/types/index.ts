@@ -47,6 +47,7 @@ export interface FeedPost {
   commentCount: number
   viewerReaction: string | null
   createdAt: string
+  updatedAt?: string
 }
 
 export interface FeedComment {
@@ -93,8 +94,10 @@ export interface Conversation {
     updatedAt?: string | null
     expiresAt?: string | null
     isDeleted?: boolean
+    viewerReaction?: string | null
   } | null
   pinnedMessageIds?: string[]
+  pinnedMessages?: ChatMessage[]
   role?: string
   groupOwner?: number
   onlineCount?: number

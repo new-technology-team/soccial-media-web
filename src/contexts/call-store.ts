@@ -5,6 +5,7 @@ export type IncomingCallState = {
   fromUserId: number
   conversationId: string | null
   callType: 'voice' | 'video'
+  mode?: 'private' | 'group'
   offer?: RTCSessionDescriptionInit
   fromUserName?: string
   conversationName?: string

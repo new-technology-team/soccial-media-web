@@ -41,18 +41,10 @@ import styles from './page.module.css'
 
 const VN_TIMEZONE = 'Asia/Ho_Chi_Minh'
 const FEED_BATCH_SIZE = 4
-const VN_UTC_OFFSET_MS = 7 * 60 * 60 * 1000
 
 const parseFeedDate = (value: string) => {
   const base = new Date(value)
-  if (Number.isNaN(base.getTime())) return new Date()
-
-  // Backend currently returns Z-suffixed values that are shifted by UTC offset.
-  // Add 7h to align wall-clock posting time for feed display.
-  if (typeof value === 'string' && value.endsWith('Z')) {
-    return new Date(base.getTime() + VN_UTC_OFFSET_MS)
-  }
-
+  if (Number.isNaN(base.getTime())) return null
   return base
 }
 
@@ -600,15 +592,17 @@ export default function FeedPage() {
   const formatTime = (value: string) => {
     void timeTick
     const date = parseFeedDate(value)
+    if (!date) return 'Không rõ thời gian'
     const diffMs = Math.max(0, Date.now() - date.getTime())
     const diffMinutes = Math.floor(diffMs / (60 * 1000))
     const diffHours = Math.floor(diffMs / (60 * 60 * 1000))
     const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000))
 
-    if (diffMinutes < 1) return 'vừa xong'
-    if (diffMinutes < 60) return `${diffMinutes} phút`
-    if (diffHours < 24) return `${diffHours} giờ`
-    if (diffDays < 7) return `${diffDays} ngày`
+    if (diffMinutes < 1) return 'Vừa xong'
+    if (diffMinutes < 60) return `${diffMinutes} phút trước`
+    if (diffHours < 24) return `${diffHours} giờ trước`
+    if (diffDays === 1) return 'Hôm qua'
+    if (diffDays < 7) return `${diffDays} ngày trước`
 
     return new Intl.DateTimeFormat('vi-VN', {
       timeZone: VN_TIMEZONE,
@@ -620,8 +614,10 @@ export default function FeedPage() {
     }).format(date)
   }
 
-  const formatExactTime = (value: string) =>
-    new Intl.DateTimeFormat('vi-VN', {
+  const formatExactTime = (value: string) => {
+    const date = parseFeedDate(value)
+    if (!date) return 'Không rõ thời gian'
+    return new Intl.DateTimeFormat('vi-VN', {
       timeZone: VN_TIMEZONE,
       hour12: false,
       day: '2-digit',
@@ -630,7 +626,8 @@ export default function FeedPage() {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-    }).format(parseFeedDate(value))
+    }).format(date)
+  }
 
   const submitPost = async (payload: {
     text: string

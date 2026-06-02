@@ -1,4 +1,4 @@
-import { Bell, BellOff, CirclePlus, FileText, Film, Image, Info, LockKeyhole, MessageCircle, Mic, Pin, Search, Send, SmilePlus, UserPlus, Users } from 'lucide-react'
+import { Bell, BellOff, CirclePlus, FileText, Film, Image, Info, LockKeyhole, MessageCircle, Mic, Phone, Pin, Search, Send, SmilePlus, UserPlus, Users } from 'lucide-react'
 
 import { formatVietnamTime, getConversationDisplayName } from '@/services/messages/formatters'
 import type { Conversation, NotificationItem } from '@/types'
@@ -14,10 +14,11 @@ type MessagesSidebarProps = {
   searchTerm: string
   setSearchTerm: (value: string) => void
   isLoadingConversations?: boolean
-  activeRailTab: 'messages' | 'newMessage' | 'createGroup' | 'notifications'
+  activeRailTab: 'messages' | 'newMessage' | 'createGroup' | 'notifications' | 'calls'
   onOpenConversation: (conversationId: string) => void
   onShowMessages: () => void
   onShowNotifications: () => void
+  onShowCalls: () => void
   onShowNewMessage: () => void
   onShowCreateGroup: () => void
 }
@@ -35,16 +36,11 @@ export function MessagesSidebar({
   onOpenConversation,
   onShowMessages,
   onShowNotifications,
+  onShowCalls,
   onShowNewMessage,
   onShowCreateGroup,
 }: MessagesSidebarProps) {
-  const q = searchTerm.trim().toLowerCase()
-  const visibleConversations = conversations.filter((conv) => {
-    const name = getConversationDisplayName(conv, userId).toLowerCase()
-    const searchable = [name, conv.name || '', String(conv.id)].join(' ').toLowerCase()
-    if (!q) return !conv.isHidden
-    return searchable.includes(q)
-  })
+  const visibleConversations = conversations
 
   return (
     <>
@@ -64,6 +60,9 @@ export function MessagesSidebar({
           </button>
           <button type="button" className={cn(styles.railBtn, activeRailTab === 'notifications' && styles.railBtnActive)} onClick={onShowNotifications} title="Thông báo" aria-label="Thông báo">
             <Bell size={16} />
+          </button>
+          <button type="button" className={cn(styles.railBtn, activeRailTab === 'calls' && styles.railBtnActive)} onClick={onShowCalls} title="Cuộc gọi" aria-label="Cuộc gọi">
+            <Phone size={16} />
           </button>
           <button type="button" className={cn(styles.railBtn, styles.railBottomBtn)} title="Thông tin" aria-label="Thông tin">
             <Info size={16} />

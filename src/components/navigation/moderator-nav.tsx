@@ -15,7 +15,7 @@ import { useAuthStore } from '@/contexts/auth-store'
 import styles from './moderator-nav.module.css'
 
 const NAV_ITEMS = [
-  { href: '/moderator/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { href: '/moderator/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
   { href: '/moderator/reports', icon: ClipboardList, label: 'Báo cáo' },
   { href: '/moderator/posts', icon: FileWarning, label: 'Bài viết' },
   { href: '/moderator/comments', icon: MessageCircleWarning, label: 'Bình luận' },
@@ -38,7 +38,7 @@ export default function ModeratorNav() {
     <nav className={styles.nav} aria-label="Điều hướng kiểm duyệt">
       <div className={styles.brand}>
         <span className={styles.brandIcon}>🛡️</span>
-        <span className={styles.brandLabel}>Mod Center</span>
+        <span className={styles.brandLabel}>Trung tâm kiểm duyệt</span>
       </div>
 
       <ul className={styles.list}>

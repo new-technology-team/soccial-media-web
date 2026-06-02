@@ -39,14 +39,12 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import styles from './page.module.css'
-import { ApiError, api, resolveApiAssetUrl } from '@/api/client'
+import { ApiError, api, resolveApiAssetUrl, type CallHistoryItem } from '@/api/client'
 import {
   ActiveCallWindow,
   CallHistoryMessage,
   CallSettingsPanel,
   IncomingCallModal,
-  MinimizedCallPill,
-  OutgoingCallModal,
   type CallParticipant,
   type CallSettings,
   type CallState,
@@ -64,7 +62,8 @@ import {
 import { useAuthStore } from '@/contexts/auth-store'
 import { useChatStore } from '@/contexts/chat-store'
 import { useCallStore, type IncomingCallState, type ActiveCall } from '@/contexts/call-store'
-import { callSession } from '@/services/call-session'
+import { cn } from '@/utils'
+import { callSession, resetCallSession } from '@/services/call-session'
 import { toast } from '@/hooks/use-toast'
 import { connectSocket, getSocket } from '@/services/socket'
 import { useConversationRouting } from '@/hooks/use-conversation-routing'
@@ -144,16 +143,24 @@ const MESSAGE_REACTION_ICONS: Array<{ type: string; label: string; emoji: string
   { type: 'angry', label: 'Tức giận', emoji: '😡' },
 ]
 
+const TURN_URLS = String(import.meta.env.VITE_TURN_URLS || import.meta.env.VITE_TURN_URL || '')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean)
+
 const RTC_CONFIG: RTCConfiguration = {
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    ...(import.meta.env.VITE_TURN_URL
+    ...(TURN_URLS.length
       ? [
         {
-          urls: import.meta.env.VITE_TURN_URL,
-          username: import.meta.env.VITE_TURN_USERNAME,
-          credential: import.meta.env.VITE_TURN_CREDENTIAL,
+          urls: TURN_URLS,
+          username: import.meta.env.VITE_TURN_USERNAME || undefined,
+          credential: import.meta.env.VITE_TURN_CREDENTIAL || undefined,
         },
       ]
       : []),
@@ -163,6 +170,11 @@ const RTC_CONFIG: RTCConfiguration = {
 const CALL_RING_TIMEOUT_MS = 60_000
 const GROUP_CALL_RING_TIMEOUT_MS = 60_000
 const GROUP_CALL_MAX_PARTICIPANTS = 6
+const CALL_LOG_PREFIX = '[ZChat Call]'
+
+const callLog = (event: string, details?: Record<string, unknown>) => {
+  console.info(CALL_LOG_PREFIX, event, details || {})
+}
 
 // Jitsi dùng để liên thông với mobile (mobile gọi qua Jitsi, không phải WebRTC).
 const JITSI_BASE_URL = String(import.meta.env.VITE_VIDEO_CALL_BASE_URL || 'https://meet.jit.si').replace(/\/+$/, '')
@@ -174,8 +186,30 @@ const sanitizeRoomName = (input: string): string =>
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '') || `zchat-${Date.now()}`
 
+// Fallback (cố định theo hội thoại) khi server không cấp phát được phòng — vẫn hội tụ về 1 phòng.
 const buildJitsiRoomId = (conversationId: string): string =>
-  sanitizeRoomName(`zchat-${conversationId}-${Date.now()}`)
+  sanitizeRoomName(`zchat-${conversationId}`)
+
+// Lấy phòng Jitsi của phiên gọi từ server (tái dùng nếu cuộc gọi đang diễn ra). Có timeout fallback.
+const acquireCallRoom = (socket: { emit: (ev: string, data: unknown, ack?: (resp: unknown) => void) => void }, conversationId: string): Promise<string> =>
+  new Promise((resolve) => {
+    let done = false
+    const finish = (roomId: string) => {
+      if (done) return
+      done = true
+      resolve(roomId || buildJitsiRoomId(conversationId))
+    }
+    const timer = window.setTimeout(() => finish(''), 4000)
+    try {
+      socket.emit('call:room:acquire', { conversationId }, (resp: unknown) => {
+        window.clearTimeout(timer)
+        finish(String((resp as { roomId?: string })?.roomId || ''))
+      })
+    } catch {
+      window.clearTimeout(timer)
+      finish('')
+    }
+  })
 
 const resolveJitsiUrl = (roomId: string, displayName?: string): string => {
   const hash = [
@@ -275,6 +309,8 @@ export default function MessagesPage() {
   } = useChatStore()
   const [message, setMessage] = useState('')
   const [callStatus, setCallStatus] = useState<string | null>(null)
+  const [jitsiCallUrl, setJitsiCallUrl] = useState<string | null>(null)
+  const [activeGroupCallSessionIds, setActiveGroupCallSessionIds] = useState<Set<string>>(() => new Set())
   const [callState, setCallState] = useState<CallState>(() => useCallStore.getState().callState)
   const [incomingCall, setIncomingCall] = useState<IncomingCallState | null>(null)
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(() => useCallStore.getState().activeCall)
@@ -309,11 +345,19 @@ export default function MessagesPage() {
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [showNewMessageModal, setShowNewMessageModal] = useState(false)
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false)
+  const [showCallHistoryDrawer, setShowCallHistoryDrawer] = useState(false)
+  const [callHistoryFilter, setCallHistoryFilter] = useState<'all' | 'missed' | 'incoming' | 'outgoing' | 'group'>('all')
+  const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([])
+  const [mediaLightbox, setMediaLightbox] = useState<{ url: string; alt: string } | null>(null)
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false)
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false)
   const [pendingLockedConversationId, setPendingLockedConversationId] = useState<string | null>(null)
   const [pendingUnlockPassword, setPendingUnlockPassword] = useState('')
   const [pendingUnlockError, setPendingUnlockError] = useState<string | null>(null)
+  const [unlockedConversationIds, setUnlockedConversationIds] = useState<Set<string>>(() => new Set())
+  const [hiddenSearchUnlockedIds, setHiddenSearchUnlockedIds] = useState<Set<string>>(() => new Set())
+  const [lockedSearchUnlockedIds, setLockedSearchUnlockedIds] = useState<Set<string>>(() => new Set())
+  const previousSelectedConversationIdRef = useRef<string | null>(null)
   const [isDirectPeerBlocked, setIsDirectPeerBlocked] = useState(false)
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null)
   const [nicknameDialog, setNicknameDialog] = useState<NicknameDialogState | null>(null)
@@ -323,6 +367,8 @@ export default function MessagesPage() {
   const [muteDialogOpen, setMuteDialogOpen] = useState(false)
   const [autoDeleteDialogOpen, setAutoDeleteDialogOpen] = useState(false)
   const [lockDialogOpen, setLockDialogOpen] = useState(false)
+  const [hideDialogOpen, setHideDialogOpen] = useState(false)
+  const [hideDialogMode, setHideDialogMode] = useState<'hide' | 'unhide'>('hide')
   const [rightPanelSection, setRightPanelSection] = useState<'overview' | 'members' | 'manage'>('overview')
   const [groupName, setGroupName] = useState('')
   const [groupSearchKeyword, setGroupSearchKeyword] = useState('')
@@ -392,8 +438,8 @@ export default function MessagesPage() {
   const longPressTimer = useRef<number | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
   const reactionPickerRef = useRef<HTMLDivElement | null>(null)
-  const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const localStreamRef = useRef<MediaStream | null>(useCallStore.getState().localStream)
+  const localVideoRef = useRef<HTMLVideoElement | null>(null)
   // Share Map reference with callSession so WebRTC state survives navigation
   const peersRef = useRef<Map<number, RTCPeerConnection>>(callSession.peers)
   const pendingCandidatesRef = useRef<Map<number, RTCIceCandidateInit[]>>(callSession.pendingCandidates)
@@ -406,6 +452,7 @@ export default function MessagesPage() {
     callType: 'voice' | 'video'
     mode: 'private' | 'group'
     conversationId: string
+    callSessionId?: string
     startedAt: number
     answeredAt: number | null
     withName: string
@@ -414,8 +461,10 @@ export default function MessagesPage() {
   const lastCallTypeRef = useRef<'voice' | 'video'>('voice')
   const callRoomIdRef = useRef<string>('')
   const clearCallTimerRef = useRef<number | null>(null)
+  const isEndingCallRef = useRef(false)
   const screenShareTrackRef = useRef<MediaStreamTrack | null>(null)
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null)
+  const negotiationLocksRef = useRef<Set<number>>(new Set())
 
   const scrollConversationToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     window.setTimeout(() => {
@@ -559,6 +608,47 @@ export default function MessagesPage() {
     }
   }, [messagesByConversation, selectedConversationId])
 
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket || !selectedConversationId) {
+      setActiveGroupCallSessionIds(new Set())
+      return
+    }
+    const sessionIds = Array.from(new Set(
+      virtualSlice.items
+        .filter((item) => {
+          if (item.type !== 'call-history') return false
+          const meta = (item.meta || {}) as Record<string, unknown>
+          return meta.mode === 'group' && meta.status === 'active' && meta.callSessionId
+        })
+        .map((item) => String(((item.meta || {}) as Record<string, unknown>).callSessionId))
+        .filter(Boolean)
+    ))
+    if (sessionIds.length === 0) {
+      setActiveGroupCallSessionIds(new Set())
+      return
+    }
+    setActiveGroupCallSessionIds(new Set(sessionIds))
+    if (!socket.connected) return
+
+    let cancelled = false
+    Promise.all(sessionIds.map((callSessionId) => new Promise<string | null>((resolve) => {
+      socket.emit('call:room:status', { conversationId: selectedConversationId, callSessionId }, (resp: unknown) => {
+        const active = Boolean((resp as { active?: boolean })?.active)
+        resolve(active ? callSessionId : null)
+      })
+      window.setTimeout(() => resolve(null), 2500)
+    }))).then((activeIds) => {
+      if (cancelled) return
+      setActiveGroupCallSessionIds(new Set(activeIds.filter((id): id is string => Boolean(id))))
+    }).catch(() => {
+      if (!cancelled) setActiveGroupCallSessionIds(new Set())
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedConversationId, virtualSlice.items])
+
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null
   const selectedConversationUiPrefs = useMemo<ConversationUiPrefs>(
     () => ({
@@ -570,9 +660,14 @@ export default function MessagesPage() {
   )
   const queryConversationId = searchParams.get('conversation') || ''
   const globalIncomingCall = useCallStore((state) => state.incomingCall)
+  const globalCallMinimized = useCallStore((state) => state.callMinimized)
   const setGlobalIncomingCall = useCallStore((state) => state.setIncomingCall)
   const acceptPending = useCallStore((state) => state.acceptPending)
   const setAcceptPending = useCallStore((state) => state.setAcceptPending)
+  const clearIncomingCall = useCallback(() => {
+    setGlobalIncomingCall(null)
+    setIncomingCall(null)
+  }, [setGlobalIncomingCall])
 
   // Stable Zustand setters (don't change between renders)
   const {
@@ -608,13 +703,51 @@ export default function MessagesPage() {
     setConversations(await loadChatConversations(token))
   }, [token, setConversations])
 
+  const verifyHiddenConversationAccess = useCallback(
+    async (conversationId: string, hiddenPassword: string, options?: { syncConversation?: boolean }) => {
+      if (!token) throw new Error('Bạn cần đăng nhập để mở hội thoại ẩn.')
+      const syncConversation = options?.syncConversation !== false
+      try {
+        const result = await api.verifyHiddenConversation(token, conversationId, hiddenPassword)
+        if (syncConversation) {
+          setConversations((current) => current.map((item) => (item.id === conversationId ? result.conversation : item)))
+        }
+        return true
+      } catch (verifyError) {
+        try {
+          await api.updateConversationPreferences(token, conversationId, { hidden: false, hiddenPassword })
+          const restored = await api.updateConversationPreferences(token, conversationId, { hidden: true, hiddenPassword })
+          if (syncConversation) {
+            setConversations((current) => current.map((item) => (item.id === conversationId ? restored.conversation : item)))
+          }
+          return true
+        } catch {
+          throw verifyError
+        }
+      }
+    },
+    [setConversations, token]
+  )
+
+  const verifyLockedConversationAccess = useCallback(
+    async (conversationId: string, lockedPassword: string) => {
+      if (!token) throw new Error('Bạn cần đăng nhập để mở hội thoại khóa.')
+      await api.updateConversationPreferences(token, conversationId, { locked: false, lockedPassword })
+      await api.updateConversationPreferences(token, conversationId, { locked: true, lockedPassword })
+      return true
+    },
+    [token]
+  )
+
   const requestConversationAccess = useCallback(
     async (conversationId: string) => {
       if (!token) return false
       const targetConversation = conversations.find((item) => item.id === conversationId) || null
       if (!targetConversation) return false
 
-      if (targetConversation.isHidden || targetConversation.isLocked) {
+      const hiddenAllowed = !targetConversation.isHidden || hiddenSearchUnlockedIds.has(conversationId) || unlockedConversationIds.has(conversationId)
+      const lockedAllowed = !targetConversation.isLocked || lockedSearchUnlockedIds.has(conversationId) || unlockedConversationIds.has(conversationId)
+      if (!hiddenAllowed || !lockedAllowed) {
         setPendingLockedConversationId(conversationId)
         setPendingUnlockError(null)
         setPendingUnlockPassword('')
@@ -623,7 +756,7 @@ export default function MessagesPage() {
 
       return true
     },
-    [conversations, token]
+    [conversations, hiddenSearchUnlockedIds, lockedSearchUnlockedIds, token, unlockedConversationIds]
   )
 
   const handleOpenConversation = useCallback(
@@ -633,10 +766,18 @@ export default function MessagesPage() {
         if (!allowed) return
         routeOpenConversation(conversationId)
         markConversationRead(conversationId)
+        const openedConversation = conversations.find((item) => item.id === conversationId)
+        if (openedConversation?.isHidden) {
+          setSearchTerm('')
+          setHiddenSearchUnlockedIds(new Set())
+        }
+        if (openedConversation?.isLocked) {
+          setLockedSearchUnlockedIds(new Set())
+        }
         setMobileShowList(false)
       })()
     },
-    [markConversationRead, requestConversationAccess, routeOpenConversation]
+    [conversations, markConversationRead, requestConversationAccess, routeOpenConversation]
   )
 
   const handleUnlockPendingConversation = async () => {
@@ -662,11 +803,24 @@ export default function MessagesPage() {
 
     try {
       setPendingUnlockError(null)
-      await api.updateConversationPreferences(token, pendingLockedConversationId, {
-        hidden: false,
-        locked: false,
-        hiddenPassword: password,
-        lockedPassword: password,
+      const targetConversation = conversations.find((item) => item.id === pendingLockedConversationId) || null
+      if (!targetConversation) return
+
+      if (targetConversation.isHidden) {
+        await verifyHiddenConversationAccess(pendingLockedConversationId, password)
+        setHiddenSearchUnlockedIds((current) => {
+          const next = new Set(current)
+          next.add(pendingLockedConversationId)
+          return next
+        })
+      }
+      if (targetConversation.isLocked) {
+        await verifyLockedConversationAccess(pendingLockedConversationId, password)
+      }
+      setUnlockedConversationIds((current) => {
+        const next = new Set(current)
+        next.add(pendingLockedConversationId)
+        return next
       })
       await refreshConversations()
       routeOpenConversation(pendingLockedConversationId)
@@ -684,6 +838,36 @@ export default function MessagesPage() {
       setNotifications(await loadChatNotifications(token))
     } catch {
       // Ignore transient notification reload issues.
+    }
+  }, [token])
+
+  useEffect(() => {
+    const previousId = previousSelectedConversationIdRef.current
+    if (previousId && previousId !== selectedConversationId) {
+      setUnlockedConversationIds((current) => {
+        if (!current.has(previousId)) return current
+        const next = new Set(current)
+        next.delete(previousId)
+        return next
+      })
+      setHiddenSearchUnlockedIds((current) => {
+        if (!current.has(previousId)) return current
+        const next = new Set(current)
+        next.delete(previousId)
+        return next
+      })
+      setSearchTerm('')
+    }
+    previousSelectedConversationIdRef.current = selectedConversationId
+  }, [selectedConversationId])
+
+  const reloadCallHistory = useCallback(async () => {
+    if (!token) return
+    try {
+      const data = await api.getCallHistory(token, 80)
+      setCallHistory(data.calls || [])
+    } catch {
+      // Call history should never block the chat surface.
     }
   }, [token])
 
@@ -793,6 +977,19 @@ export default function MessagesPage() {
   }, [reloadNotifications])
 
   useEffect(() => {
+    reloadCallHistory().catch(() => undefined)
+  }, [reloadCallHistory])
+
+  useEffect(() => {
+    if (!mediaLightbox) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMediaLightbox(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [mediaLightbox])
+
+  useEffect(() => {
     if (!token || !newMessageKeyword.trim()) {
       setSearchUsersResult([])
       return
@@ -855,6 +1052,7 @@ export default function MessagesPage() {
     if (!selectedConversationId) return
     const socket = getSocket()
     socket?.emit('join-conversation', selectedConversationId)
+    socket?.emit('conversation:join', { conversationId: selectedConversationId })
     emitTypingState(Boolean(value.trim()), selectedConversationId)
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current)
     if (value.trim()) {
@@ -989,6 +1187,7 @@ export default function MessagesPage() {
         const jitsiIncoming: IncomingCallState = {
           fromUserId,
           callType: payload.callType || 'video',
+          mode: incomingConv?.type === 'group' ? 'group' : 'private',
           conversationId: incomingConversationId,
           roomId: String(payload.roomId),
           useJitsi: true,
@@ -1011,11 +1210,12 @@ export default function MessagesPage() {
       // tự động thiết lập kết nối (tạo answer) mà KHÔNG hiện modal cuộc gọi đến.
       const state = useCallStore.getState()
       const activeConvId = state.activeCall?.conversationId
-      if (state.callAnswered && state.activeCall && incomingConversationId && incomingConversationId === activeConvId && !peersRef.current.has(fromUserId)) {
+      if (state.callAnswered && state.activeCall && incomingConversationId && incomingConversationId === activeConvId) {
+        clearIncomingCall()
         try {
-          const pc = await buildPeerConnection(fromUserId, state.activeCall.type, incomingConversationId)
+          const pc = peersRef.current.get(fromUserId) || await buildPeerConnection(fromUserId, state.activeCall.type, incomingConversationId)
           if (pc) {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: payload.offer.sdp }))
+            await pc.setRemoteDescription({ type: 'offer', sdp: payload.offer.sdp })
             await flushPendingCandidates(fromUserId)
             const answer = await pc.createAnswer()
             await pc.setLocalDescription(answer)
@@ -1025,6 +1225,10 @@ export default function MessagesPage() {
               answer: { type: answer.type, sdp: answer.sdp },
             })
             setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
+            callLog(payload.renegotiate ? 'Peer renegotiated' : 'User joined call', {
+              fromUserId,
+              conversationId: incomingConversationId,
+            })
           }
         } catch {
           // bỏ qua: thiết lập peer mesh thất bại
@@ -1039,6 +1243,7 @@ export default function MessagesPage() {
       const incomingPayload: IncomingCallState = {
         fromUserId,
         callType: payload.callType || 'voice',
+        mode: incomingConv?.type === 'group' ? 'group' : 'private',
         conversationId: incomingConversationId,
         offer: payload.offer,
         roomId: payload.roomId ? String(payload.roomId) : undefined,
@@ -1090,12 +1295,13 @@ export default function MessagesPage() {
         const roomId = String(payload?.roomId || callRoomIdRef.current || '')
         if (roomId) {
           stopRingtone()
-          logCall('completed')
+          const currentActiveCall = useCallStore.getState().activeCall || activeCall
+          if (currentActiveCall?.mode !== 'group') logCall('completed')
           const myName = user?.fullName || 'Bạn'
           closeCallResources()
-          window.open(resolveJitsiUrl(roomId, myName), '_blank', 'noopener')
-          setCallState('idle')
-          setCallStatus(null)
+          setJitsiCallUrl(resolveJitsiUrl(roomId, myName))
+          setCallState('connected')
+          setCallStatus('Đã kết nối cuộc gọi video')
           setActiveCall(null)
           setCallAnswered(false)
           setRingingStartedAt(null)
@@ -1108,10 +1314,10 @@ export default function MessagesPage() {
 
       const peer = peersRef.current.get(fromUserId)
       if (peer && payload.answer) {
-        await peer.setRemoteDescription(new RTCSessionDescription({
+        await peer.setRemoteDescription({
           type: (payload.answer.type as RTCSdpType) || 'answer',
           sdp: payload.answer.sdp,
-        }))
+        })
         await flushPendingCandidates(fromUserId)
       }
       const answeredAt = Number(payload?.answeredAt || 0) || Date.now()
@@ -1129,6 +1335,7 @@ export default function MessagesPage() {
       const fromUserId = Number(payload?.fromUserId || 0)
       if (fromUserId > 0) {
         setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
+        callLog('User joined call', { fromUserId, conversationId: payload?.conversationId })
         void meshInitiate(fromUserId)
       }
     })
@@ -1138,6 +1345,7 @@ export default function MessagesPage() {
       if (fromUserId > 0) {
         setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
         setRemoteMediaState((prev) => { const next = { ...prev }; delete next[fromUserId]; return next })
+        callLog('User left call', { fromUserId, conversationId: payload?.conversationId })
       }
     })
 
@@ -1158,54 +1366,39 @@ export default function MessagesPage() {
       }
     })
 
-    socket.on('call:end', (payload) => {
-      const endedByUserId = Number(payload?.fromUserId || 0)
-
-      if (endedByUserId > 0 && activeCall) {
-        const peer = peersRef.current.get(endedByUserId)
-        if (peer) {
-          peer.close()
-          peersRef.current.delete(endedByUserId)
-        }
-
-        setRemoteStreams((prev) => prev.filter((item) => item.userId !== endedByUserId))
-
-        const nextJoined = joinedCallUserIds.filter((id) => id !== endedByUserId)
-        setJoinedCallUserIds(nextJoined)
-
-        const myId = Number(user?.id || 0)
-        const remainingOthers = nextJoined.filter((id) => id !== myId)
-
-        if (remainingOthers.length === 0) {
-          logCall(callMetaRef.current?.answeredAt ? 'completed' : 'cancelled')
-          closeCallResources()
-          setActiveCall(null)
-          setCallSeconds(0)
-          setCallAnswered(false)
-          setRingingStartedAt(null)
-          setCallState('ended')
-          setCallStatus('Mọi người đã rời cuộc gọi')
-          callMetaRef.current = null
-        } else {
-          setRemoteMediaState((prev) => { const next = { ...prev }; delete next[endedByUserId]; return next })
-          setCallStatus('Một người đã rời cuộc gọi')
-        }
-        return
-      }
-
+    const handleRemoteCallEnd = (payload: any) => {
+      if (Number(payload?.fromUserId || 0) === Number(user?.id || 0) && isEndingCallRef.current) return
       logCall(payload?.reason === 'disconnected' ? 'completed' : (callMetaRef.current?.answeredAt ? 'completed' : 'cancelled'))
       setCallState('ended')
       stopRingtone()
       setCallStatus(payload?.reason === 'disconnected' ? 'Đối phương đã ngắt kết nối' : 'Cuộc gọi đã kết thúc')
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
+      clearIncomingCall()
       closeCallResources()
       setActiveCall(null)
       setCallSeconds(0)
       setCallAnswered(false)
       setRingingStartedAt(null)
       callMetaRef.current = null
-    })
+      isEndingCallRef.current = false
+    }
+
+    socket.on('call:end', handleRemoteCallEnd)
+    socket.on('call:ended', handleRemoteCallEnd)
+
+    const handleRemoteCallLeave = (payload: any) => {
+      const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
+      if (fromUserId > 0) {
+        callLog('User left call', { fromUserId, conversationId: payload?.conversationId })
+        const peer = peersRef.current.get(fromUserId)
+        if (peer) { peer.close(); peersRef.current.delete(fromUserId) }
+        setRemoteStreams((prev) => prev.filter((item) => item.userId !== fromUserId))
+        setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
+        setRemoteMediaState((prev) => { const next = { ...prev }; delete next[fromUserId]; return next })
+      }
+    }
+
+    socket.on('call:leave', handleRemoteCallLeave)
+    socket.on('call:left', handleRemoteCallLeave)
 
     socket.on('call:participants', (payload) => {
       // Update participant display for group calls
@@ -1215,6 +1408,21 @@ export default function MessagesPage() {
         setCallStatus(`Cuộc gọi đang có ${payload.participantCount} người tham gia`)
         ids.forEach((id) => { void meshInitiate(id) })
       }
+      if (Array.isArray(payload?.participants)) {
+        setRemoteMediaState((prev) => {
+          const next = { ...prev }
+          for (const participant of payload.participants) {
+            const id = Number(participant?.userId || 0)
+            if (!id || id === user?.id) continue
+            next[id] = {
+              ...next[id],
+              micMuted: Boolean(participant?.micMuted),
+              cameraOff: Boolean(participant?.cameraOff),
+            }
+          }
+          return next
+        })
+      }
     })
 
     socket.on('group_call_joined', (payload) => {
@@ -1222,20 +1430,12 @@ export default function MessagesPage() {
       if (fromUserId > 0) {
         setJoinedCallUserIds((prev) => (prev.includes(fromUserId) ? prev : [...prev, fromUserId]))
         setCallStatus('Cuộc gọi nhóm đang diễn ra')
+        callLog('User joined call', { fromUserId, conversationId: payload?.conversationId })
         void meshInitiate(fromUserId)
       }
     })
 
-    socket.on('group_call_left', (payload) => {
-      const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
-      if (fromUserId > 0) {
-        const peer = peersRef.current.get(fromUserId)
-        if (peer) { peer.close(); peersRef.current.delete(fromUserId) }
-        setRemoteStreams((prev) => prev.filter((item) => item.userId !== fromUserId))
-        setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
-        setRemoteMediaState((prev) => { const next = { ...prev }; delete next[fromUserId]; return next })
-      }
-    })
+    socket.on('group_call_left', handleRemoteCallLeave)
 
     socket.on('group_call_ended', () => {
       logCall(callMetaRef.current?.answeredAt ? 'completed' : 'cancelled')
@@ -1246,6 +1446,7 @@ export default function MessagesPage() {
       setCallAnswered(false)
       setCallSeconds(0)
       callMetaRef.current = null
+      isEndingCallRef.current = false
     })
 
     // Người được gọi không trực tuyến (backend phản hồi trực tiếp cho người gọi).
@@ -1260,7 +1461,17 @@ export default function MessagesPage() {
     })
 
     // Người được gọi từ chối cuộc gọi.
-    socket.on('call:reject', () => {
+    socket.on('call:reject', (payload) => {
+      const currentActiveCall = useCallStore.getState().activeCall || activeCall
+      if (currentActiveCall?.mode === 'group' || payload?.mode === 'group') {
+        const fromUserId = Number(payload?.fromUserId || payload?.userId || 0)
+        if (fromUserId > 0) {
+          setJoinedCallUserIds((prev) => prev.filter((id) => id !== fromUserId))
+          setRemoteMediaState((prev) => { const next = { ...prev }; delete next[fromUserId]; return next })
+        }
+        setCallStatus('Một thành viên đã từ chối, cuộc gọi nhóm vẫn đang diễn ra')
+        return
+      }
       stopRingtone()
       closeCallResources()
       logCall('rejected')
@@ -1318,6 +1529,8 @@ export default function MessagesPage() {
       socket.off('call:leave')
       socket.off('call:ice-candidate')
       socket.off('call:end')
+      socket.off('call:ended')
+      socket.off('call:left')
       socket.off('call:participants')
       socket.off('group_call_joined')
       socket.off('group_call_left')
@@ -1332,15 +1545,20 @@ export default function MessagesPage() {
       remoteTypingTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId))
       remoteTypingTimeoutsRef.current.clear()
     }
-  }, [activeCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, updateUserAvatar, upsertMessage, user?.id])
+  }, [activeCall, clearIncomingCall, joinedCallUserIds, refreshConversations, reloadFriendMap, reloadNotifications, selectedConversationId, setGlobalIncomingCall, token, updateUserAvatar, upsertMessage, user?.id])
 
   useEffect(() => {
     if (!globalIncomingCall || incomingCall) return
+    const activeConversationId = useCallStore.getState().activeCall?.conversationId
+    if (useCallStore.getState().callAnswered && activeConversationId && globalIncomingCall.conversationId === activeConversationId) {
+      clearIncomingCall()
+      return
+    }
     setIncomingCall(globalIncomingCall)
     setCallStatus(`Cuộc gọi ${globalIncomingCall.callType === 'video' ? 'video' : 'thoại'} đến`)
     setCallState('incoming')
     startRingtone('incoming')
-  }, [globalIncomingCall, incomingCall, startRingtone])
+  }, [clearIncomingCall, globalIncomingCall, incomingCall, startRingtone])
 
   // Auto-accept when user navigated from AppLayout's accept button
   useEffect(() => {
@@ -1356,9 +1574,11 @@ export default function MessagesPage() {
     if (!socket) return
 
     socket.emit('join-conversation', selectedConversationId)
+    socket.emit('conversation:join', { conversationId: selectedConversationId })
     return () => {
       socket.emit('stopTyping', { conversationId: selectedConversationId })
       socket.emit('leave-conversation', selectedConversationId)
+      socket.emit('conversation:leave', { conversationId: selectedConversationId })
     }
   }, [selectedConversationId])
 
@@ -1389,6 +1609,10 @@ export default function MessagesPage() {
   // Call timer has been moved to AppLayout so it persists across navigation
 
   // Sync local call state → Zustand so AppLayout can render call windows across navigation
+  useEffect(() => {
+    setCallMinimized((current) => (current === globalCallMinimized ? current : globalCallMinimized))
+  }, [globalCallMinimized])
+
   useEffect(() => { setGlobalActiveCall(activeCall) }, [activeCall]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setGlobalCallAnswered(callAnswered) }, [callAnswered]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setGlobalCallState(callState) }, [callState]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1437,6 +1661,49 @@ export default function MessagesPage() {
 
   const [searchTerm, setSearchTerm] = useState('')
 
+  useEffect(() => {
+    if (!token) return
+    const password = searchTerm.trim()
+    if (!password) {
+      setHiddenSearchUnlockedIds(new Set())
+      setLockedSearchUnlockedIds(new Set())
+      return
+    }
+
+    const hiddenConversations = conversations.filter((conversation) => conversation.isHidden)
+    const lockedConversations = conversations.filter((conversation) => conversation.isLocked)
+    if (hiddenConversations.length === 0 && lockedConversations.length === 0) return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      Promise.all([
+        Promise.all(
+          hiddenConversations.map((conversation) =>
+            verifyHiddenConversationAccess(conversation.id, password, { syncConversation: false })
+              .then(() => conversation.id)
+              .catch(() => null)
+          )
+        ),
+        Promise.all(
+          lockedConversations.map((conversation) =>
+            verifyLockedConversationAccess(conversation.id, password)
+              .then(() => conversation.id)
+              .catch(() => null)
+          )
+        ),
+      ]).then(([hiddenMatchedIds, lockedMatchedIds]) => {
+        if (cancelled) return
+        setHiddenSearchUnlockedIds(new Set(hiddenMatchedIds.filter((id): id is string => Boolean(id))))
+        setLockedSearchUnlockedIds(new Set(lockedMatchedIds.filter((id): id is string => Boolean(id))))
+      })
+    }, 260)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [conversations, searchTerm, token, verifyHiddenConversationAccess, verifyLockedConversationAccess])
+
   const selectedConversationMembers = useMemo(
     () => new Map((selectedConversation?.members || []).map((member) => [member.userId, member])),
     [selectedConversation]
@@ -1484,7 +1751,7 @@ export default function MessagesPage() {
           .filter((member) => readByIds.has(Number(member.userId)))
           .map((member) => member.fullName)
         if (selectedConversation.type === 'direct') return names.length ? '✓✓ Seen' : message.status === 'delivered' ? '✓✓ Delivered' : '✓ Sent'
-        if (names.length > 0) return `✓✓ Seen by ${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
+        if (names.length > 0) return names.length === 1 ? '✓✓ Seen' : `✓✓ Seen by ${names.length}`
       }
 
       const sentAt = new Date(message.createdAt).getTime()
@@ -1510,17 +1777,21 @@ export default function MessagesPage() {
 
   const filteredConversations = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
-    const items = !q
-      ? conversations
-      : conversations.filter((conversation) =>
-          getConversationDisplayName(conversation, user?.id).toLowerCase().includes(q)
-        )
+    const items = conversations.filter((conversation) => {
+      const name = getConversationDisplayName(conversation, user?.id).toLowerCase()
+      const searchable = [name, conversation.name || '', conversation.id].join(' ').toLowerCase()
+      if (conversation.isHidden && !q) return false
+      if (conversation.isHidden) return hiddenSearchUnlockedIds.has(conversation.id)
+      if (conversation.isLocked && lockedSearchUnlockedIds.has(conversation.id)) return true
+      if (!q) return true
+      return searchable.includes(q)
+    })
 
     return [...items].sort((a, b) => {
       if (Boolean(a.isPinned) !== Boolean(b.isPinned)) return Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned))
       return getConversationActivityTime(b) - getConversationActivityTime(a)
     })
-  }, [conversations, searchTerm, user?.id])
+  }, [conversations, hiddenSearchUnlockedIds, lockedSearchUnlockedIds, searchTerm, user?.id])
 
   const callTargetId = useMemo(() => {
     if (!selectedConversation || !user?.id) return null
@@ -1533,6 +1804,33 @@ export default function MessagesPage() {
     return selectedConversation.members.map((m) => m.userId).filter((id) => id !== user.id)
   }, [selectedConversation, user?.id])
 
+  const checkUserPresence = useCallback(async (targetUserId: number) => {
+    const socket = getSocket()
+    if (!socket || !targetUserId) {
+      return { userId: targetUserId, online: false, lastActiveAt: null as string | null }
+    }
+
+    return await new Promise<{ userId: number; online: boolean; lastActiveAt: string | null }>((resolve) => {
+      let settled = false
+      const fallback = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        resolve({ userId: targetUserId, online: false, lastActiveAt: null })
+      }, 1200)
+
+      socket.emit('presence:check', { userId: targetUserId }, (payload: { userId?: number; online?: boolean; lastActiveAt?: string | null }) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(fallback)
+        resolve({
+          userId: Number(payload?.userId || targetUserId),
+          online: Boolean(payload?.online),
+          lastActiveAt: payload?.lastActiveAt || null,
+        })
+      })
+    })
+  }, [])
+
   // Ghi lịch sử cuộc gọi — chỉ phía người khởi tạo ghi để tránh trùng bản ghi.
   const logCall = useCallback((status: 'completed' | 'missed' | 'rejected' | 'no_answer' | 'cancelled' | 'failed') => {
     const meta = callMetaRef.current
@@ -1540,11 +1838,21 @@ export default function MessagesPage() {
     if (Number(user?.id || 0) !== meta.initiatorId) return
     callLoggedRef.current = true
     const endedAt = Date.now()
-    const durationSec = meta.answeredAt ? Math.max(0, Math.round((endedAt - meta.answeredAt) / 1000)) : 0
-    api.createCall(token, {
+    const durationSec = meta.answeredAt
+      ? Math.max(0, Math.round((endedAt - meta.answeredAt) / 1000))
+      : Math.max(0, Math.round((endedAt - meta.startedAt) / 1000))
+      api.createCall(token, {
       conversationId: meta.conversationId,
       initiatorId: meta.initiatorId,
       participantIds: meta.participantIds,
+      callSessionId: meta.callSessionId,
+      participantStatuses: meta.participantIds.map((participantId) => ({
+        userId: participantId,
+        joinedAt: meta.answeredAt || meta.startedAt,
+        leftAt: endedAt,
+        durationSec,
+        role: participantId === meta.initiatorId ? 'caller' : (meta.mode === 'group' ? 'member' : 'receiver'),
+      })),
       callType: meta.callType,
       mode: meta.mode,
       status,
@@ -1553,8 +1861,8 @@ export default function MessagesPage() {
       endedAt,
       durationSec,
       withName: meta.withName,
-    }).catch(() => undefined)
-  }, [token, user?.id])
+    }).then(() => reloadCallHistory()).catch(() => undefined)
+  }, [reloadCallHistory, token, user?.id])
 
   // Giữ cửa sổ lỗi hiển thị ngắn rồi tự dọn để người dùng kịp đọc lý do.
   const scheduleClearCall = useCallback((delayMs = 4000) => {
@@ -1582,17 +1890,11 @@ export default function MessagesPage() {
     const timeoutLimit = activeCall.mode === 'group' ? GROUP_CALL_RING_TIMEOUT_MS : CALL_RING_TIMEOUT_MS
     const timeoutMs = timeoutLimit - (Date.now() - ringingStartedAt)
     const conversationId = selectedConversationId
-    const targets = [...callTargets]
 
     const autoEnd = () => {
       const socket = getSocket()
       if (socket && conversationId) {
-        targets.forEach((targetUserId) => {
-          socket.emit('call:end', {
-            targetUserId,
-            conversationId,
-          })
-        })
+        socket.emit('call:end', { conversationId, mode: activeCall.mode, callType: activeCall.type, reason: 'timeout' })
       }
       closeCallResources()
       logCall('no_answer')
@@ -1600,7 +1902,7 @@ export default function MessagesPage() {
       addLocalCallHistory(activeCall.mode === 'group' ? 'Cuộc gọi nhóm đã bị hủy' : 'Không có phản hồi')
       setGlobalCallErrorMessage(activeCall.mode === 'group' ? 'Không ai tham gia cuộc gọi' : 'Không có phản hồi')
       setCallStatus('Không có phản hồi')
-      setIncomingCall(null)
+      clearIncomingCall()
       setRingingStartedAt(null)
       scheduleClearCall()
     }
@@ -1612,7 +1914,7 @@ export default function MessagesPage() {
 
     const timer = window.setTimeout(autoEnd, timeoutMs)
     return () => window.clearTimeout(timer)
-  }, [activeCall, addLocalCallHistory, callAnswered, callTargets, logCall, ringingStartedAt, scheduleClearCall, selectedConversationId, setGlobalCallErrorMessage])
+  }, [activeCall, addLocalCallHistory, callAnswered, clearIncomingCall, logCall, ringingStartedAt, scheduleClearCall, selectedConversationId, setGlobalCallErrorMessage])
 
   const directPeer = useMemo(() => {
     if (!selectedConversation || !user?.id) return null
@@ -1700,9 +2002,32 @@ export default function MessagesPage() {
   const pinnedMessageIds = useMemo(() => new Set((selectedConversation?.pinnedMessageIds || []).map((item) => String(item))), [selectedConversation])
   const pinnedMessages = useMemo(() => {
     if (!selectedConversationId || pinnedMessageIds.size === 0) return []
-    return (messagesByConversation[selectedConversationId] || []).filter((item) => pinnedMessageIds.has(item.id))
-  }, [messagesByConversation, pinnedMessageIds, selectedConversationId])
+    const byId = new Map<string, ChatMessage>()
+    for (const item of selectedConversation?.pinnedMessages || []) {
+      if (pinnedMessageIds.has(item.id)) byId.set(item.id, item)
+    }
+    for (const item of messagesByConversation[selectedConversationId] || []) {
+      if (pinnedMessageIds.has(item.id)) byId.set(item.id, item)
+    }
+    return (selectedConversation?.pinnedMessageIds || [])
+      .map((messageId) => byId.get(String(messageId)))
+      .filter((item): item is ChatMessage => Boolean(item))
+  }, [messagesByConversation, pinnedMessageIds, selectedConversation, selectedConversationId])
   const pinnedMessageMap = useMemo(() => new Map(pinnedMessages.map((item) => [item.id, item])), [pinnedMessages])
+
+  const getPinnedMessagePreview = useCallback((item: ChatMessage | null | undefined) => {
+    if (!item) return 'Đang tải nội dung tin nhắn đã ghim'
+    if (item.isDeleted || (item.meta && (item.meta as Record<string, unknown>).recalled)) return 'Tin nhắn đã được thu hồi'
+    if (item.text?.trim()) return item.text.trim()
+    if (item.fileName?.trim()) return item.fileName.trim()
+    if (item.type === 'image') return 'Ảnh'
+    if (item.type === 'video') return 'Video'
+    if (item.type === 'audio') return 'Tin nhắn âm thanh'
+    if (item.type === 'file') return 'Tệp đính kèm'
+    if (item.type === 'sticker') return 'Sticker'
+    if (item.type === 'call-history') return 'Lịch sử cuộc gọi'
+    return 'Tin nhắn đã ghim'
+  }, [])
 
   const jumpToMessage = useCallback(async (messageId: string) => {
     const escapedId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(messageId) : messageId.replace(/"/g, '\\"')
@@ -1839,7 +2164,8 @@ export default function MessagesPage() {
   }) => {
     if (!token || !selectedConversation) return
     try {
-      await api.updateConversationPreferences(token, selectedConversation.id, payload)
+      const response = await api.updateConversationPreferences(token, selectedConversation.id, payload)
+      setConversations(conversations.map((item) => (item.id === selectedConversation.id ? response.conversation : item)))
       if (payload.backgroundUrl !== undefined || payload.themeColor !== undefined) {
         updateLocalConversationUiPrefs(selectedConversation.id, {
           ...(payload.backgroundUrl !== undefined ? { backgroundUrl: payload.backgroundUrl } : {}),
@@ -1850,6 +2176,8 @@ export default function MessagesPage() {
       let successMessage = 'Đã cập nhật thiết lập hội thoại.'
       if (payload.hidden) {
         successMessage = 'Đã ẩn hội thoại.'
+      } else if (payload.hidden === false) {
+        successMessage = 'Đã bỏ ẩn hội thoại.'
       } else if (payload.locked === false) {
         setPendingLockedConversationId((current) => (current === selectedConversation.id ? null : current))
         successMessage = 'Đã mở khóa hội thoại.'
@@ -1935,16 +2263,19 @@ export default function MessagesPage() {
     }
   }
 
-  const handleOpenHideConversation = () => {
+  const handleOpenHideConversation = (mode: 'hide' | 'unhide' = 'hide') => {
     if (!selectedConversation) return
-    setConfirmModal({
-      title: 'Ẩn hội thoại?',
-      description: 'Hội thoại sẽ bị ẩn khỏi danh sách trò chuyện của bạn.',
-      confirmLabel: 'Ẩn',
-      destructive: false,
-      onConfirm: async () => {
-        await handleUpdateConversationPreferences({ hidden: true })
-      },
+    setHideDialogMode(mode)
+    setHideDialogOpen(true)
+  }
+
+  const handleSubmitHideConversation = async (pin: string) => {
+    if (!pin.trim()) {
+      throw new Error(hideDialogMode === 'unhide' ? 'Vui lòng nhập mã để bỏ ẩn hội thoại.' : 'Vui lòng nhập mã để ẩn hội thoại.')
+    }
+    await handleUpdateConversationPreferences({
+      hidden: hideDialogMode !== 'unhide',
+      hiddenPassword: pin.trim(),
     })
   }
 
@@ -2111,8 +2442,38 @@ export default function MessagesPage() {
     [appendMessage, scrollConversationToBottom, selectedConversationId, user?.avatarUrl, user?.fullName, user?.id]
   )
 
+  const syncLocalStreamState = (stream: MediaStream | null) => {
+    localStreamRef.current = stream
+    callSession.localStream = stream
+    setLocalStreamState(stream ? new MediaStream(stream.getTracks()) : null)
+  }
+
   const ensureLocalStream = async (callType: 'voice' | 'video') => {
-    if (localStreamRef.current) return localStreamRef.current
+    const existing = localStreamRef.current
+    if (existing) {
+      if (callType === 'video' && !mutedCam && existing.getVideoTracks().length === 0) {
+        try {
+          const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+          const [videoTrack] = videoStream.getVideoTracks()
+          if (videoTrack) {
+            existing.addTrack(videoTrack)
+            cameraTrackRef.current = videoTrack
+            setCameraAvailable(true)
+            callLog('Camera enabled', { userId: user?.id, source: 'ensureLocalStream' })
+            syncLocalStreamState(existing)
+          }
+        } catch {
+          setCameraAvailable(false)
+        }
+      }
+      if (callType === 'video' && !mutedCam) {
+        existing.getVideoTracks().forEach((track) => {
+          track.enabled = true
+        })
+        syncLocalStreamState(existing)
+      }
+      return existing
+    }
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -2126,6 +2487,7 @@ export default function MessagesPage() {
         video: callType === 'video',
       })
       setCameraAvailable(callType === 'video' ? stream.getVideoTracks().length > 0 : true)
+      cameraTrackRef.current = stream.getVideoTracks()[0] || null
     } catch (error) {
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')
       if (callType !== 'video' || denied) {
@@ -2155,14 +2517,48 @@ export default function MessagesPage() {
         track.enabled = false
       })
       setMutedCam(callType === 'video' && callSettings.autoCameraOffOnJoin)
+    } else if (callType === 'video') {
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = true
+      })
+      setMutedCam(false)
     }
-    localStreamRef.current = stream
-    callSession.localStream = stream
-    setLocalStreamState(stream)
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream
-    }
+    syncLocalStreamState(stream)
+    callLog('Local media acquired', {
+      userId: user?.id,
+      callType,
+      audioTracks: stream.getAudioTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+    })
     return stream
+  }
+
+  const renegotiatePeer = async (targetUserId: number, conversationIdOverride?: string | null) => {
+    const socket = getSocket()
+    const pc = peersRef.current.get(targetUserId)
+    const convId = conversationIdOverride || useCallStore.getState().activeCall?.conversationId || selectedConversationId
+    if (!socket || !pc || !convId || negotiationLocksRef.current.has(targetUserId)) return
+    negotiationLocksRef.current.add(targetUserId)
+    try {
+      const offer = await pc.createOffer({ iceRestart: pc.iceConnectionState === 'failed' })
+      await pc.setLocalDescription(offer)
+      socket.emit('call:offer', {
+        targetUserId,
+        conversationId: convId,
+        callType: useCallStore.getState().activeCall?.type || lastCallTypeRef.current,
+        offer: { type: offer.type, sdp: offer.sdp },
+        renegotiate: true,
+      })
+      callLog('Peer renegotiation offer sent', { targetUserId, conversationId: convId })
+    } catch (error) {
+      console.warn(CALL_LOG_PREFIX, 'Peer renegotiation failed', { targetUserId, error })
+    } finally {
+      negotiationLocksRef.current.delete(targetUserId)
+    }
+  }
+
+  const renegotiateAllPeers = async (conversationIdOverride?: string | null) => {
+    await Promise.all([...peersRef.current.keys()].map((targetUserId) => renegotiatePeer(targetUserId, conversationIdOverride)))
   }
 
   const buildPeerConnection = async (targetUserId: number, callType: 'voice' | 'video', conversationIdOverride?: string | null) => {
@@ -2170,11 +2566,17 @@ export default function MessagesPage() {
     const convId = conversationIdOverride || selectedConversationId
     if (!socket || !convId) return null
 
+    const existingPeer = peersRef.current.get(targetUserId)
+    if (existingPeer && existingPeer.signalingState !== 'closed') return existingPeer
+
     const pc = new RTCPeerConnection(RTC_CONFIG)
     const localStream = await ensureLocalStream(callType)
 
     localStream.getTracks().forEach((track) => {
-      pc.addTrack(track, localStream)
+      if (!pc.getSenders().some((sender) => sender.track === track)) {
+        pc.addTrack(track, localStream)
+        callLog('Track added', { targetUserId, kind: track.kind, trackId: track.id })
+      }
     })
 
     pc.ontrack = (event) => {
@@ -2201,12 +2603,23 @@ export default function MessagesPage() {
 
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState
+      callLog('Peer ICE state', { targetUserId, state })
       if (state === 'failed' || state === 'disconnected') {
         // Mất kết nối tạm thời: hiện trạng thái "đang kết nối lại" và thử khôi phục.
         if (useCallStore.getState().callAnswered) setCallState('connecting')
-        if (state === 'failed') pc.restartIce()
+        if (state === 'failed') {
+          pc.restartIce()
+          void renegotiatePeer(targetUserId, convId)
+        }
       } else if (state === 'connected' || state === 'completed') {
         if (useCallStore.getState().callAnswered) setCallState('connected')
+      }
+    }
+
+    pc.onconnectionstatechange = () => {
+      callLog('Peer connection state', { targetUserId, state: pc.connectionState })
+      if (pc.connectionState === 'failed') {
+        void renegotiatePeer(targetUserId, convId)
       }
     }
 
@@ -2229,15 +2642,11 @@ export default function MessagesPage() {
   }
 
   const closeCallResources = () => {
-    peersRef.current.forEach((peer) => peer.close())
-    peersRef.current.clear()
-    pendingCandidatesRef.current.clear()
+    resetCallSession()
     screenShareTrackRef.current?.stop()
     screenShareTrackRef.current = null
     cameraTrackRef.current = null
-    localStreamRef.current?.getTracks().forEach((track) => track.stop())
     localStreamRef.current = null
-    callSession.localStream = null
     setLocalStreamState(null)
     setRemoteStreams([])
     setJoinedCallUserIds([])
@@ -2245,6 +2654,7 @@ export default function MessagesPage() {
     setSpeakingUserIds([])
     setMutedCam(false)
     setMutedMic(false)
+    setJitsiCallUrl(null)
     useCallStore.getState().setScreenSharing(false)
     useCallStore.getState().setConnectionQuality('unknown')
     stopRingtone()
@@ -2339,9 +2749,14 @@ export default function MessagesPage() {
     }
   }
 
-  const handleOpenNotificationConversation = (conversationId: string | null | undefined) => {
-    if (!conversationId) return
-    handleOpenConversation(String(conversationId))
+  const handleOpenNotificationConversation = (conversationId: string | null | undefined, notificationId?: number | string) => {
+    if (notificationId !== undefined) {
+      setNotifications((current) => current.map((item) => String(item.id) === String(notificationId) ? { ...item, is_read: 1 } : item))
+      if (token) api.readNotification(token, notificationId).catch(() => undefined)
+    }
+    if (conversationId) {
+      handleOpenConversation(String(conversationId))
+    }
     setShowNotificationsDrawer(false)
   }
 
@@ -2945,6 +3360,7 @@ export default function MessagesPage() {
   const handleStartCall = async (callType: 'voice' | 'video') => {
     const socket = getSocket()
     if (!socket || !selectedConversationId || callTargets.length === 0) return
+    const isGroupCall = selectedConversation?.type === 'group'
     if (callType === 'voice' && !callSettings.allowVoice) {
       toast({ title: 'Cuộc gọi thoại đang bị tắt trong cài đặt.', variant: 'destructive' })
       return
@@ -2953,11 +3369,13 @@ export default function MessagesPage() {
       toast({ title: 'Cuộc gọi video đang bị tắt trong cài đặt.', variant: 'destructive' })
       return
     }
-    if (selectedConversation?.type === 'group' && !callSettings.allowGroup) {
+    if (isGroupCall && !callSettings.allowGroup) {
       toast({ title: 'Cuộc gọi nhóm đang bị tắt trong cài đặt.', variant: 'destructive' })
       return
     }
-    if (selectedConversation?.type === 'group' && callTargets.length + 1 > GROUP_CALL_MAX_PARTICIPANTS) {
+
+    const activeCallTargets = [...callTargets]
+    if (isGroupCall && activeCallTargets.length + 1 > GROUP_CALL_MAX_PARTICIPANTS) {
       toast({ title: `Cuộc gọi nhóm chỉ hỗ trợ tối đa ${GROUP_CALL_MAX_PARTICIPANTS} người.`, variant: 'destructive' })
       return
     }
@@ -2966,13 +3384,49 @@ export default function MessagesPage() {
     setGlobalCallErrorMessage(null)
     callLoggedRef.current = false
     lastCallTypeRef.current = callType
-    // roomId Jitsi đính kèm mọi offer để peer là mobile (chỉ hiểu Jitsi) có thể vào cùng phòng.
-    const callRoomId = buildJitsiRoomId(selectedConversationId)
+    const previewStartedAt = Date.now()
+    const previewCallMode: 'private' | 'group' = isGroupCall ? 'group' : 'private'
+    const previewWithName = selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : `Người dùng #${callTargetId}`
+    const callSessionId = `${selectedConversationId}-${previewStartedAt}`
+    const previewInitialParticipants = user?.id ? [user.id] : []
+    callMetaRef.current = {
+      initiatorId: Number(user?.id || 0),
+      participantIds: [...previewInitialParticipants, ...activeCallTargets],
+      callType,
+      mode: previewCallMode,
+      conversationId: selectedConversationId,
+      callSessionId,
+      startedAt: previewStartedAt,
+      answeredAt: null,
+      withName: previewWithName,
+    }
+    setCallState(isGroupCall ? 'ringing' : 'calling')
+    startRingtone('outgoing')
+    setCallStatus(isGroupCall ? 'Đang gọi nhóm...' : 'Đang gọi...')
+    setCallAnswered(false)
+    setRingingStartedAt(previewStartedAt)
+    setCallSeconds(0)
+    setActiveCall({
+      type: callType,
+      withName: previewWithName,
+      startedAt: previewStartedAt,
+      mode: previewCallMode,
+      avatarUrl: selectedConversation?.avatarUrl || selectedConversation?.members.find((member) => member.userId === directPeer?.id)?.avatarUrl || null,
+      conversationId: selectedConversationId,
+      targetUserIds: [...activeCallTargets],
+    })
+    setCallMinimized(false)
+    setJoinedCallUserIds(previewInitialParticipants)
+    const presenceResults = await Promise.all(callTargets.map((targetUserId) => checkUserPresence(targetUserId)))
+    const onlineCallTargets = presenceResults.filter((item) => item.online).map((item) => item.userId)
+    // roomId Jitsi do server cấp phát (tái dùng phòng phiên đang diễn ra); dùng luôn làm
+    // callSessionId cho tin active và lịch sử kết thúc để nút tham gia được dọn đúng phiên.
+    const callRoomId = await acquireCallRoom(socket, selectedConversationId)
     callRoomIdRef.current = callRoomId
 
     try {
       await ensureLocalStream(callType)
-      for (const targetUserId of callTargets) {
+      for (const targetUserId of (isGroupCall ? onlineCallTargets : activeCallTargets)) {
         const pc = await buildPeerConnection(targetUserId, callType)
         if (!pc) continue
         const offer = await pc.createOffer()
@@ -3005,28 +3459,29 @@ export default function MessagesPage() {
         mode: selectedConversation?.type === 'group' ? 'group' : 'private',
         avatarUrl: selectedConversation?.avatarUrl || null,
         conversationId: selectedConversationId,
-        targetUserIds: [...callTargets],
+        targetUserIds: [...activeCallTargets],
       })
       scheduleClearCall()
       return
     }
 
     const startedAt = Date.now()
-    const callMode: 'private' | 'group' = selectedConversation?.type === 'group' ? 'group' : 'private'
+    const callMode: 'private' | 'group' = isGroupCall ? 'group' : 'private'
     const withName = selectedConversation ? getConversationDisplayName(selectedConversation, user?.id) : `Người dùng #${callTargetId}`
     callMetaRef.current = {
       initiatorId: Number(user?.id || 0),
-      participantIds: [...(user?.id ? [user.id] : []), ...callTargets],
+      participantIds: [...(user?.id ? [user.id] : []), ...activeCallTargets],
       callType,
       mode: callMode,
       conversationId: selectedConversationId,
+      callSessionId: callMode === 'group' ? callRoomId : callSessionId,
       startedAt,
       answeredAt: null,
       withName,
     }
-    setCallState(selectedConversation?.type === 'group' ? 'ringing' : 'calling')
+    setCallState(isGroupCall ? 'ringing' : 'calling')
     startRingtone('outgoing')
-    setCallStatus(selectedConversation?.type === 'group' ? 'Đang gọi nhóm...' : 'Đang gọi...')
+    setCallStatus(isGroupCall ? 'Đang gọi nhóm...' : 'Đang gọi...')
     setCallAnswered(false)
     setRingingStartedAt(Date.now())
     setCallSeconds(0)
@@ -3038,62 +3493,114 @@ export default function MessagesPage() {
       mode: callMode,
       avatarUrl: selectedConversation?.avatarUrl || selectedConversation?.members.find((member) => member.userId === directPeer?.id)?.avatarUrl || null,
       conversationId: selectedConversationId,
-      targetUserIds: [...callTargets],
+      targetUserIds: [...activeCallTargets],
     })
     setCallMinimized(false)
     setJoinedCallUserIds(initialParticipants)
     socket.emit('join-conversation', selectedConversationId)
+    socket.emit('conversation:join', { conversationId: selectedConversationId })
     socket.emit('call:join', {
       conversationId: selectedConversationId,
+      callType,
+      mode: callMode,
+      micMuted: mutedMic,
+      cameraOff: mutedCam || callType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     
-    if (callTargets.length > 1) {
+    if (activeCallTargets.length > 1) {
       socket.emit('call:participants', {
         conversationId: selectedConversationId,
-        participantCount: 1 + callTargets.length,
-        participantIds: [...initialParticipants, ...callTargets],
+        participantCount: 1 + activeCallTargets.length,
+        participantIds: [...initialParticipants, ...activeCallTargets],
       })
+    }
+    if (token && callMode === 'group') {
+      void api.sendMessagePayload(token, selectedConversationId, {
+        type: 'call-history',
+        text: `${callType === 'video' ? 'Cuộc gọi video nhóm' : 'Cuộc gọi thoại nhóm'} đang diễn ra`,
+        meta: {
+          system: true,
+          callHistory: true,
+          status: 'active',
+          mode: 'group',
+          callType,
+          callSessionId: callRoomId,
+          initiatorId: user?.id || 0,
+          participantIds: [...initialParticipants, ...activeCallTargets],
+          startedAt,
+        },
+      }).catch(() => undefined)
     }
   }
 
   const handleAcceptIncomingCall = async (callData?: IncomingCallState, audioOnly = false) => {
     const socket = getSocket()
     const call = callData || incomingCall
-    if (!socket || !call) return
+    if (!socket || !call) {
+      clearIncomingCall()
+      stopRingtone()
+      setCallState('failed')
+      setGlobalCallErrorMessage('Không thể kết nối cuộc gọi')
+      setCallStatus('Cuộc gọi thất bại')
+      return
+    }
 
     const activeConversationId = call.conversationId || selectedConversationId
-    if (!activeConversationId) return
+    if (!activeConversationId) {
+      clearIncomingCall()
+      stopRingtone()
+      closeCallResources()
+      setCallState('failed')
+      setGlobalCallErrorMessage('Không tìm thấy cuộc trò chuyện cho cuộc gọi')
+      setCallStatus('Cuộc gọi thất bại')
+      return
+    }
     const answeredAt = Date.now()
     const effectiveType: 'voice' | 'video' = audioOnly ? 'voice' : call.callType
+    clearIncomingCall()
+    stopRingtone()
+    setCallState('connecting')
+    setCallStatus('Đang kết nối')
 
     // Liên thông: cuộc gọi đến từ mobile (Jitsi) → mở meet.jit.si cùng phòng, báo lại bằng useJitsi.
     if (call.useJitsi && call.roomId) {
+      const conv = conversations.find((c) => c.id === activeConversationId) || selectedConversation
+      const isGroup = call.mode === 'group' || conv?.type === 'group'
       socket.emit('call:answer', {
         targetUserId: call.fromUserId,
         conversationId: activeConversationId,
+        callType: 'video',
+        mode: isGroup ? 'group' : 'private',
         roomId: call.roomId,
         useJitsi: true,
         answeredAt,
       })
-      stopRingtone()
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
-      setCallState('idle')
-      setCallStatus(null)
-      window.open(resolveJitsiUrl(call.roomId, user?.fullName || 'Bạn'), '_blank', 'noopener')
-      toast({ title: 'Đang mở cuộc gọi video qua Jitsi...' })
+      socket.emit('call:join', {
+        conversationId: activeConversationId,
+        callType: 'video',
+        mode: isGroup ? 'group' : 'private',
+        roomId: call.roomId,
+        useJitsi: true,
+      })
+      setJitsiCallUrl(resolveJitsiUrl(call.roomId, user?.fullName || 'Bạn'))
+      setCallState('connected')
+      setCallStatus('Đã kết nối cuộc gọi video')
+      toast({ title: 'Đang mở cuộc gọi video...' })
       return
     }
-
-    // Ensure local state is in sync
-    if (!incomingCall) setIncomingCall(call)
 
     // Open the right conversation if not already
     if (call.conversationId && selectedConversationId !== call.conversationId) {
       routeOpenConversation(call.conversationId)
     }
 
-    if (!call.offer?.sdp) return
+    if (!call.offer?.sdp) {
+      closeCallResources()
+      setCallState('failed')
+      setGlobalCallErrorMessage('Không có dữ liệu kết nối cuộc gọi')
+      setCallStatus('Cuộc gọi thất bại')
+      return
+    }
 
     callLoggedRef.current = false
     setGlobalCallErrorMessage(null)
@@ -3101,10 +3608,10 @@ export default function MessagesPage() {
     try {
       const pc = (await buildPeerConnection(call.fromUserId, effectiveType, activeConversationId)) || undefined
       if (!pc) return
-      await pc.setRemoteDescription(new RTCSessionDescription({
+      await pc.setRemoteDescription({
         type: (call.offer.type as RTCSdpType) || 'offer',
         sdp: call.offer.sdp,
-      }))
+      })
       await flushPendingCandidates(call.fromUserId)
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
@@ -3121,8 +3628,6 @@ export default function MessagesPage() {
       setCallState('failed')
       setGlobalCallErrorMessage('Không thể truy cập micro/camera')
       setCallStatus('Cuộc gọi thất bại')
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
       return
     }
 
@@ -3160,8 +3665,13 @@ export default function MessagesPage() {
     const newJoinedIds = user?.id ? [user.id, call.fromUserId] : [call.fromUserId]
     setJoinedCallUserIds(newJoinedIds)
     socket.emit('join-conversation', activeConversationId)
+    socket.emit('conversation:join', { conversationId: activeConversationId })
     socket.emit('call:join', {
       conversationId: activeConversationId,
+      callType: effectiveType,
+      mode: isGroup ? 'group' : 'private',
+      micMuted: mutedMic,
+      cameraOff: mutedCam || effectiveType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
     })
     socket.emit(isGroup ? 'group_call_joined' : 'call_joined', {
       conversationId: activeConversationId,
@@ -3172,23 +3682,24 @@ export default function MessagesPage() {
       participantCount: newJoinedIds.length,
       participantIds: newJoinedIds,
     })
-    setIncomingCall(null)
-    setGlobalIncomingCall(null)
+    clearIncomingCall()
   }
 
   const handleDeclineIncomingCall = () => {
     const socket = getSocket()
     if (!socket || !incomingCall) {
-      setIncomingCall(null)
-      setGlobalIncomingCall(null)
+      clearIncomingCall()
       return
     }
 
     const activeConversationId = incomingCall.conversationId || selectedConversationId
     if (activeConversationId) {
-      socket.emit('call:leave', {
-        conversationId: activeConversationId,
-      })
+      const decliningGroupCall = incomingCall.mode === 'group'
+      if (!decliningGroupCall) {
+        socket.emit('call:leave', {
+          conversationId: activeConversationId,
+        })
+      }
       // Từ chối khác với kết thúc: báo riêng để người gọi hiển thị "Đã từ chối".
       socket.emit('call:reject', {
         targetUserId: incomingCall.fromUserId,
@@ -3197,60 +3708,130 @@ export default function MessagesPage() {
       })
     }
 
-    setIncomingCall(null)
-    setGlobalIncomingCall(null)
+    clearIncomingCall()
     stopRingtone()
     setCallState('idle')
     setCallStatus(null)
     addLocalCallHistory(selectedConversation?.type === 'group' ? 'Bạn đã bỏ lỡ cuộc gọi nhóm' : 'Cuộc gọi đã bị từ chối', activeConversationId || undefined)
   }
 
+  const handleJoinGroupCallFromMessage = async (chatMessage: ChatMessage) => {
+    const socket = getSocket()
+    const conversationId = chatMessage.conversationId || selectedConversationId
+    const meta = (chatMessage.meta || {}) as Record<string, unknown>
+    if (!socket || !conversationId || !user?.id) return
+    if (activeCall?.conversationId === conversationId && callAnswered) {
+      toast({ title: 'Bạn đang ở trong cuộc gọi này.' })
+      return
+    }
+    const callSessionId = String(meta.callSessionId || '')
+    if (callSessionId) {
+      const isActive = await new Promise<boolean>((resolve) => {
+        socket.emit('call:room:status', { conversationId, callSessionId }, (resp: unknown) => {
+          resolve(Boolean((resp as { active?: boolean })?.active))
+        })
+        window.setTimeout(() => resolve(false), 2500)
+      })
+      if (!isActive) {
+        setActiveGroupCallSessionIds((prev) => {
+          const next = new Set(prev)
+          next.delete(callSessionId)
+          return next
+        })
+        toast({ title: 'Cuộc gọi nhóm đã kết thúc.' })
+        return
+      }
+    }
+
+    const conv = conversations.find((item) => item.id === conversationId) || selectedConversation
+    const callType: 'voice' | 'video' = meta.callType === 'video' ? 'video' : 'voice'
+    const startedAt = Date.now()
+    try {
+      await ensureLocalStream(callType)
+    } catch (error) {
+      console.error('Không thể tham gia cuộc gọi nhóm:', error)
+      setGlobalCallErrorMessage('Không thể truy cập micro/camera')
+      toast({ title: 'Không thể tham gia cuộc gọi', description: 'Hãy cấp quyền micro/camera rồi thử lại.', variant: 'destructive' })
+      return
+    }
+
+    if (selectedConversationId !== conversationId) routeOpenConversation(conversationId)
+    const peerIds = conv?.members.map((member) => member.userId).filter((id) => id !== user.id) || []
+    callMetaRef.current = {
+      initiatorId: Number(meta.initiatorId || 0),
+      participantIds: [user.id, ...peerIds],
+      callType,
+      mode: 'group',
+      conversationId,
+      callSessionId: String(meta.callSessionId || ''),
+      startedAt,
+      answeredAt: startedAt,
+      withName: conv ? getConversationDisplayName(conv, user.id) : 'Cuộc gọi nhóm',
+    }
+    setActiveCall({
+      type: callType,
+      withName: conv ? getConversationDisplayName(conv, user.id) : 'Cuộc gọi nhóm',
+      startedAt,
+      mode: 'group',
+      avatarUrl: conv?.avatarUrl || null,
+      conversationId,
+      targetUserIds: peerIds,
+    })
+    setCallState('connected')
+    setCallAnswered(true)
+    setCallMinimized(false)
+    setCallStatus('Đã tham gia cuộc gọi nhóm')
+    setRingingStartedAt(null)
+    setCallSeconds(0)
+    setJoinedCallUserIds((prev) => Array.from(new Set([...prev, user.id])))
+    socket.emit('join-conversation', conversationId)
+    socket.emit('conversation:join', { conversationId })
+    socket.emit('call:join', {
+      conversationId,
+      callType,
+      mode: 'group',
+      micMuted: mutedMic,
+      cameraOff: mutedCam || callType === 'voice' || localStreamRef.current?.getVideoTracks().length === 0,
+    })
+    socket.emit('group_call_joined', { conversationId, callType })
+  }
+
   const handleEndCall = () => {
+    if (isEndingCallRef.current) return
     const socket = getSocket()
     if (!socket || !selectedConversationId) return
+    isEndingCallRef.current = true
     
     const endingCall = activeCall
-    const remainingCount = Math.max(0, joinedCallUserIds.length - 1)
-    
-    socket.emit('call:leave', {
-      conversationId: selectedConversationId,
-    })
-    
-    socket.emit('call:participants', {
-      conversationId: selectedConversationId,
-      participantCount: remainingCount,
-      participantIds: joinedCallUserIds.filter(id => id !== user?.id),
-    })
-    socket.emit(endingCall?.mode === 'group' ? 'group_call_left' : 'call_ended', {
-      conversationId: selectedConversationId,
-      callType: endingCall?.type,
-    })
-    
-    callTargets.forEach((targetUserId) => {
-      socket.emit('call:end', {
-        targetUserId,
-        conversationId: selectedConversationId,
+    const conversationId = endingCall?.conversationId || selectedConversationId
+    if (endingCall?.mode === 'group') {
+      socket.emit('group_call_left', {
+        conversationId,
+        callType: endingCall.type,
       })
-    })
+    } else {
+      socket.emit('call:end', {
+        conversationId,
+        callType: endingCall?.type,
+        mode: endingCall?.mode,
+      })
+    }
     
-    logCall(callAnswered ? 'completed' : 'cancelled')
+    const finalStatus = callAnswered ? 'completed' : 'no_answer'
+    logCall(finalStatus)
     closeCallResources()
-    const historyText = endingCall?.mode === 'group'
-      ? `Cuộc gọi nhóm đã kết thúc • ${formattedCallTime}`
-      : callAnswered
-        ? `Cuộc gọi đã kết thúc • ${formattedCallTime}`
-        : 'Bạn đã hủy cuộc gọi'
-    addLocalCallHistory(historyText)
-    setCallState(callAnswered ? 'ended' : 'cancelled')
-    setCallStatus(callAnswered ? 'Cuộc gọi đã kết thúc' : 'Đã hủy cuộc gọi')
-    setIncomingCall(null)
-    setGlobalIncomingCall(null)
+    setCallState(callAnswered ? 'ended' : 'no_answer')
+    setCallStatus(endingCall?.mode === 'group' ? 'Bạn đã rời cuộc gọi nhóm' : callAnswered ? 'Cuộc gọi đã kết thúc' : 'Không có phản hồi')
+    clearIncomingCall()
     setGlobalCallErrorMessage(null)
     setActiveCall(null)
     setCallSeconds(0)
     setCallAnswered(false)
     setRingingStartedAt(null)
     callMetaRef.current = null
+    window.setTimeout(() => {
+      isEndingCallRef.current = false
+    }, 500)
   }
 
   const handleToggleMic = () => {
@@ -3269,22 +3850,70 @@ export default function MessagesPage() {
     }
   }
 
-  const handleToggleCamera = () => {
-    if (!cameraAvailable || activeCall?.type === 'voice') {
+  const handleToggleCamera = async () => {
+    if (activeCall?.type === 'voice') {
       toast({ title: 'Không tìm thấy camera trên thiết bị này.', variant: 'destructive' })
       return
     }
     const nextMuted = !mutedCam
-    localStreamRef.current?.getVideoTracks().forEach((track) => {
-      track.enabled = !nextMuted
-    })
-    setMutedCam(nextMuted)
+    const stream = localStreamRef.current || await ensureLocalStream('video')
+
+    if (nextMuted) {
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = false
+        stream.removeTrack(track)
+        track.stop()
+        callLog('Track removed', { kind: 'video', trackId: track.id })
+      })
+      cameraTrackRef.current = null
+      peersRef.current.forEach((pc) => {
+        pc.getSenders()
+          .filter((sender) => sender.track?.kind === 'video')
+          .forEach((sender) => {
+            sender.replaceTrack(null).catch(() => undefined)
+          })
+      })
+      setMutedCam(true)
+      syncLocalStreamState(stream)
+      callLog('Camera disabled', { userId: user?.id })
+    } else {
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        const [videoTrack] = videoStream.getVideoTracks()
+        if (!videoTrack) throw new Error('No video track')
+        videoTrack.enabled = true
+        stream.addTrack(videoTrack)
+        cameraTrackRef.current = videoTrack
+        peersRef.current.forEach((pc) => {
+          const sender = pc.getSenders().find((item) => item.track?.kind === 'video' || item.track === null)
+          if (sender) {
+            sender.replaceTrack(videoTrack).catch(() => undefined)
+          } else {
+            pc.addTrack(videoTrack, stream)
+            callLog('Track added', { kind: 'video', trackId: videoTrack.id })
+          }
+        })
+        setCameraAvailable(true)
+        setMutedCam(false)
+        syncLocalStreamState(stream)
+        callLog('Camera enabled', { userId: user?.id, trackId: videoTrack.id })
+      } catch (error) {
+        setCameraAvailable(false)
+        toast({ title: 'Không thể bật camera', description: 'Hãy kiểm tra quyền camera hoặc thiết bị đang được ứng dụng khác sử dụng.', variant: 'destructive' })
+        return
+      }
+    }
     const socket = getSocket()
     if (socket && selectedConversationId) {
       socket.emit(nextMuted ? 'participant_camera_off' : 'participant_camera_on', {
         conversationId: selectedConversationId,
       })
+      socket.emit('participant_updated', {
+        conversationId: selectedConversationId,
+        cameraOff: nextMuted,
+      })
     }
+    await renegotiateAllPeers(selectedConversationId)
   }
 
   // Mời thêm thành viên nhóm đang chưa tham gia (đổ chuông lại tới họ).
@@ -3561,14 +4190,21 @@ export default function MessagesPage() {
       return (
         <div className={styles.mediaWrap}>
           {forwardedTag}
-          <img
-            src={msg.mediaUrl}
-            alt={msg.fileName || 'image'}
-            loading="lazy"
-            onError={(event) => {
-              event.currentTarget.style.display = 'none'
-            }}
-          />
+          <button
+            type="button"
+            className={styles.imagePreviewButton}
+            onClick={() => setMediaLightbox({ url: msg.mediaUrl!, alt: msg.fileName || 'Ảnh trong tin nhắn' })}
+            aria-label="Xem ảnh"
+          >
+            <img
+              src={msg.mediaUrl}
+              alt={msg.fileName || 'image'}
+              loading="lazy"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none'
+              }}
+            />
+          </button>
           {msg.text ? <p className={styles.messageText}>{renderRichMessageText(msg.text)}</p> : null}
         </div>
       )
@@ -3649,10 +4285,34 @@ export default function MessagesPage() {
       </div>
     )
   }
-  const activeRailTab = showNotificationsDrawer ? 'notifications' as const
+  const activeRailTab = showCallHistoryDrawer ? 'calls' as const
+    : showNotificationsDrawer ? 'notifications' as const
     : showNewMessageModal ? 'newMessage' as const
     : showCreateGroupModal ? 'createGroup' as const
     : 'messages' as const
+  const filteredCallHistory = callHistory.filter((item) => {
+    if (callHistoryFilter === 'all') return true
+    if (callHistoryFilter === 'missed') return item.status === 'missed' || item.status === 'no_answer'
+    if (callHistoryFilter === 'incoming') return item.initiatorId !== user?.id
+    if (callHistoryFilter === 'outgoing') return item.initiatorId === user?.id
+    return item.mode === 'group'
+  })
+  const formatCallDuration = (seconds: number) => {
+    if (!seconds) return '0 giây'
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return mins ? `${mins} phút ${secs}s` : `${secs}s`
+  }
+  const formatRelativeTime = (value: string) => {
+    const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000))
+    if (diffSeconds < 60) return 'Vừa xong'
+    const diffMinutes = Math.floor(diffSeconds / 60)
+    if (diffMinutes < 60) return `${diffMinutes} phút trước`
+    const diffHours = Math.floor(diffMinutes / 60)
+    if (diffHours < 24) return `${diffHours} giờ trước`
+    const diffDays = Math.floor(diffHours / 24)
+    return diffDays < 7 ? `${diffDays} ngày trước` : new Date(value).toLocaleDateString('vi-VN')
+  }
   return (
     <div className={styles.page}>
       <div className={`${styles.layout} ${mobileShowList ? styles.layoutShowList : ''} ${!showDetailsPanelDesktop ? styles.layoutNarrow : ''}`}>
@@ -3668,21 +4328,36 @@ export default function MessagesPage() {
           activeRailTab={activeRailTab}
           onOpenConversation={handleOpenConversation}
           onShowMessages={() => {
+            setShowCallHistoryDrawer(false)
             setShowNotificationsDrawer(false)
             setShowNewMessageModal(false)
             setShowCreateGroupModal(false)
           }}
           onShowNotifications={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
+            setShowCallHistoryDrawer(false)
             setShowNotificationsDrawer(true)
             setShowNewMessageModal(false)
             setShowCreateGroupModal(false)
           }}
+          onShowCalls={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
+            setShowCallHistoryDrawer(true)
+            setShowNotificationsDrawer(false)
+            setShowNewMessageModal(false)
+            setShowCreateGroupModal(false)
+            reloadCallHistory().catch(() => undefined)
+          }}
           onShowNewMessage={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
+            setShowCallHistoryDrawer(false)
             setShowNewMessageModal(true)
             setShowNotificationsDrawer(false)
             setShowCreateGroupModal(false)
           }}
           onShowCreateGroup={() => {
+            if (activeCall && callAnswered) setGlobalCallMinimized(true)
+            setShowCallHistoryDrawer(false)
             setShowCreateGroupModal(true)
             setShowNotificationsDrawer(false)
             setShowNewMessageModal(false)
@@ -3758,10 +4433,10 @@ export default function MessagesPage() {
               >
                 <BrainCircuit size={18} />
               </button>
-              <button type="button" onClick={() => handleStartCall('video')} disabled={!callTargetId} title="Gọi video" aria-label="Gọi video">
+              <button type="button" onClick={() => handleStartCall('video')} disabled={callTargets.length === 0} title="Gọi video" aria-label="Gọi video">
                 <Video size={18} />
               </button>
-              <button type="button" onClick={() => handleStartCall('voice')} disabled={!callTargetId} title="Gọi thoại" aria-label="Gọi thoại">
+              <button type="button" onClick={() => handleStartCall('voice')} disabled={callTargets.length === 0} title="Gọi thoại" aria-label="Gọi thoại">
                 <Phone size={18} />
               </button>
               <button type="button" onClick={() => setCallSettingsOpen(true)} title="Cài đặt cuộc gọi" aria-label="Cài đặt cuộc gọi">
@@ -3935,16 +4610,9 @@ export default function MessagesPage() {
             <div className={styles.pinnedQuickList}>
               {selectedConversation.pinnedMessageIds.map((messageId) => {
                 const item = pinnedMessageMap.get(String(messageId))
-                if (!item) {
-                  return (
-                    <button key={String(messageId)} type="button" onClick={() => void jumpToMessage(String(messageId))}>
-                      {`Tin nhắn đã ghim #${String(messageId).slice(-6)}`}
-                    </button>
-                  )
-                }
                 return (
                   <button key={String(messageId)} type="button" onClick={() => void jumpToMessage(String(messageId))}>
-                  {item.text || item.fileName || (item.type === 'image' ? 'Ảnh' : 'Tin nhắn đã ghim')}
+                    {getPinnedMessagePreview(item)}
                   </button>
                 )
               })} {false && (
@@ -4003,7 +4671,7 @@ export default function MessagesPage() {
                   </button>
                 </div>
               ) : null}
-              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!callTargetId} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
+              <button type="button" className={styles.endCallBtn} onClick={handleEndCall} disabled={!activeCall && !incomingCall} title="Kết thúc cuộc gọi" aria-label="Kết thúc cuộc gọi">
                 <PhoneOff size={14} />
                 Kết thúc
               </button>
@@ -4020,6 +4688,7 @@ export default function MessagesPage() {
               userId={user?.id}
               selectedConversation={selectedConversation}
               virtualSlice={virtualSlice}
+              activeGroupCallSessionIds={activeGroupCallSessionIds}
               messagesWrapRef={messagesWrapRef}
               loadingOlderMessages={loadingOlderMessages || loadingMessages}
               typingUserIds={typingUserIds}
@@ -4030,6 +4699,7 @@ export default function MessagesPage() {
               openMessageActions={openMessageActions}
               renderMessagePreview={renderMessagePreview}
               getMessageReadLabel={getMessageReadLabel}
+              onJoinGroupCall={handleJoinGroupCallFromMessage}
               onLoadOlderMessages={loadOlderMessages}
               onScroll={(event) => {
                 const element = event.currentTarget
@@ -4136,41 +4806,120 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
-          {showNotificationsDrawer ? (
+          {showCallHistoryDrawer ? (
             <div className={styles.overlayBackdrop}>
               <div className={styles.overlayCard}>
-                <h3>Thông báo nâng cao</h3>
+                <h3>Lịch sử cuộc gọi</h3>
+                <div className={styles.notifyActions}>
+                  {(['all', 'missed', 'incoming', 'outgoing', 'group'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      className={callHistoryFilter === filter ? styles.notifyAcceptBtn : undefined}
+                      onClick={() => setCallHistoryFilter(filter)}
+                    >
+                      {filter === 'all' ? 'Gần đây' : filter === 'missed' ? 'Nhỡ' : filter === 'incoming' ? 'Đến' : filter === 'outgoing' ? 'Đi' : 'Nhóm'}
+                    </button>
+                  ))}
+                </div>
                 <div className={styles.overlayList}>
-                  {notifications.map((item) => {
-                    const meta = parseNotificationMeta(item)
-                    const conversationId = meta?.conversationId
-                    const canAccept = item.type === 'friend-request' && !item.is_read && Boolean(meta?.requesterId || meta?.friendshipId)
+                  {filteredCallHistory.map((item) => {
+                    const outgoing = item.initiatorId === user?.id
+                    const conv = conversations.find((conversation) => conversation.id === item.conversationId)
+                    const title = conv ? getConversationDisplayName(conv, user?.id) : `Hội thoại #${item.conversationId}`
+                    const statusLabel = item.status === 'completed'
+                      ? 'Hoàn tất'
+                      : item.status === 'missed' || item.status === 'no_answer'
+                        ? 'Cuộc gọi nhỡ'
+                        : item.status === 'rejected'
+                          ? 'Đã từ chối'
+                          : item.status === 'cancelled'
+                            ? 'Đã hủy'
+                            : 'Thất bại'
                     return (
                       <div key={item.id} className={styles.notifyCard}>
-                        <button
-                          type="button"
-                          className={styles.notifyMainBtn}
-                          onClick={() => handleOpenNotificationConversation(conversationId)}
-                        >
+                        <button type="button" className={styles.notifyMainBtn} onClick={() => handleOpenConversation(item.conversationId)}>
                           <span className={styles.listEntryIdentity}>
-                            <span className={styles.listEntryAvatar}>{getAvatarInitial(item.title)}</span>
+                            <span className={styles.listEntryAvatar}>{item.callType === 'video' ? 'V' : 'P'}</span>
                             <span className={styles.listEntryMeta}>
-                              <strong className={styles.listEntryTitle}>{item.title}</strong>
-                              <span className={styles.listEntrySubtitle}>{item.body || 'Thông báo hệ thống'}</span>
-                              <small className={styles.listEntrySubtitle}>{new Date(item.created_at).toLocaleString('vi-VN')}</small>
+                              <strong className={styles.listEntryTitle}>{title}</strong>
+                              <span className={styles.listEntrySubtitle}>
+                                {outgoing ? 'Gọi đi' : 'Gọi đến'} · {item.mode === 'group' ? 'Nhóm' : '1-1'} · {statusLabel}
+                              </span>
+                              <small className={styles.listEntrySubtitle}>
+                                {new Date(item.createdAt || item.startedAt).toLocaleString('vi-VN')} · {formatCallDuration(item.durationSec || 0)}
+                              </small>
                             </span>
                           </span>
                         </button>
                         <div className={styles.notifyActions}>
-                          {conversationId ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenNotificationConversation(conversationId)}
-                            >
-                              Mở đoạn chat
-                            </button>
-                          ) : null}
-                          {canAccept ? (
+                          <button type="button" onClick={() => handleOpenConversation(item.conversationId)}>Mở chat</button>
+                          <button type="button" onClick={() => {
+                            handleOpenConversation(item.conversationId)
+                            window.setTimeout(() => void handleStartCall('voice'), 0)
+                          }}>Gọi lại</button>
+                          <button type="button" onClick={() => {
+                            handleOpenConversation(item.conversationId)
+                            window.setTimeout(() => void handleStartCall('video'), 0)
+                          }}>Video</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {filteredCallHistory.length === 0 ? <p>Chưa có lịch sử cuộc gọi phù hợp.</p> : null}
+                </div>
+                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowCallHistoryDrawer(false)} title="Đóng" aria-label="Đóng">
+                  Đóng
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {showNotificationsDrawer ? (
+            <div className={styles.overlayBackdrop}>
+              <div className={`${styles.overlayCard} ${styles.notificationsCenter}`}>
+                <div className={styles.notificationsHeader}>
+                  <h3>Thông báo <span>{notifications.length}</span></h3>
+                  <div className={styles.notificationsHeaderActions}>
+                    <button
+                      type="button"
+                      disabled={!notifications.some((item) => !item.is_read)}
+                      onClick={() => {
+                        setNotifications((current) => current.map((item) => ({ ...item, is_read: 1 })))
+                        if (token) api.readAllNotifications(token).catch(() => undefined)
+                      }}
+                    >
+                      Đánh dấu đã đọc
+                    </button>
+                    <button type="button" className={styles.notificationsCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
+                      ×
+                    </button>
+                  </div>
+                </div>
+                <div className={`${styles.overlayList} ${styles.notificationsList}`}>
+                  {notifications.map((item) => {
+                    const meta = parseNotificationMeta(item)
+                    const conversationId = meta?.conversationId
+                    const canAccept = item.type === 'friend-request' && !item.is_read && Boolean(meta?.requesterId || meta?.friendshipId)
+                    const isUnread = !item.is_read
+                    const senderName = item.title?.replace(/^new message:?/i, '').trim() || item.title || 'ZChat'
+                    const preview = item.body || 'Thông báo hệ thống'
+                    return (
+                      <div key={item.id} className={cn(styles.notifyCard, isUnread && styles.notifyCardUnread)}>
+                        <button type="button" className={styles.notifyMainBtn} onClick={() => handleOpenNotificationConversation(conversationId, item.id)}>
+                          <span className={styles.notifyAvatar}>{getAvatarInitial(senderName)}</span>
+                          <span className={styles.notifyContent}>
+                            <span className={styles.notifyTopLine}>
+                              <strong>{senderName}</strong>
+                              <small>{formatRelativeTime(item.created_at)}</small>
+                            </span>
+                            <span className={styles.notifyPreview}>{preview}</span>
+                          </span>
+                          {isUnread ? <span className={styles.notifyUnreadDot} aria-label="Chưa đọc" /> : null}
+                          <span className={styles.notifyArrow} aria-hidden="true">→</span>
+                        </button>
+                        {canAccept ? (
+                          <div className={styles.notifyActions}>
                             <button
                               type="button"
                               className={styles.notifyAcceptBtn}
@@ -4181,16 +4930,13 @@ export default function MessagesPage() {
                             >
                               {busyActionId === `notif-${item.id}` ? 'Đang đồng ý...' : 'Đồng ý'}
                             </button>
-                          ) : null}
-                        </div>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}
                   {notifications.length === 0 ? <p>Hiện chưa có thông báo quan trọng.</p> : null}
                 </div>
-                <button type="button" className={styles.overlayCloseBtn} onClick={() => setShowNotificationsDrawer(false)} title="Đóng" aria-label="Đóng">
-                  Đóng
-                </button>
               </div>
             </div>
           ) : null}
@@ -4269,7 +5015,61 @@ export default function MessagesPage() {
             </div>
           ) : null}
 
-          {activeCall ? (
+          {jitsiCallUrl ? (
+            <section className={styles.jitsiCallWindow} aria-label="Cuộc gọi video đang diễn ra">
+              <header className={styles.jitsiCallHeader}>
+                <div>
+                  <strong>Cuộc gọi video</strong>
+                  <span>{callStatus || 'Đang kết nối'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const socket = getSocket()
+                    const conversationId = activeCall?.conversationId || selectedConversationId
+                    if (socket && conversationId) socket.emit('call:leave', { conversationId, useJitsi: true })
+                    setJitsiCallUrl(null)
+                    setCallStatus(null)
+                    setCallState('idle')
+                  }}
+                  title="Kết thúc cuộc gọi"
+                  aria-label="Kết thúc cuộc gọi"
+                >
+                  <PhoneOff size={18} />
+                </button>
+              </header>
+              <iframe
+                className={styles.jitsiCallFrame}
+                src={jitsiCallUrl}
+                title="Cuộc gọi video"
+                allow="camera; microphone; fullscreen; display-capture; autoplay"
+              />
+            </section>
+          ) : null}
+
+          {activeCall && callAnswered && !callMinimized ? (
+            <ActiveCallWindow
+              name={activeCall.withName}
+              avatarUrl={activeCall.avatarUrl}
+              callType={activeCall.type}
+              mode={activeCall.mode}
+              state={callState === 'idle' ? 'connected' : callState}
+              duration={formattedCallTime}
+              participants={callParticipantProfiles}
+              localStream={localStreamState}
+              remoteStreams={remoteStreams}
+              mutedMic={mutedMic}
+              mutedCam={mutedCam}
+              cameraAvailable={cameraAvailable}
+              onToggleMic={handleToggleMic}
+              onToggleCamera={handleToggleCamera}
+              onAddMembers={activeCall.mode === 'group' ? handleAddMembers : undefined}
+              onMinimize={() => setCallMinimized(true)}
+              onEnd={handleEndCall}
+            />
+          ) : null}
+
+          {false && activeCall ? (
             <div className={styles.callOverlay}>
               <div className={styles.callBackdropGlow} />
               <div className={styles.callTopBar}>
@@ -4460,6 +5260,15 @@ export default function MessagesPage() {
           ) : null}
         </section>
 
+        {mediaLightbox ? (
+          <div className={styles.mediaLightbox} role="dialog" aria-modal="true" aria-label="Xem ảnh" onClick={() => setMediaLightbox(null)}>
+            <button type="button" className={styles.mediaLightboxClose} onClick={() => setMediaLightbox(null)} aria-label="Đóng">
+              <X size={20} />
+            </button>
+            <img src={mediaLightbox.url} alt={mediaLightbox.alt} onClick={(event) => event.stopPropagation()} />
+          </div>
+        ) : null}
+
         {showSettingsDrawer ? <button type="button" className={styles.settingsBackdrop} aria-label="Đóng cài đặt hội thoại" onClick={() => setShowSettingsDrawer(false)} /> : null}
         <aside className={`${styles.detailsPanel}${showSettingsDrawer ? ` ${styles.detailsPanelOpen}` : ''}${!showDetailsPanelDesktop ? ` ${styles.detailsPanelHidden}` : ''}`}>
           <div className={styles.detailsBody}>
@@ -4527,17 +5336,7 @@ export default function MessagesPage() {
             onDecline={handleDeclineIncomingCall}
           />
         ) : null}
-        {/* OutgoingCallModal and ActiveCallWindow are rendered in AppLayout to persist across navigation */}
-        {activeCall && callMinimized ? (
-          <MinimizedCallPill
-            name={activeCall.withName}
-            avatarUrl={activeCall.avatarUrl}
-            duration={formattedCallTime}
-            participantCount={activeCall.mode === 'group' ? callParticipantProfiles.filter((item) => item.status === 'joined').length : undefined}
-            onOpen={() => setCallMinimized(false)}
-            onEnd={handleEndCall}
-          />
-        ) : null}
+        {/* OutgoingCallModal, ActiveCallWindow and MinimizedCallPill are rendered in AppLayout to persist across navigation. */}
         <AppDialog
           open={callSettingsOpen}
           onOpenChange={setCallSettingsOpen}
@@ -4637,6 +5436,21 @@ export default function MessagesPage() {
           onSubmit={(nextName) => handleUpdateGroupProfile({ name: nextName })}
         />
         <InputDialog
+          open={hideDialogOpen}
+          onOpenChange={setHideDialogOpen}
+          title={hideDialogMode === 'unhide' ? 'Bỏ ẩn hội thoại' : 'Ẩn hội thoại'}
+          description={hideDialogMode === 'unhide' ? 'Nhập mã ẩn để đưa hội thoại trở lại danh sách.' : 'Nhập mã riêng để ẩn hội thoại khỏi danh sách. Bạn sẽ cần mã này để mở lại.'}
+          label={hideDialogMode === 'unhide' ? 'Mã xác nhận' : 'Mã ẩn'}
+          placeholder="Nhập mã ẩn..."
+          hint={hideDialogMode === 'unhide' ? 'Mã phải trùng với mã đã dùng khi ẩn hội thoại.' : 'Mã này dùng để xác thực khi mở lại hội thoại ẩn.'}
+          inputType="password"
+          maxLength={32}
+          required
+          submitLabel={hideDialogMode === 'unhide' ? 'Bỏ ẩn' : 'Ẩn'}
+          validate={(value) => (!value.trim() ? (hideDialogMode === 'unhide' ? 'Nhập mã để bỏ ẩn hội thoại.' : 'Mã ẩn không được để trống.') : null)}
+          onSubmit={handleSubmitHideConversation}
+        />
+        <InputDialog
           open={lockDialogOpen}
           onOpenChange={setLockDialogOpen}
           title="Khóa hội thoại"
@@ -4644,6 +5458,7 @@ export default function MessagesPage() {
           label="Mã PIN"
           placeholder="Nhập mã PIN..."
           hint="Mã PIN tạm thời sẽ được dùng làm mật khẩu khóa hội thoại."
+          inputType="password"
           maxLength={12}
           required
           submitLabel="Khóa"
