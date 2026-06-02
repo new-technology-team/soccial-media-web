@@ -465,6 +465,7 @@ export default function MessagesPage() {
   const screenShareTrackRef = useRef<MediaStreamTrack | null>(null)
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null)
   const negotiationLocksRef = useRef<Set<number>>(new Set())
+  const lastRenderedMessageIdRef = useRef<string | null>(null)
 
   const scrollConversationToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     window.setTimeout(() => {
@@ -472,6 +473,12 @@ export default function MessagesPage() {
       if (!node) return
       node.scrollTo({ top: node.scrollHeight, behavior })
     }, 0)
+  }, [])
+
+  const isMessagesNearBottom = useCallback((threshold = 140) => {
+    const node = messagesWrapRef.current
+    if (!node) return true
+    return node.scrollHeight - (node.scrollTop + node.clientHeight) <= threshold
   }, [])
 
   const getSenderName = (senderId: number, msg?: ChatMessage) => {
@@ -628,6 +635,8 @@ export default function MessagesPage() {
       setActiveGroupCallSessionIds(new Set())
       return
     }
+    setActiveGroupCallSessionIds(new Set(sessionIds))
+    if (!socket.connected) return
 
     let cancelled = false
     Promise.all(sessionIds.map((callSessionId) => new Promise<string | null>((resolve) => {
@@ -1642,9 +1651,22 @@ export default function MessagesPage() {
   )
 
   useEffect(() => {
-    if (!selectedConversationId || loadingOlderMessages) return
-    scrollConversationToBottom('smooth')
-  }, [loadingOlderMessages, messages.length, scrollConversationToBottom, selectedConversationId])
+    if (!selectedConversationId) {
+      lastRenderedMessageIdRef.current = null
+      return
+    }
+    const lastMessageId = messages[messages.length - 1]?.id || null
+    const previousLastMessageId = lastRenderedMessageIdRef.current
+    lastRenderedMessageIdRef.current = lastMessageId
+    if (!lastMessageId || loadingOlderMessages) return
+    if (!previousLastMessageId || previousLastMessageId === lastMessageId) return
+    if (isMessagesNearBottom(180)) scrollConversationToBottom('smooth')
+  }, [isMessagesNearBottom, loadingOlderMessages, messages, scrollConversationToBottom, selectedConversationId])
+
+  useEffect(() => {
+    if (!selectedConversationId || typingUserIds.size === 0) return
+    if (isMessagesNearBottom(220)) scrollConversationToBottom('smooth')
+  }, [isMessagesNearBottom, scrollConversationToBottom, selectedConversationId, typingUserIds])
 
   const activeActionMessage = useMemo(
     () => (actionMenu ? messages.find((msg) => msg.id === actionMenu.messageId) || null : null),
@@ -2993,6 +3015,7 @@ export default function MessagesPage() {
 
     setLoadingOlderMessages(true)
     const previousScrollHeight = messagesWrapRef.current?.scrollHeight || 0
+    const previousScrollTop = messagesWrapRef.current?.scrollTop || 0
 
     try {
       const response = await api.listMessages(token, selectedConversationId, {
@@ -3017,7 +3040,7 @@ export default function MessagesPage() {
       requestAnimationFrame(() => {
         if (!messagesWrapRef.current) return
         const newScrollHeight = messagesWrapRef.current.scrollHeight
-        messagesWrapRef.current.scrollTop = newScrollHeight - previousScrollHeight
+        messagesWrapRef.current.scrollTop = previousScrollTop + (newScrollHeight - previousScrollHeight)
       })
     } catch (error) {
       console.error('Không thể tải tin nhắn cũ hơn', error)
@@ -3815,11 +3838,19 @@ export default function MessagesPage() {
     isEndingCallRef.current = true
     
     const endingCall = activeCall
-    socket.emit('call:end', {
-      conversationId: endingCall?.conversationId || selectedConversationId,
-      callType: endingCall?.type,
-      mode: endingCall?.mode,
-    })
+    const conversationId = endingCall?.conversationId || selectedConversationId
+    if (endingCall?.mode === 'group') {
+      socket.emit('group_call_left', {
+        conversationId,
+        callType: endingCall.type,
+      })
+    } else {
+      socket.emit('call:end', {
+        conversationId,
+        callType: endingCall?.type,
+        mode: endingCall?.mode,
+      })
+    }
     
     const finalStatus = callAnswered ? 'completed' : 'no_answer'
     logCall(finalStatus)

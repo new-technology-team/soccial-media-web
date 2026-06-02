@@ -282,7 +282,11 @@ export default function AppLayout({
     const socket = getSocket()
     const conversationId = activeCall?.conversationId
     if (socket && conversationId) {
-      socket.emit('call:end', { conversationId, callType: activeCall?.type, mode: activeCall?.mode })
+      if (activeCall?.mode === 'group') {
+        socket.emit('group_call_left', { conversationId, callType: activeCall.type })
+      } else {
+        socket.emit('call:end', { conversationId, callType: activeCall?.type, mode: activeCall?.mode })
+      }
     }
     resetCallSession()
     const {
