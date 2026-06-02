@@ -4928,7 +4928,6 @@ export default function MessagesPage() {
 
           {activeCall && callAnswered && !callMinimized ? (
             <ActiveCallWindow
-              embedded
               name={activeCall.withName}
               avatarUrl={activeCall.avatarUrl}
               callType={activeCall.type}

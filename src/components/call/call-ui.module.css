@@ -255,10 +255,10 @@
   position: fixed;
   left: 50%;
   top: 50%;
-  width: min(980px, calc(100vw - 2rem));
-  height: min(760px, calc(100dvh - 2rem));
+  width: calc(100vw - 1.5rem);
+  height: calc(100dvh - 1.5rem);
   transform: translate(-50%, -50%);
-  z-index: 78;
+  z-index: 95;
   display: grid;
   grid-template-rows: auto 1fr auto;
   background: #0f172a;
@@ -310,6 +310,7 @@
   display: grid;
   place-items: center;
   padding: 0 1rem 1rem;
+  overflow: hidden;
 }
 
 .voiceStage {
@@ -321,7 +322,8 @@
 .videoStage {
   position: relative;
   width: min(1120px, 100%);
-  height: min(70dvh, 720px);
+  height: 100%;
+  min-height: 0;
   border-radius: 14px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
@@ -351,9 +353,11 @@
 
 .grid {
   width: min(1180px, 100%);
+  max-height: 100%;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 0.85rem;
+  overflow-y: auto;
 }
 
 .tile {
