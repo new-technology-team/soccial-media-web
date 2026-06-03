@@ -11,6 +11,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation()
   const hideMainNavbar = pathname.startsWith('/admin') || pathname.startsWith('/moderator') || pathname.startsWith('/auth/admin-login')
   const isModeratorArea = pathname.startsWith('/moderator')
+  const isOperatorArea = pathname.startsWith('/admin') || pathname.startsWith('/moderator')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
   useEffect(() => {
@@ -44,7 +45,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <RouteGuard>{children}</RouteGuard>
         </main>
       )}
-      <Toaster />
+      <Toaster mode={isOperatorArea ? 'operator' : 'default'} />
     </>
   )
 }

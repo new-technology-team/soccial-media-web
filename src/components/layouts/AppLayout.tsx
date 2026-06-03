@@ -7,7 +7,7 @@ import { useChatStore } from '@/contexts/chat-store'
 import { callSession, resetCallSession } from '@/services/call-session'
 import { ActiveCallWindow, IncomingCallModal, MinimizedCallPill, OutgoingCallModal, RemoteAudioSink, isTerminalErrorState } from '@/components/call'
 import { resolveApiAssetUrl } from '@/api/client'
-import { connectSocket, getSocket } from '@/services/socket'
+import { connectSocket, disconnectSocket, getSocket } from '@/services/socket'
 import { toast } from '@/hooks/use-toast'
 import type { User } from '@/types'
 import styles from './app-layout.module.css'
@@ -123,7 +123,7 @@ export default function AppLayout({
 
     const onAuthRevoked = (payload: { reason?: string }) => {
       clearAuth()
-      socket.disconnect()
+      disconnectSocket()
       toast({
         title: 'Phiên đăng nhập đã bị thu hồi',
         description: payload?.reason ? `Lý do: ${payload.reason}` : 'Vui lòng đăng nhập lại để tiếp tục.',

@@ -28,17 +28,17 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 
 const toastVariants = cva(
-  'group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-xl border p-4 pr-10 shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-xl transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-right-full',
+  'group pointer-events-auto relative flex w-full items-start gap-3 overflow-hidden rounded-xl border p-4 pl-5 pr-10 shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-xl transition-all before:absolute before:bottom-3 before:left-2 before:top-3 before:w-1 before:rounded-full data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-top-4 data-[state=open]:slide-in-from-top-5 sm:data-[state=closed]:slide-out-to-right-full sm:data-[state=open]:slide-in-from-right-full',
   {
     variants: {
       variant: {
-        default: 'border-slate-200/80 bg-white/96 text-slate-900',
-        success: 'border-emerald-200/90 bg-gradient-to-br from-white to-emerald-50/70 text-slate-900',
-        error: 'border-rose-200/90 bg-gradient-to-br from-white to-rose-50/70 text-slate-900',
-        warning: 'border-amber-200/90 bg-gradient-to-br from-white to-amber-50/80 text-slate-900',
-        info: 'border-sky-200/90 bg-gradient-to-br from-white to-sky-50/80 text-slate-900',
-        loading: 'border-slate-200/90 bg-gradient-to-br from-white to-slate-50/80 text-slate-900',
-        destructive: 'destructive group border-rose-200/90 bg-gradient-to-br from-white to-rose-50/70 text-slate-900',
+        default: 'border-slate-200/80 bg-white/96 text-slate-900 before:bg-slate-400',
+        success: 'border-emerald-200/90 bg-gradient-to-br from-white to-emerald-50/70 text-slate-900 before:bg-emerald-500',
+        error: 'border-rose-200/90 bg-gradient-to-br from-white to-rose-50/70 text-slate-900 before:bg-rose-500',
+        warning: 'border-amber-200/90 bg-gradient-to-br from-white to-amber-50/80 text-slate-900 before:bg-amber-500',
+        info: 'border-sky-200/90 bg-gradient-to-br from-white to-sky-50/80 text-slate-900 before:bg-sky-500',
+        loading: 'border-slate-200/90 bg-gradient-to-br from-white to-slate-50/80 text-slate-900 before:bg-slate-500',
+        destructive: 'destructive group border-rose-200/90 bg-gradient-to-br from-white to-rose-50/70 text-slate-900 before:bg-rose-500',
       },
     },
     defaultVariants: {
