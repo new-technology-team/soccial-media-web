@@ -35,6 +35,11 @@ export function useReportRealtime({
     const onCreated = (payload: { report?: ReportRow }) => {
       if (!payload?.report) return
       upsertReport(payload.report)
+    }
+
+    const onPriorityCreated = (payload: { report?: ReportRow }) => {
+      if (!payload?.report) return
+      upsertReport(payload.report)
       toast({ title: 'Báo cáo mới', description: `Report #${reportIdOf(payload.report)} vừa được gửi.` })
     }
 
@@ -51,11 +56,13 @@ export function useReportRealtime({
     }
 
     socket.on('report:created', onCreated)
+    socket.on('report:priorityCreated', onPriorityCreated)
     socket.on('report:updated', onUpdated)
     socket.on('report:assigned', onAssigned)
 
     return () => {
       socket.off('report:created', onCreated)
+      socket.off('report:priorityCreated', onPriorityCreated)
       socket.off('report:updated', onUpdated)
       socket.off('report:assigned', onAssigned)
     }
